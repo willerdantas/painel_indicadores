@@ -1,0 +1,1427 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Produção Hospitalar Consolidada</title>
+    <base href="./">
+    <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; }
+        body, html {
+            height: 100%;
+            font-family: 'DM Sans', sans-serif;
+            margin: 0;
+            background-color: #f0f4f5;
+            color: #38464D;
+        }
+        .main-container {
+            max-width: 1800px;
+            margin: 0 auto;
+            padding: 0 0 32px 0;
+        }
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #fff;
+            border-bottom: 3px solid #19b8b0;
+            box-shadow: 0 2px 8px rgba(0,0,0,.07);
+            padding: 14px 28px;
+            margin-bottom: 22px;
+            gap: 20px;
+        }
+        .header-left { flex: 1; }
+        .header-left h2 {
+            font-family: 'Syne', sans-serif;
+            font-size: 1.5rem;
+            font-weight: 800;
+            color: #38464D;
+            margin: 0 0 2px 0;
+            letter-spacing: -0.01em;
+        }
+        .header-left p {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.9rem;
+            color: #6b7f86;
+            margin: 0;
+            font-weight: 300;
+        }
+        .header-logos {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        .header .logo {
+            height: 58px;
+        }
+        .header .back-btn {
+            font-family: 'Syne', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            background: #19b8b0;
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            padding: 10px 20px;
+            cursor: pointer;
+            transition: background 0.2s;
+            white-space: nowrap;
+        }
+        .header .back-btn:hover {
+            background: #007C6B;
+        }
+        .page-content {
+            padding: 0 28px;
+        }
+        .filters {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 20px;
+            background: #fff;
+            border: 1px solid #dde4e6;
+            border-radius: 10px;
+            padding: 18px 24px 14px 24px;
+            margin-bottom: 22px;
+            max-width: 100%;
+        }
+        .filter-actions {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            min-width: 160px;
+            justify-content: flex-end;
+            margin-bottom: 8px;
+        }
+        .filter-actions button {
+            font-family: 'Syne', sans-serif;
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            border-radius: 6px;
+            padding: 9px 20px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border-color 0.2s;
+            border: 1px solid transparent;
+            white-space: nowrap;
+        }
+        .filter-actions .btn-apply {
+            background: #19b8b0;
+            color: #fff;
+        }
+        .filter-actions .btn-apply:hover {
+            background: #007C6B;
+        }
+        .filter-actions .btn-reset {
+            background: #fff;
+            color: #6b7f86;
+            border-color: #ddd;
+        }
+        .filter-actions .btn-reset:hover {
+            background: #f0f4f5;
+            color: #38464D;
+            border-color: #bbb;
+        }
+        .filter-group {
+            display: flex;
+            flex-direction: column;
+            min-width: 180px;
+            margin-bottom: 8px;
+        }
+        .filter-group label {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 13px;
+            font-weight: 500;
+            margin-bottom: 5px;
+            color: #555;
+        }
+        select, input[type="date"] {
+            font-family: 'DM Sans', sans-serif;
+            padding: 7px 10px;
+            font-size: 14px;
+            border: 1px solid #ddd;
+            border-radius: 6px;
+            width: 100%;
+            background: #fafafa;
+            color: #444;
+            outline: none;
+        }
+        select:focus, input[type="date"]:focus {
+            border-color: #19b8b0;
+        }
+        ul.checkbox-list {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+            max-height: 160px;
+            overflow-y: auto;
+            min-width: 160px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            background: #fafafa;
+        }
+        ul.checkbox-list li {
+            padding: 3px 0;
+        }
+        .kpi-container {
+            display: flex;
+            gap: 16px;
+            margin-bottom: 22px;
+            flex-wrap: wrap;
+        }
+        .kpi-box {
+            flex: 1;
+            min-width: 200px;
+            padding: 20px 16px;
+            border-radius: 12px;
+            text-align: center;
+            color: #fff;
+        }
+        .kpi-box:nth-child(1) { background: #19b8b0; }
+        .kpi-box:nth-child(2) { background: #1a7a6e; }
+        .kpi-box:nth-child(3) { background: #e07b39; }
+        .kpi-box h5 {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.85rem;
+            font-weight: 400;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            margin: 0 0 8px 0;
+            opacity: 0.9;
+        }
+        .kpi-box p {
+            font-family: 'Syne', sans-serif;
+            font-size: 2rem;
+            font-weight: 800;
+            margin: 0 0 4px 0;
+            line-height: 1.1;
+            color: #fff;
+        }
+        .kpi-label {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 12px;
+            opacity: 0.8;
+        }
+        .content {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 40px;
+            margin-bottom: 25px;
+            max-width: 100%;
+            position: relative;
+            z-index: 1;
+            /* Corrige para ocupar toda a largura exceto para .charts-row */
+            width: 100%;
+        }
+        .charts-row {
+            display: flex;
+            flex-direction: row;
+            gap: 32px;
+            width: 100%;
+            margin-bottom: 25px;
+        }
+        .chart-half {
+            flex: 1 1 0;
+            min-width: 320px;
+            max-width: 50%;
+            background: #fff;
+            border: 1px solid #dde4e6;
+            border-radius: 10px;
+            padding: 24px 20px;
+            margin-bottom: 0;
+            overflow-x: auto;
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+        .chart-half h4, .chart-container h4 {
+            font-family: 'DM Sans', sans-serif;
+            font-size: 0.95rem;
+            font-weight: 500;
+            color: #555;
+            margin: 0 0 14px 0;
+        }
+        .chart-container {
+            flex: 1 1 900px;
+            min-width: 600px;
+            max-width: 110%;
+            background: #fff;
+            border: 1px solid #dde4e6;
+            border-radius: 10px;
+            padding: 24px 20px;
+            margin-bottom: 0;
+            overflow-x: auto;
+            position: relative;
+            z-index: 2;
+            display: flex;
+            flex-direction: column;
+            justify-content: flex-start;
+        }
+        /* Garante que gráficos Plotly não fiquem com z-index alto */
+        .js-plotly-plot {
+            z-index: 1 !important;
+            position: relative !important;
+        }
+        /* Garante que tabelas fiquem acima de gráficos antigos */
+        table {
+            width: 100%;
+            border-collapse: separate;
+            border-spacing: 0;
+            margin-top: 10px;
+            background: #fff;
+            position: relative;
+            z-index: 3;
+            /* Adiciona rolagem horizontal se necessário */
+            display: block;
+            overflow-x: auto;
+            max-width: 100%;
+        }
+        th, td {
+            border: 1px solid #dde4e6;
+            padding: 7px;
+            text-align: center;
+            white-space: nowrap;
+        }
+        th {
+            background: #f0f4f5;
+            color: #19b8b0;
+            font-family: 'Syne', sans-serif;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+        tr.servico-row, tr.exame-row {
+            background: #f8fafb;
+        }
+        tr.servico-row td, tr.exame-row td {
+            border-bottom: 1px solid #dde4e6;
+        }
+        tr.servico-row td:first-child, tr.exame-row td:first-child {
+            color: #19b8b0;
+            font-weight: bold;
+        }
+        /* Barra de rolagem customizada para tabelas */
+        table::-webkit-scrollbar {
+            height: 8px;
+        }
+        table::-webkit-scrollbar-thumb {
+            background: #b2dfdb;
+            border-radius: 4px;
+        }
+        table::-webkit-scrollbar-track {
+            background: #e0f2f1;
+        }
+        /* Corrige sobreposição em telas pequenas */
+        @media (max-width: 900px) {
+            .content {
+                flex-direction: column;
+                gap: 20px;
+            }
+            .chart-container {
+                min-width: 100%;
+                padding: 16px 4px;
+            }
+        }
+        @media (max-width: 1200px) {
+            .charts-row {
+                flex-direction: column;
+                gap: 20px;
+            }
+            .chart-half {
+                max-width: 100%;
+                min-width: 100%;
+                padding: 16px 4px;
+            }
+            .chart-container {
+                min-width: 100%;
+                padding: 16px 4px;
+            }
+        }
+        /* Fadeout animation styles (lean style) */
+        #fadeout-animation {
+            display: none;
+            position: fixed;
+            inset: 0;
+            z-index: 9999;
+            background: rgba(38,50,56,.45);
+            backdrop-filter: blur(2px);
+            align-items: center;
+            justify-content: center;
+        }
+        #fadeout-animation.active { display: flex; }
+        .loader-ring {
+            position: relative;
+            width: 180px;
+            height: 180px;
+        }
+        .loader-ring svg {
+            position: absolute;
+            inset: 0;
+            width: 100%;
+            height: 100%;
+            animation: spin 1.1s linear infinite;
+        }
+        .loader-ring svg circle {
+            fill: none;
+            stroke: #19b8b0;
+            stroke-width: 4;
+            stroke-linecap: round;
+            stroke-dasharray: 200;
+            stroke-dashoffset: 50;
+        }
+        .loader-ring img {
+            position: absolute;
+            inset: 0;
+            margin: auto;
+            width: 140px;
+            height: 140px;
+            object-fit: contain;
+            border-radius: 50%;
+            background: #fff;
+            padding: 10px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg);}
+            100% { transform: rotate(360deg);}
+        }
+    </style>
+</head>
+<body>
+    <div class="main-container">
+        <div class="header">
+            <div class="header-left">
+                <h2>Produção Hospitalar Consolidada</h2>
+                <p>Painel de acompanhamento da produção hospitalar consolidada</p>
+            </div>
+            <button id="back-button" class="back-btn">Voltar ao Início</button>
+            <div class="header-logos">
+                <img src="/static/LOGO HM E SESA - NOVA (1).png" class="logo" alt="Logo">
+            </div>
+        </div>
+        <div class="page-content">
+
+        <div class="filters">
+            <div class="filter-group">
+                <label for="data-inicial">Data Inicial:</label>
+                <select id="data-inicial">
+                    {% set idx_final = datas_disponiveis.index(data_final) if data_final in datas_disponiveis else (datas_disponiveis|length - 1) %}
+                    {% set idx_inicial = idx_final - 11 if idx_final - 11 >= 0 else 0 %}
+                    {% for data in datas_disponiveis %}
+                    <option value="{{ data }}" {% if loop.index0 == idx_inicial %}selected{% endif %}>
+                        {{ data.split('-')[2] }}/{{ data.split('-')[1] }}/{{ data.split('-')[0] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="data-final">Data Final:</label>
+                <select id="data-final">
+                    {% set idx_final = datas_disponiveis.index(data_final) if data_final in datas_disponiveis else (datas_disponiveis|length - 1) %}
+                    {% for data in datas_disponiveis %}
+                    <option value="{{ data }}" {% if loop.index0 == idx_final %}selected{% endif %}>
+                        {{ data.split('-')[2] }}/{{ data.split('-')[1] }}/{{ data.split('-')[0] }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="tipo">Tipo:</label>
+                <select id="tipo">
+                    <option value="todos">Todos</option>
+                    {% for tipo in tipos_procedimento %}
+                    <option value="{{ tipo }}">{{ tipo }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label>Serviço:</label>
+                <ul class="checkbox-list" id="servicos-list">
+                    <li>
+                        <label>
+                            <input type="checkbox" id="todos-servicos" class="servico-checkbox" value="todos" checked>
+                            Todos
+                        </label>
+                    </li>
+                    {% for servico in servicos %}
+                    <li>
+                        <label>
+                            <input type="checkbox" class="servico-checkbox" value="{{ servico }}" checked>
+                            {{ servico }}
+                        </label>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="filter-group">
+                <label>Exame / Procedimento:</label>
+                <ul class="checkbox-list" id="exames-list">
+                    <li>
+                        <label>
+                            <input type="checkbox" id="todos-exames" class="exame-checkbox" value="todos" checked>
+                            Todos
+                        </label>
+                    </li>
+                    {% for exame in exames_procedimentos %}
+                    <li>
+                        <label>
+                            <input type="checkbox" class="exame-checkbox" value="{{ exame }}" checked>
+                            {{ exame }}
+                        </label>
+                    </li>
+                    {% endfor %}
+                </ul>
+            </div>
+            <div class="filter-actions">
+                <button type="button" id="aplicar-filtros-btn" class="btn-apply">Aplicar Filtros</button>
+                <button type="button" id="reset-filtros-btn" class="btn-reset">Resetar Filtros</button>
+            </div>
+        </div>
+
+        <div class="kpi-container">
+            <div class="kpi-box">
+                <h5>Total de Procedimentos</h5>
+                <p>{{ "{:,.0f}".format(kpis['total_procedimentos']) }}</p>
+                <div class="kpi-label">Período completo</div>
+            </div>
+            <div class="kpi-box">
+                <h5>Serviço Mais Ativo</h5>
+                <p>{{ kpis['servico_mais_utilizado'] }}</p>
+                <div class="kpi-label">Com maior volume</div>
+            </div>
+            <div class="kpi-box">
+                <h5>Exame Mais Realizado</h5>
+                <p>{{ kpis['exame_mais_realizado'] }}</p>
+                <div class="kpi-label">Mais frequente</div>
+            </div>
+        </div>
+
+        <div class="content charts-row">
+            <div class="chart-half">
+                <h4>Distribuição por Serviço</h4>
+                <div id="pie-chart"></div>
+            </div>
+            <div class="chart-half">
+                <h4>Tipos de Procedimento</h4>
+                <div id="bar-chart"></div>
+            </div>
+        </div>
+        <!-- Remova ou comente o bloco antigo duplicado:
+        <div class="content" style="flex-direction: row; gap: 10px;">
+            <div class="chart-container">
+                <h4>Distribuição por Serviço</h4>
+                <div id="pie-chart"></div>
+            
+                <h4>Tipos de Procedimento</h4>
+                <div id="bar-chart"></div>
+            </div>
+        </div>
+        -->
+        <div class="content">
+            <div class="chart-container">
+                <h4>Produção Mensal</h4>
+                <div id="line-chart"></div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="chart-container">
+                <h4>Quantitativo por Serviço Mês a Mês</h4>
+                <div id="stacked-bar-servico-chart"></div>
+                <div style="margin-top: 12px; font-weight: bold; color: #19b8b0; font-size: 1.1rem;">
+                    Total no período: <span id="total-servicos-periodo">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="chart-container">
+                <h4>Matriz de Serviços e Somatórios Anuais</h4>
+                <table id="matriz-servicos">
+                    <thead>
+                        <tr id="matriz-servicos-head">
+                            <th>Serviço</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        <div class="content">
+            <div class="chart-container">
+                <h4>Quantitativo por Exame Mês a Mês</h4>
+                <div id="stacked-bar-chart"></div>
+                <div style="margin-top: 12px; font-weight: bold; color: #19b8b0; font-size: 1.1rem;">
+                    Total no período: <span id="total-exames-periodo">0</span>
+                </div>
+            </div>
+        </div>
+        <div class="content">
+            <div class="chart-container">
+                <h4>Matriz de Exames e Somatórios Anuais</h4>
+                <table id="matriz-exames">
+                    <thead>
+                        <tr id="matriz-exames-head">
+                            <th>Exame / Procedimento</th>
+                            <th>Total</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+            </div>
+        </div>
+        </div><!-- /.page-content -->
+    </div><!-- /.main-container -->
+
+    <!-- Fadeout animation for "Voltar ao Início" -->
+    <div id="fadeout-animation">
+        <div class="loader-ring">
+            <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+            <img src="/static/LOGO HM - NOVA (1).png" alt="Carregando...">
+        </div>
+    </div>
+
+    <script>
+        const dadosMensais = JSON.parse('{{ dados_json|tojson|safe }}') || [];
+
+        // Funções utilitárias
+        function formatarDataBR(date) {
+            return date ? new Date(date).toLocaleDateString('pt-BR') : '';
+        }
+
+        function formatarDataMesAno(date) {
+            if (!date) return '';
+            const d = new Date(date);
+            return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+        }
+
+        function getDataInicial() {
+            const val = document.getElementById('data-inicial').value;
+            return val ? new Date(val) : null;
+        }
+
+        function getDataFinal() {
+            const val = document.getElementById('data-final').value;
+            return val ? new Date(val) : null;
+        }
+
+        // Checkbox logic helpers
+        function atualizarCheckboxTodosServicos() {
+            const checkboxes = document.querySelectorAll('.servico-checkbox:not(#todos-servicos)');
+            const todosChecked = Array.from(checkboxes).every(cb => cb.checked);
+            document.getElementById('todos-servicos').checked = todosChecked;
+        }
+        function atualizarCheckboxTodosExames() {
+            const checkboxes = document.querySelectorAll('.exame-checkbox:not(#todos-exames)');
+            const todosChecked = Array.from(checkboxes).every(cb => cb.checked);
+            document.getElementById('todos-exames').checked = todosChecked;
+        }
+
+        function getServicosSelecionados() {
+            // Corrige: se "Todos" está marcado, retorna TODOS os valores dos checkboxes visíveis
+            const todos = document.getElementById('todos-servicos').checked;
+            const checkboxes = document.querySelectorAll('.servico-checkbox:not(#todos-servicos)');
+            // Se não houver nenhum checkbox, retorna []
+            if (checkboxes.length === 0) return [];
+            // Se "Todos" está marcado, retorna todos os valores dos checkboxes visíveis
+            if (todos) {
+                return Array.from(checkboxes).map(cb => cb.value);
+            } else {
+                // Retorna apenas os marcados
+                const marcados = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+                // Se nenhum marcado, retorna todos (evita sumiço de dados)
+                return marcados.length > 0 ? marcados : Array.from(checkboxes).map(cb => cb.value);
+            }
+        }
+
+        function getExamesSelecionados() {
+            // Corrige: se "Todos" está marcado, retorna TODOS os valores dos checkboxes visíveis
+            const todos = document.getElementById('todos-exames').checked;
+            const checkboxes = document.querySelectorAll('.exame-checkbox:not(#todos-exames)');
+            if (checkboxes.length === 0) return [];
+            if (todos) {
+                return Array.from(checkboxes).map(cb => cb.value);
+            } else {
+                const marcados = Array.from(checkboxes).filter(cb => cb.checked).map(cb => cb.value);
+                return marcados.length > 0 ? marcados : Array.from(checkboxes).map(cb => cb.value);
+            }
+        }
+
+        function getTipoSelecionado() {
+            // Corrige: retorna o valor do select tipo
+            return document.getElementById('tipo').value;
+        }
+
+        // Filtragem robusta
+        function filtrarDados() {
+            const dataInicial = getDataInicial();
+            const dataFinal = getDataFinal();
+            const tipoSelecionado = getTipoSelecionado();
+            const servicosSelecionados = getServicosSelecionados();
+            const examesSelecionados = getExamesSelecionados();
+
+            // Corrige: só filtra se todos os filtros estão preenchidos
+            return dadosMensais.filter(item => {
+                // Corrige para garantir que os campos existem e não são undefined/null
+                const dataRef = item['Mês Referência'] || item['Mês Referncia'];
+                const servico = item['Serviço'] ?? item['serviço'] ?? '';
+                const exame = item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+                const tipo = item['Tipo Procedimento'] ?? item['tipo procedimento'] ?? '';
+                const dt = dataRef ? new Date(dataRef) : null;
+                // Só filtra se dt, servico e exame existirem
+                return (
+                    dt && servico && exame &&
+                    dt >= dataInicial &&
+                    dt <= dataFinal &&
+                    (tipoSelecionado === 'todos' || tipo === tipoSelecionado) &&
+                    servicosSelecionados.includes(servico) &&
+                    examesSelecionados.includes(exame)
+                );
+            });
+        }
+
+        // gráficos
+        function atualizarGraficoLinha() {
+            const dadosFiltrados = filtrarDados();
+            const agrupamento = {};
+            dadosFiltrados.forEach(item => {
+                const chave = formatarDataMesAno(item['Mês Referência']);
+                agrupamento[chave] = (agrupamento[chave] || 0) + item['Quantidade'];
+            });
+            const datasOrdenadas = Object.keys(agrupamento).sort((a, b) => new Date(a) - new Date(b));
+            const quantidades = datasOrdenadas.map(k => agrupamento[k]);
+            Plotly.react('line-chart', [{
+                x: datasOrdenadas,
+                y: quantidades,
+                type: 'scatter',
+                mode: 'lines+markers',
+                line: { shape: 'linear', color: '#19b8b0' }
+            }], {
+                title: 'Produção Mensal',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            });
+        }
+
+        function atualizarGraficoPizza() {
+            const dadosFiltrados = filtrarDados();
+            const porServico = dadosFiltrados.reduce((acc, item) => {
+                acc[item['Serviço']] = (acc[item['Serviço']] || 0) + item['Quantidade'];
+                return acc;
+            }, {});
+            Plotly.react('pie-chart', [{
+                values: Object.values(porServico),
+                labels: Object.keys(porServico),
+                type: 'pie',
+                hole: 0.4
+            }], {
+                title: 'Distribuição por Serviço',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            });
+        }
+
+        function atualizarGraficoBarras() {
+            const dadosFiltrados = filtrarDados();
+            const porTipo = dadosFiltrados.reduce((acc, item) => {
+                acc[item['Tipo Procedimento']] = (acc[item['Tipo Procedimento']] || 0) + item['Quantidade'];
+                return acc;
+            }, {});
+            Plotly.react('bar-chart', [{
+                x: Object.keys(porTipo),
+                y: Object.values(porTipo),
+                type: 'bar'
+            }], {
+                title: 'Quantidade por Tipo de Procedimento',
+                plot_bgcolor: 'rgba(0,0,0,0)',
+                paper_bgcolor: 'rgba(0,0,0,0)'
+            });
+        }
+
+        function atualizarGraficoBarrasEmpilhadas() {
+            const dadosFiltrados = filtrarDados();
+
+            // Agrupamento por exame e mês
+            const agrupamento = {};
+            const totalPorMes = {};
+            let totalPeriodo = 0;
+            dadosFiltrados.forEach(item => {
+                const exame = item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+                const mesAno = formatarDataMesAno(item['Mês Referência']);
+                if (!agrupamento[mesAno]) agrupamento[mesAno] = {};
+                agrupamento[mesAno][exame] = (agrupamento[mesAno][exame] || 0) + item['Quantidade'];
+                totalPorMes[mesAno] = (totalPorMes[mesAno] || 0) + item['Quantidade'];
+                totalPeriodo += item['Quantidade'];
+            });
+
+            // Eixo X: meses ordenados
+            const meses = Object.keys(agrupamento).sort((a, b) => {
+                const [ma, ya] = a.split('/').map(Number);
+                const [mb, yb] = b.split('/').map(Number);
+                return new Date(ya, ma - 1) - new Date(yb, mb - 1);
+            });
+
+            // Eixo Y: exames únicos ordenados
+            const exames = Array.from(
+                new Set(
+                    [].concat(...Object.values(agrupamento).map(obj => Object.keys(obj)))
+                )
+            ).sort();
+
+            // Monta as séries (cada exame é uma barra empilhada)
+            const data = exames.map(exame => ({
+                x: meses,
+                y: meses.map(m => agrupamento[m]?.[exame] || 0),
+                name: exame,
+                type: 'bar',
+                marker: {
+                    line: { width: 1, color: '#fff' }
+                }
+            }));
+
+            // Trace para total (linha)
+            data.push({
+                x: meses,
+                y: meses.map(m => totalPorMes[m] || 0),
+                name: 'Total',
+                type: 'scatter',
+                mode: 'lines+markers+text',
+                line: { color: '#19b8b0', width: 3 },
+                marker: { color: '#19b8b0', size: 8 },
+                text: meses.map(m => totalPorMes[m] > 0 ? totalPorMes[m] : ''),
+                textposition: 'top center',
+                hoverinfo: 'x+y+name'
+            });
+
+            document.getElementById('total-exames-periodo').textContent = totalPeriodo.toLocaleString('pt-BR');
+
+            Plotly.react('stacked-bar-chart', data, {
+                title: '',
+                barmode: 'stack',
+                xaxis: {
+                    title: '',
+                    tickangle: -45,
+                    tickfont: { size: 13, color: '#666' },
+                    showgrid: false,
+                    zeroline: false
+                },
+                yaxis: {
+                    title: '',
+                    gridcolor: '#e0e0e0',
+                    zeroline: false,
+                    tickfont: { size: 13, color: '#666' }
+                },
+                plot_bgcolor: '#fff',
+                paper_bgcolor: '#fff',
+                legend: {
+                    orientation: 'v',
+                    x: 1.02,
+                    y: 1,
+                    xanchor: 'left',
+                    yanchor: 'top',
+                    font: { size: 13 }
+                },
+                hovermode: 'x unified',
+                margin: { l: 40, r: 20, t: 20, b: 60 }
+            }, {
+                responsive: true
+            });
+        }
+
+        function atualizarGraficoBarrasEmpilhadasServico() {
+            const dadosFiltrados = filtrarDados();
+
+            // Agrupamento por serviço e mês
+            const agrupamento = {};
+            const totalPorMes = {};
+            let totalPeriodo = 0;
+            dadosFiltrados.forEach(item => {
+                const servico = item['Serviço'] ?? item['serviço'] ?? '';
+                const mesAno = formatarDataMesAno(item['Mês Referência']);
+                if (!agrupamento[mesAno]) agrupamento[mesAno] = {};
+                agrupamento[mesAno][servico] = (agrupamento[mesAno][servico] || 0) + item['Quantidade'];
+                totalPorMes[mesAno] = (totalPorMes[mesAno] || 0) + item['Quantidade'];
+                totalPeriodo += item['Quantidade'];
+            });
+
+            // Eixo X: meses ordenados
+            const meses = Object.keys(agrupamento).sort((a, b) => {
+                const [ma, ya] = a.split('/').map(Number);
+                const [mb, yb] = b.split('/').map(Number);
+                return new Date(ya, ma - 1) - new Date(yb, mb - 1);
+            });
+
+            // Eixo Y: serviços únicos ordenados
+            const servicos = Array.from(
+                new Set(
+                    [].concat(...Object.values(agrupamento).map(obj => Object.keys(obj)))
+                )
+            ).sort();
+
+            // Monta as séries (cada serviço é uma barra empilhada)
+            const data = servicos.map(servico => ({
+                x: meses,
+                y: meses.map(m => agrupamento[m]?.[servico] || 0),
+                name: servico,
+                type: 'bar',
+                marker: {
+                    line: { width: 1, color: '#fff' }
+                }
+            }));
+
+            // Trace para total (linha)
+            data.push({
+                x: meses,
+                y: meses.map(m => totalPorMes[m] || 0),
+                name: 'Total',
+                type: 'scatter',
+                mode: 'lines+markers+text',
+                line: { color: '#19b8b0', width: 3 },
+                marker: { color: '#19b8b0', size: 8 },
+                text: meses.map(m => totalPorMes[m] > 0 ? totalPorMes[m] : ''),
+                textposition: 'top center',
+                hoverinfo: 'x+y+name'
+            });
+
+            document.getElementById('total-servicos-periodo').textContent = totalPeriodo.toLocaleString('pt-BR');
+
+            Plotly.react('stacked-bar-servico-chart', data, {
+                title: '',
+                barmode: 'stack',
+                xaxis: {
+                    title: '',
+                    tickangle: -45,
+                    tickfont: { size: 13, color: '#666' },
+                    showgrid: false,
+                    zeroline: false
+                },
+                yaxis: {
+                    title: '',
+                    gridcolor: '#e0e0e0',
+                    zeroline: false,
+                    tickfont: { size: 13, color: '#666' }
+                },
+                plot_bgcolor: '#fff',
+                paper_bgcolor: '#fff',
+                legend: {
+                    orientation: 'v',
+                    x: 1.02,
+                    y: 1,
+                    xanchor: 'left',
+                    yanchor: 'top',
+                    font: { size: 13 }
+                },
+                hovermode: 'x unified',
+                margin: { l: 40, r: 20, t: 20, b: 60 }
+            }, {
+                responsive: true
+            });
+        }
+
+        // Matrizes
+        function atualizarMatrizServicos() {
+            const dadosFiltrados = filtrarDados();
+
+            // Determina meses e anos do período selecionado (datas inicial/final)
+            const meses = [];
+            const anos = [];
+            const dataInicial = getDataInicial();
+            const dataFinal = getDataFinal();
+            if (dataInicial && dataFinal) {
+                let d = new Date(dataInicial.getFullYear(), dataInicial.getMonth(), 1);
+                const end = new Date(dataFinal.getFullYear(), dataFinal.getMonth(), 1);
+                let anoAtual = null;
+                while (d <= end) {
+                    const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                    meses.push(mesAno);
+                    if (anoAtual !== d.getFullYear()) {
+                        anos.push(d.getFullYear());
+                        anoAtual = d.getFullYear();
+                    }
+                    d.setMonth(d.getMonth() + 1);
+                }
+            }
+
+            // Aplica filtro de serviços selecionados
+            let servicosSelecionados = getServicosSelecionados().filter(s => !!s && s !== 'todos');
+            if (!servicosSelecionados.length) {
+                servicosSelecionados = Array.from(new Set(
+                    dadosFiltrados
+                        .map(item => (item['Serviço'] ?? item['serviço'] ?? ''))
+                        .filter(s => !!s)
+                ));
+            }
+
+            // Monta o cabeçalho da tabela
+            const headRow = document.getElementById('matriz-servicos-head');
+            while (headRow.children.length > 0) headRow.removeChild(headRow.children[0]);
+            const thServico = document.createElement('th');
+            thServico.textContent = 'Serviço';
+            headRow.appendChild(thServico);
+
+            // Adiciona colunas de cada mês e total do ano
+            let anoAnterior = null;
+            meses.forEach((mes, idx) => {
+                const [mesNum, anoNum] = mes.split('/');
+                const th = document.createElement('th');
+                th.textContent = mes;
+                headRow.appendChild(th);
+
+                // Se é o último mês do ano ou o último mês do período, adiciona coluna de total do ano
+                const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
+                if (anoNum !== proximoAno) {
+                    const thAno = document.createElement('th');
+                    thAno.textContent = `Total ${anoNum}`;
+                    headRow.appendChild(thAno);
+                }
+            });
+            // Adiciona coluna de total geral
+            const thTotal = document.createElement('th');
+            thTotal.textContent = 'Total';
+            headRow.appendChild(thTotal);
+
+            // Agrupa por serviço, mês e ano
+            const agrupamento = {};
+            dadosFiltrados.forEach(item => {
+                let servico = item['Serviço'];
+                if (servico === undefined || servico === null || servico === '') servico = item['serviço'] || '';
+                if (!servico) return;
+                const dataRef = item['Mês Referência'] || item['Mês Referncia'];
+                const d = dataRef ? new Date(dataRef) : null;
+                if (!d || isNaN(d)) return;
+                const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                const ano = d.getFullYear();
+                if (!agrupamento[servico]) agrupamento[servico] = { meses: {}, anos: {}, total: 0 };
+                agrupamento[servico].meses[mesAno] = (agrupamento[servico].meses[mesAno] ?? 0) + (item['Quantidade'] ?? 0);
+                agrupamento[servico].anos[ano] = (agrupamento[servico].anos[ano] ?? 0) + (item['Quantidade'] ?? 0);
+                agrupamento[servico].total += (item['Quantidade'] ?? 0);
+            });
+
+            // Monta o corpo da tabela
+            const tbody = document.querySelector('#matriz-servicos tbody');
+            tbody.innerHTML = '';
+            servicosSelecionados.forEach(servico => {
+                const valores = agrupamento[servico];
+                if (!valores || valores.total === 0) return;
+                let linha = `<td><b>${servico}</b></td>`;
+                let anoAcumulado = 0;
+                let anoAtual = null;
+                meses.forEach((mes, idx) => {
+                    const [mesNum, anoNum] = mes.split('/');
+                    const qtd = valores.meses[mes] ? valores.meses[mes] : 0;
+                    linha += `<td>${qtd.toLocaleString()}</td>`;
+                    if (anoAtual === null) anoAtual = anoNum;
+                    anoAcumulado += qtd;
+                    const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
+                    if (anoNum !== proximoAno) {
+                        linha += `<td><b>${valores.anos[parseInt(anoNum)] ? valores.anos[parseInt(anoNum)].toLocaleString() : '0'}</b></td>`;
+                        anoAcumulado = 0;
+                        anoAtual = proximoAno;
+                    }
+                });
+                linha += `<td><b>${valores.total ? valores.total.toLocaleString() : '0'}</b></td>`;
+                const tr = document.createElement('tr');
+                tr.classList.add('servico-row');
+                tr.innerHTML = linha;
+                tbody.appendChild(tr);
+            });
+        }
+
+        function atualizarMatrizExames() {
+            const dadosFiltrados = filtrarDados();
+
+            // Determina meses e anos do período selecionado (datas inicial/final)
+            const meses = [];
+            const anos = [];
+            const dataInicial = getDataInicial();
+            const dataFinal = getDataFinal();
+            if (dataInicial && dataFinal) {
+                let d = new Date(dataInicial.getFullYear(), dataInicial.getMonth(), 1);
+                const end = new Date(dataFinal.getFullYear(), dataFinal.getMonth(), 1);
+                let anoAtual = null;
+                while (d <= end) {
+                    const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                    meses.push(mesAno);
+                    if (anoAtual !== d.getFullYear()) {
+                        anos.push(d.getFullYear());
+                        anoAtual = d.getFullYear();
+                    }
+                    d.setMonth(d.getMonth() + 1);
+                }
+            }
+
+            // Aplica filtro de exames selecionados
+            let examesSelecionados = getExamesSelecionados().filter(e => !!e && e !== 'todos');
+            if (!examesSelecionados.length) {
+                examesSelecionados = Array.from(new Set(
+                    dadosFiltrados
+                        .map(item => (item['Exame/Procedimento'] ?? item['Exame'] ?? ''))
+                        .filter(e => !!e)
+                ));
+            }
+
+            // Monta o cabeçalho da tabela
+            const headRow = document.getElementById('matriz-exames-head');
+            while (headRow.children.length > 0) headRow.removeChild(headRow.children[0]);
+            const thExame = document.createElement('th');
+            thExame.textContent = 'Exame / Procedimento';
+            headRow.appendChild(thExame);
+
+            // Adiciona colunas de cada mês e total do ano
+            meses.forEach((mes, idx) => {
+                const [mesNum, anoNum] = mes.split('/');
+                const th = document.createElement('th');
+                th.textContent = mes;
+                headRow.appendChild(th);
+
+                const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
+                if (anoNum !== proximoAno) {
+                    const thAno = document.createElement('th');
+                    thAno.textContent = `Total ${anoNum}`;
+                    headRow.appendChild(thAno);
+                }
+            });
+            // Adiciona coluna de total geral
+            const thTotal = document.createElement('th');
+            thTotal.textContent = 'Total';
+            headRow.appendChild(thTotal);
+
+            // Agrupa por exame, mês e ano
+            const agrupamento = {};
+            dadosFiltrados.forEach(item => {
+                let exame = item['Exame/Procedimento'];
+                if (exame === undefined || exame === null || exame === '') exame = item['Exame'] || '';
+                if (!exame) return;
+                const dataRef = item['Mês Referência'] || item['Mês Referncia'];
+                const d = dataRef ? new Date(dataRef) : null;
+                if (!d || isNaN(d)) return;
+                const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                const ano = d.getFullYear();
+                if (!agrupamento[exame]) agrupamento[exame] = { meses: {}, anos: {}, total: 0 };
+                agrupamento[exame].meses[mesAno] = (agrupamento[exame].meses[mesAno] ?? 0) + (item['Quantidade'] ?? 0);
+                agrupamento[exame].anos[ano] = (agrupamento[exame].anos[ano] ?? 0) + (item['Quantidade'] ?? 0);
+                agrupamento[exame].total += (item['Quantidade'] ?? 0);
+            });
+
+            // Monta o corpo da tabela
+            const tbody = document.querySelector('#matriz-exames tbody');
+            tbody.innerHTML = '';
+            examesSelecionados.forEach(exame => {
+                const valores = agrupamento[exame];
+                if (!valores || valores.total === 0) return;
+                let linha = `<td><b>${exame}</b></td>`;
+                let anoAcumulado = 0;
+                let anoAtual = null;
+                meses.forEach((mes, idx) => {
+                    const [mesNum, anoNum] = mes.split('/');
+                    const qtd = valores.meses[mes] ? valores.meses[mes] : 0;
+                    linha += `<td>${qtd.toLocaleString()}</td>`;
+                    if (anoAtual === null) anoAtual = anoNum;
+                    anoAcumulado += qtd;
+                    const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
+                    if (anoNum !== proximoAno) {
+                        linha += `<td><b>${valores.anos[parseInt(anoNum)] ? valores.anos[parseInt(anoNum)].toLocaleString() : '0'}</b></td>`;
+                        anoAcumulado = 0;
+                        anoAtual = proximoAno;
+                    }
+                });
+                linha += `<td><b>${valores.total ? valores.total.toLocaleString() : '0'}</b></td>`;
+                const tr = document.createElement('tr');
+                tr.classList.add('exame-row');
+                tr.innerHTML = linha;
+                tbody.appendChild(tr);
+            });
+        }
+
+        // Atualiza os KPIs conforme os filtros
+        function atualizarKPIs() {
+            const dadosFiltrados = filtrarDados();
+
+            // Total de procedimentos
+            const totalProcedimentos = dadosFiltrados.reduce((acc, item) => acc + (item['Quantidade'] || 0), 0);
+
+            // Serviço mais ativo
+            const servicoCount = {};
+            dadosFiltrados.forEach(item => {
+                const servico = item['Serviço'] ?? item['serviço'] ?? '';
+                servicoCount[servico] = (servicoCount[servico] || 0) + (item['Quantidade'] || 0);
+            });
+            let servicoMaisAtivo = '-';
+            let maxServico = 0;
+            Object.entries(servicoCount).forEach(([servico, qtd]) => {
+                if (qtd > maxServico) {
+                    maxServico = qtd;
+                    servicoMaisAtivo = servico;
+                }
+            });
+
+            // Exame mais realizado
+            const exameCount = {};
+            dadosFiltrados.forEach(item => {
+                const exame = item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+                exameCount[exame] = (exameCount[exame] || 0) + (item['Quantidade'] || 0);
+            });
+            let exameMaisRealizado = '-';
+            let maxExame = 0;
+            Object.entries(exameCount).forEach(([exame, qtd]) => {
+                if (qtd > maxExame) {
+                    maxExame = qtd;
+                    exameMaisRealizado = exame;
+                }
+            });
+
+            // Atualiza os elementos na tela
+            const kpiTotal = document.querySelector('.kpi-box:nth-child(1) p');
+            if (kpiTotal) kpiTotal.textContent = totalProcedimentos.toLocaleString('pt-BR');
+            const kpiServico = document.querySelector('.kpi-box:nth-child(2) p');
+            if (kpiServico) kpiServico.textContent = servicoMaisAtivo;
+            const kpiExame = document.querySelector('.kpi-box:nth-child(3) p');
+            if (kpiExame) kpiExame.textContent = exameMaisRealizado;
+        }
+
+        // Função para limpar gráficos Plotly antes de redesenhar (evita sobreposição)
+        function limparGraficosPlotly() {
+            ['pie-chart', 'bar-chart', 'line-chart', 'stacked-bar-chart', 'stacked-bar-servico-chart'].forEach(id => {
+                const el = document.getElementById(id);
+                if (el) {
+                    Plotly.purge(el);
+                    el.innerHTML = '';
+                }
+            });
+        }
+
+        // Atualiza todos os gráficos
+        function atualizarTodosGraficos() {
+            try {
+                limparGraficosPlotly();
+                atualizarKPIs();
+                atualizarGraficoLinha();
+                atualizarGraficoPizza();
+                atualizarGraficoBarras();
+                atualizarGraficoBarrasEmpilhadas();
+                atualizarGraficoBarrasEmpilhadasServico();
+                atualizarMatrizServicos();
+                atualizarMatrizExames();
+            } catch (e) {
+                console.error("Erro ao atualizar gráficos:", e);
+            }
+        }
+
+        // Aplica os filtros: recalcula as listas de serviços/exames a partir da MESMA
+        // seleção capturada no início (evita que um rebuild encadeie e "coma" o outro,
+        // que era a causa das opções sumirem a cada clique) e redesenha os gráficos.
+        function aplicarFiltros() {
+            const servicosAtuais = getServicosSelecionados();
+            const examesAtuais = getExamesSelecionados();
+            atualizarListaExamesPorServico(examesAtuais);
+            atualizarListaServicosPorExame(servicosAtuais);
+            atualizarTodosGraficos();
+        }
+
+        // Restaura filtros (datas, tipo e listas de serviço/exame) ao estado inicial da página
+        let filtrosPadrao = null;
+        function capturarFiltrosPadrao() {
+            filtrosPadrao = {
+                dataInicial: document.getElementById('data-inicial').value,
+                dataFinal: document.getElementById('data-final').value,
+                tipo: document.getElementById('tipo').value,
+                servicosHTML: document.getElementById('servicos-list').innerHTML,
+                examesHTML: document.getElementById('exames-list').innerHTML
+            };
+        }
+        function resetarFiltros() {
+            if (!filtrosPadrao) return;
+            document.getElementById('data-inicial').value = filtrosPadrao.dataInicial;
+            document.getElementById('data-final').value = filtrosPadrao.dataFinal;
+            document.getElementById('tipo').value = filtrosPadrao.tipo;
+            document.getElementById('servicos-list').innerHTML = filtrosPadrao.servicosHTML;
+            document.getElementById('exames-list').innerHTML = filtrosPadrao.examesHTML;
+            configurarEventosCheckboxes();
+            atualizarTodosGraficos();
+        }
+
+        // Eventos
+        function configurarEventos() {
+            document.getElementById('aplicar-filtros-btn').addEventListener('click', aplicarFiltros);
+            document.getElementById('reset-filtros-btn').addEventListener('click', resetarFiltros);
+            // Datas, tipo e checkboxes só são aplicados ao clicar em "Aplicar Filtros",
+            // evitando que a cada mudança as opções das outras listas sumam.
+        }
+
+        // Atualiza a lista de exames conforme os serviços selecionados.
+        // examesParaManter (opcional): seleção de exames capturada ANTES do rebuild,
+        // usada para não perder a escolha do usuário nem encadear com o rebuild da lista de serviços.
+        function atualizarListaExamesPorServico(examesParaManter) {
+            const servicosSelecionados = getServicosSelecionados();
+            const examesFiltrados = new Set();
+            dadosMensais.forEach(item => {
+                // Corrige para garantir que os campos existem e não são undefined/null
+                const servico = item['Serviço'] ?? item['serviço'] ?? '';
+                const exame = item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+                if (servicosSelecionados.includes(servico)) {
+                    examesFiltrados.add(exame);
+                }
+            });
+
+            // Salva exames atualmente selecionados
+            const examesSelecionados = examesParaManter || getExamesSelecionados();
+
+            // Atualiza a lista de exames no DOM
+            const examesList = document.getElementById('exames-list');
+            examesList.innerHTML = `
+                <li>
+                    <label>
+                        <input type="checkbox" id="todos-exames" class="exame-checkbox" value="todos">
+                        Todos
+                    </label>
+                </li>
+            `;
+            Array.from(examesFiltrados).sort().forEach(exame => {
+                const checked = examesSelecionados.includes(exame) ? 'checked' : '';
+                examesList.innerHTML += `
+                    <li>
+                        <label>
+                            <input type="checkbox" class="exame-checkbox" value="${exame}" ${checked}>
+                            ${exame}
+                        </label>
+                    </li>
+                `;
+            });
+
+            // Se todos exames estão selecionados, marque o "Todos"
+            setTimeout(() => {
+                atualizarCheckboxTodosExames();
+            }, 0);
+
+            configurarEventosCheckboxes();
+        }
+
+        // Atualiza a lista de serviços conforme os exames selecionados.
+        // servicosParaManter (opcional): seleção de serviços capturada ANTES do rebuild,
+        // usada para não perder a escolha do usuário nem encadear com o rebuild da lista de exames.
+        function atualizarListaServicosPorExame(servicosParaManter) {
+            const examesSelecionados = getExamesSelecionados();
+            const servicosFiltrados = new Set();
+            dadosMensais.forEach(item => {
+                // Corrige para garantir que os campos existem e não são undefined/null
+                const servico = item['Serviço'] ?? item['serviço'] ?? '';
+                const exame = item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+                if (examesSelecionados.includes(exame)) {
+                    servicosFiltrados.add(servico);
+                }
+            });
+
+            // Salva serviços atualmente selecionados
+            const servicosSelecionados = servicosParaManter || getServicosSelecionados();
+
+            // Atualiza a lista de serviços no DOM
+            const servicosList = document.getElementById('servicos-list');
+            servicosList.innerHTML = `
+                <li>
+                    <label>
+                        <input type="checkbox" id="todos-servicos" class="servico-checkbox" value="todos">
+                        Todos
+                    </label>
+                </li>
+            `;
+            Array.from(servicosFiltrados).sort().forEach(servico => {
+                const checked = servicosSelecionados.includes(servico) ? 'checked' : '';
+                servicosList.innerHTML += `
+                    <li>
+                        <label>
+                            <input type="checkbox" class="servico-checkbox" value="${servico}" ${checked}>
+                            ${servico}
+                        </label>
+                    </li>
+                `;
+            });
+
+            // Se todos serviços estão selecionados, marque o "Todos"
+            setTimeout(() => {
+                atualizarCheckboxTodosServicos();
+            }, 0);
+
+            configurarEventosCheckboxes();
+        }
+
+        // Atualiza eventos dos checkboxes para sincronizar listas e gráficos
+        function configurarEventosCheckboxes() {
+            const servicosTodosCheckbox = document.getElementById('todos-servicos');
+            const examesTodosCheckbox = document.getElementById('todos-exames');
+
+            // Serviços: "Todos" — marca/desmarca os individuais e sincroniza o indicador.
+            // A lista de exames e os gráficos só são recalculados ao clicar em "Aplicar Filtros".
+            if (servicosTodosCheckbox) {
+                servicosTodosCheckbox.onchange = function () {
+                    const checkboxes = document.querySelectorAll('.servico-checkbox:not(#todos-servicos)');
+                    checkboxes.forEach(cb => cb.checked = this.checked);
+                    atualizarCheckboxTodosServicos();
+                };
+            }
+            // Exames: "Todos"
+            if (examesTodosCheckbox) {
+                examesTodosCheckbox.onchange = function () {
+                    const checkboxes = document.querySelectorAll('.exame-checkbox:not(#todos-exames)');
+                    checkboxes.forEach(cb => cb.checked = this.checked);
+                    atualizarCheckboxTodosExames();
+                };
+            }
+
+            // Serviços individuais
+            document.querySelectorAll('.servico-checkbox:not(#todos-servicos)').forEach(cb => {
+                cb.onchange = () => {
+                    atualizarCheckboxTodosServicos();
+                };
+            });
+
+            // Exames individuais
+            document.querySelectorAll('.exame-checkbox:not(#todos-exames)').forEach(cb => {
+                cb.onchange = () => {
+                    atualizarCheckboxTodosExames();
+                };
+            });
+        }
+
+        // Inicialização
+        document.addEventListener('DOMContentLoaded', () => {
+            configurarEventos();
+            configurarEventosCheckboxes();
+            atualizarListaExamesPorServico();
+            atualizarListaServicosPorExame();
+            capturarFiltrosPadrao();
+            atualizarTodosGraficos();
+            // Esconde fadeout ao restaurar do bfcache
+            window.addEventListener('pageshow', function (e) {
+                const fade = document.getElementById('fadeout-animation');
+                if (fade) { fade.classList.remove('active'); fade.style.display = 'none'; }
+            });
+            // Botão voltar para início com animação de fadeout
+            const backBtn = document.getElementById('back-button');
+            if (backBtn) {
+                backBtn.addEventListener('click', function (e) {
+                    e.preventDefault();
+                    const fade = document.getElementById('fadeout-animation');
+                    if (fade) {
+                        fade.style.display = 'flex';
+                        // Força reflow para garantir transição
+                        void fade.offsetWidth;
+                        fade.classList.add('active');
+                        setTimeout(() => {
+                            window.location.href = '/';
+                        }, 1200);
+                    } else {
+                        window.location.href = '/';
+                    }
+                });
+            }
+            // Depuração: veja se dadosMensais está correto
+            console.log("dadosMensais:", dadosMensais);
+        });
+    </script>
+</body>
+</html>

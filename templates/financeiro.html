@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="pt-BR">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Financeiro</title>
+        <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <style>
+            *, *::before, *::after { box-sizing: border-box; }
+            body, html {
+                height: 100%;
+                font-family: 'DM Sans', sans-serif;
+                margin: 0;
+                background-color: #f0f4f5;
+                color: #38464D;
+            }
+            .site-header {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                background: #fff;
+                border-bottom: 3px solid #19b8b0;
+                box-shadow: 0 2px 8px rgba(0,0,0,.07);
+                padding: 14px 28px;
+                gap: 20px;
+            }
+            .header-brand {
+                display: flex;
+                align-items: center;
+                gap: .85rem;
+            }
+            .header-logo {
+                height: 64px;
+                object-fit: contain;
+            }
+            .header-brand h1 {
+                font-family: 'Syne', sans-serif;
+                font-size: 1.2rem;
+                font-weight: 800;
+                color: #38464D;
+                letter-spacing: .04em;
+                text-transform: uppercase;
+                margin: 0 0 2px 0;
+            }
+            .header-brand span {
+                font-size: .75rem;
+                color: #6b7f86;
+                font-weight: 400;
+                letter-spacing: .06em;
+                text-transform: uppercase;
+            }
+            .btn-back {
+                font-family: 'Syne', sans-serif;
+                font-size: .75rem;
+                font-weight: 700;
+                letter-spacing: .08em;
+                text-transform: uppercase;
+                background: #19b8b0;
+                color: #fff;
+                border: none;
+                border-radius: 6px;
+                padding: 10px 20px;
+                cursor: pointer;
+                transition: background .2s;
+                white-space: nowrap;
+                text-decoration: none;
+                display: inline-block;
+            }
+            .btn-back:hover { background: #007C6B; }
+            .page-content { padding: 24px 28px 32px; }
+            .content {
+                display: flex;
+                justify-content: space-between;
+                gap: 20px;
+                margin-bottom: 22px;
+            }
+            .filters {
+                display: flex;
+                flex-wrap: wrap;
+                gap: 20px;
+                background: #fff;
+                border: 1px solid #dde4e6;
+                border-radius: 10px;
+                padding: 18px 24px 14px;
+                margin-bottom: 22px;
+            }
+            .filter-group {
+                display: flex;
+                flex-direction: column;
+                min-width: 200px;
+            }
+            label {
+                font-family: 'DM Sans', sans-serif;
+                font-size: .72rem;
+                font-weight: 500;
+                color: #6b7f86;
+                text-transform: uppercase;
+                letter-spacing: .06em;
+                margin-bottom: .35rem;
+            }
+            input[type="date"], select {
+                padding: .5rem .75rem;
+                font-family: 'DM Sans', sans-serif;
+                font-size: .875rem;
+                border: 1px solid #dde4e6;
+                border-radius: 6px;
+                width: 100%;
+                background: #f0f4f5;
+                color: #38464D;
+                outline: none;
+            }
+            input[type="date"]:focus, select:focus { border-color: #19b8b0; }
+            .kpi-container {
+                display: flex;
+                gap: 16px;
+                margin-bottom: 22px;
+                flex-wrap: wrap;
+            }
+            .kpi-box {
+                flex: 1;
+                min-width: 200px;
+                padding: 20px 16px;
+                border-radius: 10px;
+                text-align: center;
+                color: #fff;
+            }
+            .kpi-box:nth-child(1) { background: #19b8b0; }
+            .kpi-box:nth-child(2) { background: #1a7a6e; }
+            .kpi-box:nth-child(3) { background: #e07b39; }
+            .kpi-box h5 {
+                font-family: 'DM Sans', sans-serif;
+                font-size: .85rem;
+                font-weight: 400;
+                letter-spacing: .04em;
+                text-transform: uppercase;
+                margin: 0 0 8px;
+                opacity: .9;
+            }
+            .kpi-box p {
+                font-family: 'Syne', sans-serif;
+                font-size: 1.6rem;
+                font-weight: 800;
+                margin: 0 0 4px;
+                line-height: 1.1;
+                color: #fff;
+            }
+            .kpi-box p.description {
+                font-family: 'DM Sans', sans-serif;
+                font-size: .78rem;
+                opacity: .8;
+                margin-top: 4px;
+            }
+            .chart-container {
+                margin-bottom: 22px;
+                background: #fff;
+                border: 1px solid #dde4e6;
+                border-radius: 10px;
+                padding: 24px 20px;
+            }
+            .chart-container h4 {
+                font-family: 'DM Sans', sans-serif;
+                font-size: .95rem;
+                font-weight: 500;
+                color: #6b7f86;
+                margin: 0 0 14px;
+                text-transform: uppercase;
+                letter-spacing: .05em;
+            }
+            /* Lean loader */
+            #loader-overlay {
+                display: none;
+                position: fixed;
+                inset: 0;
+                z-index: 9999;
+                background: rgba(38,50,56,.45);
+                backdrop-filter: blur(2px);
+                align-items: center;
+                justify-content: center;
+            }
+            #loader-overlay.active { display: flex; }
+            .loader-ring {
+                position: relative;
+                width: 180px;
+                height: 180px;
+            }
+            .loader-ring svg {
+                position: absolute;
+                inset: 0;
+                width: 100%;
+                height: 100%;
+                animation: spin 1.1s linear infinite;
+            }
+            .loader-ring svg circle {
+                fill: none;
+                stroke: #19b8b0;
+                stroke-width: 4;
+                stroke-linecap: round;
+                stroke-dasharray: 200;
+                stroke-dashoffset: 50;
+            }
+            .loader-ring img {
+                position: absolute;
+                inset: 0;
+                margin: auto;
+                width: 140px;
+                height: 140px;
+                object-fit: contain;
+                border-radius: 50%;
+                background: #fff;
+                padding: 10px;
+            }
+            @keyframes spin { to { transform: rotate(360deg); } }
+        </style>
+    </head>
+    <body>
+        <div id="loader-overlay">
+            <div class="loader-ring">
+                <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+                <img src="/static/LOGO HM - NOVA (1).png" alt="Carregando...">
+            </div>
+        </div>
+        <div class="site-header">
+            <div class="header-brand">
+                <img src="/static/LOGO HM E SESA - NOVA (1).png" class="header-logo" alt="Logo">
+                <div>
+                    <h1>Financeiro</h1>
+                    <span>Painel de acompanhamento</span>
+                </div>
+            </div>
+            <button id="btn-voltar" class="btn-back">Voltar ao Início</button>
+        </div>
+        <div class="page-content">
+
+        <!-- Filters -->
+        <div class="filters">
+            <div class="filter-group">
+                <label for="data-inicial">Data Inicial:</label>
+                <input type="date" id="data-inicial" value="{{ data_inicial }}" onchange="atualizarDados()">
+            </div>
+            <div class="filter-group">
+                <label for="data-final">Data Final:</label>
+                <input type="date" id="data-final" value="{{ data_final }}" onchange="atualizarDados()">
+            </div>
+            <div class="filter-group">
+                <label for="fonte-despesa">Fonte do Recurso:</label>
+                <select id="fonte-despesa" onchange="atualizarDados()">
+                    <option value="todos">Todos</option>
+                    {% for fonte in fontes_despesa %}
+                    <option value="{{ fonte }}">{{ fonte }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="natureza-despesa">Natureza da Despesa:</label>
+                <select id="natureza-despesa" onchange="atualizarDados()">
+                    <option value="todos">Todos</option>
+                    {% for natureza in naturezas_despesa %}
+                    <option value="{{ natureza }}">{{ natureza }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
+                <label for="despesa">Despesa:</label>
+                <select id="despesa" onchange="atualizarDados()">
+                    <option value="todos">Todos</option>
+                    {% for despesa in despesas %}
+                    <option value="{{ despesa }}">{{ despesa }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <!-- KPIs -->
+        <div class="kpi-container">
+            <div class="kpi-box">
+                <h5>Maior Despesa</h5>
+                <p>R$ {{ "{:,.2f}".format(maior_despesa['valor']).replace(',', 'X').replace('.', ',').replace('X', '.') }}</p>
+                <p class="description">{{ maior_despesa['descricao'] }}</p>
+            </div>
+            <div class="kpi-box">
+                <h5>Valor Médio</h5>
+                <p>R$ {{ "{:,.2f}".format(valor_medio).replace(',', 'X').replace('.', ',').replace('X', '.') }}</p>
+            </div>
+            <div class="kpi-box">
+                <h5>Valor Total</h5>
+                <p>R$ {{ "{:,.2f}".format(valor_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}</p>
+            </div>
+        </div>
+
+        <!-- Bar Chart -->
+        <div class="chart-container">
+            <h4>Valores por Mês</h4>
+            <div id="bar-chart"></div>
+        </div>
+
+        <script>
+            function formatValue(value) {
+                if (value >= 1_000_000) {
+                    return `R$ ${(value / 1_000_000).toFixed(2).replace('.', ',')} Mi`;
+                } else if (value >= 1_000) {
+                    return `R$ ${(value / 1_000).toFixed(2).replace('.', ',')} mil`;
+                } else {
+                    return `R$ ${value.toFixed(2).replace('.', ',')}`;
+                }
+            }
+
+            function renderStackedBarChart(data) {
+                let meses = [];
+                if (data['MesReferencia']) {
+                    meses = data['MesReferencia'].slice();
+                    // NÃO ordene, apenas pegue os últimos 12 meses na ordem original
+                    if (meses.length > 12) {
+                        meses = meses.slice(-12);
+                    }
+                }
+
+                const despesas = Object.keys(data).filter(key => key !== 'MesReferencia' && key !== 'Total');
+                const traces = despesas.map(despesa => {
+                    let valores = data[despesa] || [];
+                    // Ajusta para pegar apenas os 12 últimos valores
+                    if (valores.length > 12) {
+                        valores = valores.slice(-12);
+                    }
+                    // Garante que o array de valores tenha o mesmo tamanho que meses
+                    if (valores.length < meses.length) {
+                        valores = Array(meses.length - valores.length).fill(0).concat(valores);
+                    } else if (valores.length > meses.length) {
+                        valores = valores.slice(-meses.length);
+                    }
+                    return {
+                        x: meses,
+                        y: valores,
+                        name: despesa,
+                        type: 'bar',
+                        hoverinfo: 'text',
+                        text: valores.map((value, index) => value > 0 ? `${despesa}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''),
+                        marker: { opacity: 0.8 }
+                    };
+                });
+
+                let total = data['Total'] || [];
+                if (total.length > 12) {
+                    total = total.slice(-12);
+                }
+                if (total.length < meses.length) {
+                    total = Array(meses.length - total.length).fill(0).concat(total);
+                } else if (total.length > meses.length) {
+                    total = total.slice(-meses.length);
+                }
+                const totalTrace = {
+                    x: meses,
+                    y: total,
+                    name: 'Total',
+                    type: 'scatter',
+                    mode: 'lines+markers',
+                    line: { color: '#FF5733', width: 2 },
+                    marker: { size: 8 },
+                    hoverinfo: 'text',
+                    text: total.map(value => `Total: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
+                };
+
+                const layout = {
+                    title: 'Despesas por Mês (Empilhado)',
+                    barmode: 'stack',
+                    xaxis: { 
+                        title: 'Mês',
+                        tickangle: -45,
+                        automargin: true
+                    },
+                    yaxis: { 
+                        title: 'Valor Total (R$)', 
+                        tickformat: '~s',
+                        tickprefix: 'R$ ' 
+                    },
+                    showlegend: false,
+                    plot_bgcolor: 'rgba(0,0,0,0)',
+                    paper_bgcolor: 'rgba(0,0,0,0)'
+                };
+
+                Plotly.newPlot('bar-chart', [...traces, totalTrace], layout);
+            }
+
+            function atualizarDados() {
+                const dataInicial = document.getElementById('data-inicial').value;
+                const dataFinal = document.getElementById('data-final').value;
+                const fonteDespesa = document.getElementById('fonte-despesa').value;
+                const naturezaDespesa = document.getElementById('natureza-despesa').value;
+                const despesa = document.getElementById('despesa').value;
+
+                fetch('/financeiro', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        data_inicial: dataInicial,
+                        data_final: dataFinal,
+                        fonte_despesa: fonteDespesa,
+                        natureza_despesa: naturezaDespesa,
+                        despesa: despesa
+                    }),
+                })
+                .then(response => response.json())
+                .then(data => {
+                    document.querySelector('.kpi-box:nth-child(1) p').textContent = `R$ ${data.maior_despesa.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                    document.querySelector('.kpi-box:nth-child(1) .description').textContent = data.maior_despesa.descricao;
+                    document.querySelector('.kpi-box:nth-child(2) p').textContent = `R$ ${data.valor_medio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                    document.querySelector('.kpi-box:nth-child(3) p').textContent = `R$ ${data.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
+                    renderStackedBarChart(data.despesas_por_mes);
+                })
+                .catch(error => {
+                    console.error('Erro ao atualizar dados:', error);
+                });
+            }
+
+            // bfcache fix
+            window.addEventListener('pageshow', function(e) {
+                const lo = document.getElementById('loader-overlay');
+                if (lo) lo.classList.remove('active');
+            });
+
+            // Animação ao clicar no botão voltar
+            document.getElementById('btn-voltar').addEventListener('click', function(e) {
+                e.preventDefault();
+                const lo = document.getElementById('loader-overlay');
+                if (lo) lo.classList.add('active');
+                setTimeout(() => { window.location.href = '/'; }, 600);
+            });
+
+            // Render the initial chart with the last 12 months of data
+            const initialData = JSON.parse('{{ despesas_por_mes | tojson | safe }}');
+            renderStackedBarChart(initialData);
+        </script>
+        </div><!-- /.page-content -->
+    </body>
+</html>

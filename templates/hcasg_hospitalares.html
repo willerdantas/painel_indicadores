@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Indicadores Hospitalares</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --teal:    #3BB5A3;
+  --cyan:    #00B2C9;
+  --green:   #007C6B;
+  --orange:  #EB600A;
+  --amber:   #F3A133;
+  --dark:    #38464D;
+  --blue2:   #2E758C;
+  --teal2:   #0F9688;
+  --peach:   #F7975B;
+  --sky:     #53B7D9;
+  --bg:      #f0f4f5;
+  --card:    #ffffff;
+  --border:  #dde4e6;
+  --muted:   #6b7f86;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--dark);
+  min-height: 100vh;
+}
+
+header {
+  background: #ffffff;
+  padding: .6rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 3px solid var(--teal);
+  box-shadow: 0 2px 8px rgba(0,0,0,.07);
+  gap: 1rem;
+}
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  min-width: 0;
+}
+.header-logo {
+  height: 72px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+header h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--dark);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+header span {
+  font-size: .75rem;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ---- Loader overlay ---- */
+#loader-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(38,50,56,.45);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+}
+#loader-overlay.active { display: flex; }
+.loader-ring {
+  position: relative;
+  width: 200px;
+  height: 200px;
+}
+.loader-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: spin 1.1s linear infinite;
+}
+.loader-ring svg circle {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 200;
+  stroke-dashoffset: 50;
+}
+.loader-ring img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  border-radius: 50%;
+  background: #fff;
+  padding: 6px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.wrapper { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+.filters {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1.5rem;
+}
+.filters label {
+  display: block;
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: .35rem;
+}
+.filters input, .filters select {
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: .875rem;
+  color: var(--dark);
+  background: var(--bg);
+  outline: none;
+  transition: border .15s;
+}
+.filters input:focus, .filters select:focus {
+  border-color: var(--teal);
+}
+.clinica-dropdown {
+  position: relative;
+}
+.clinica-btn {
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-family: inherit;
+  font-size: .875rem;
+  color: var(--dark);
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: .5rem;
+  transition: border .15s;
+}
+.clinica-btn:focus, .clinica-btn:hover { border-color: var(--teal); outline: none; }
+.clinica-btn .arrow { font-size: .65rem; transition: transform .2s; }
+.clinica-btn.open .arrow { transform: rotate(180deg); }
+.clinica-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: auto;
+  z-index: 200;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  box-shadow: 0 4px 16px rgba(0,0,0,.12);
+  min-width: 220px;
+  padding: .5rem;
+}
+.clinica-panel.open { display: block; }
+.clinica-list {
+  max-height: 220px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: .15rem;
+  margin-top: .3rem;
+}
+.clinica-list label {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .82rem;
+  font-weight: 400;
+  color: var(--dark);
+  text-transform: none;
+  letter-spacing: 0;
+  margin-bottom: 0;
+  cursor: pointer;
+  padding: .15rem .3rem;
+  border-radius: 4px;
+  white-space: nowrap;
+}
+.clinica-list label:hover { background: rgba(59,181,163,.1); }
+.clinica-list input[type=checkbox] { accent-color: var(--teal); cursor: pointer; }
+.clinica-toggle-all {
+  font-size: .68rem;
+  color: var(--teal);
+  cursor: pointer;
+  text-decoration: underline;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: inherit;
+  text-align: left;
+  display: block;
+}
+.btn-apply {
+  padding: .55rem 1.4rem;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-family: 'Syne', sans-serif;
+  font-size: .82rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  white-space: nowrap;
+}
+.btn-apply:hover { background: var(--green); transform: translateY(-1px); }
+
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(200px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.kpi {
+  border-radius: 10px;
+  padding: 1.5rem 1.75rem;
+  min-height: 160px;
+  position: relative;
+  overflow: hidden;
+  transition: transform .2s;
+}
+.kpi:hover { transform: translateY(-3px); }
+.kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; right: 0;
+  width: 80px; height: 80px;
+  border-radius: 0 0 0 80px;
+  opacity: .15;
+  background: #fff;
+}
+.kpi .label {
+  font-size: .6rem;
+  font-weight: 500;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: rgba(255,255,255,.8);
+  margin-bottom: .6rem;
+}
+.kpi .value {
+  font-family: 'Syne', sans-serif;
+  font-size: 2rem;
+  font-weight: 800;
+  color: #fff;
+  line-height: 1.1;
+}
+.kpi .unit {
+  font-size: .82rem;
+  color: rgba(255,255,255,.65);
+  margin-top: .4rem;
+  font-weight: 400;
+}
+.kpi .detail {
+  font-size: .72rem;
+  color: rgba(255,255,255,.9);
+  margin-top: .45rem;
+  line-height: 1.35;
+  max-height: 70px;
+  overflow: auto;
+  padding-right: .2rem;
+}
+.kpi .icon {
+  position: absolute;
+  right: 1.25rem;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 2rem;
+  opacity: .25;
+}
+
+.c1 { background: var(--sky); }
+.c2 { background: var(--cyan); }
+.c3 { background: var(--blue2); }
+.c4 { background: var(--teal); }
+.c5 { background: var(--teal2); }
+.c6 { background: var(--green); }
+.c7 { background: var(--muted); }
+.c8 { background: var(--dark); }
+.c9 { background: var(--peach); }
+.c10 { background: var(--orange); }
+.c11 { background: var(--amber); }
+
+.section-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--dark);
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--teal);
+  padding-bottom: .5rem;
+}
+
+.kpi-hover-detail {
+  font-size: .72rem;
+  color: rgba(255,255,255,.9);
+  margin-top: .45rem;
+  line-height: 1.5;
+  max-height: 0;
+  overflow: hidden;
+  transition: max-height .35s ease;
+}
+.kpi:hover .kpi-hover-detail {
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.loading { opacity: .4; }
+.error-bar {
+  background: #fde;
+  border: 1px solid #f99;
+  color: #c00;
+  border-radius: 8px;
+  padding: .75rem 1rem;
+  font-size: .85rem;
+  margin-bottom: 1rem;
+  display: none;
+}
+
+@media(max-width:900px){
+  .kpis { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+}
+
+@media(max-width:600px){
+  .wrapper{padding:1rem;}
+  .kpi .value{font-size:1.5rem;}
+  header h1{font-size:.9rem;}
+  .kpis { grid-template-columns: 1fr; }
+}
+</style>
+</head>
+<body>
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="/static/LOGO HM - NOVA (1).png" alt="Carregando...">
+  </div>
+</div>
+
+<header>
+  <div class="header-brand">
+    <img class="header-logo" src="/static/LOGO HM E SESA - NOVA (1).png" alt="logo">
+    <h1>Indicadores Hospitalares</h1>
+  </div>
+  <span>Painel de Gestão</span>
+  <div style="display:flex;align-items:center;gap:1rem;">
+    <a href="/hcasg/hospitalares/tendencia" style="font-size:.78rem;color:var(--teal);text-decoration:none;font-weight:600;letter-spacing:.04em;">📈 Tendência Mensal</a>
+    <a href="/hcasg/hospitalares/comparativo" style="font-size:.78rem;color:var(--teal);text-decoration:none;font-weight:600;letter-spacing:.04em;">📊 Comparativo</a>
+    <button id="btn-voltar-inicio" style="font-family:'Syne',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--teal);color:#fff;border:none;border-radius:6px;padding:8px 18px;cursor:pointer;transition:background .15s;white-space:nowrap;" onmouseover="this.style.background='var(--green)'" onmouseout="this.style.background='var(--teal)'">Voltar</button>
+  </div>
+</header>
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label>Data Inicial</label>
+      <input type="date" id="data_ini" value="{{ data_ini }}">
+    </div>
+    <div>
+      <label>Data Final</label>
+      <input type="date" id="data_fim" value="{{ data_fim }}">
+    </div>
+    <div class="clinica-dropdown">
+      <label>Clínica</label>
+      <button type="button" class="clinica-btn" id="clinica-btn" onclick="toggleClinicaPanel()">
+        <span id="clinica-btn-label">Todas</span>
+        <span class="arrow">▼</span>
+      </button>
+      <div class="clinica-panel" id="clinica-panel">
+        <button type="button" class="clinica-toggle-all" onclick="toggleTodasClinicas()">Marcar / desmarcar todas</button>
+        <div class="clinica-list" id="clinica-list">
+          {% for c in clinicas %}
+          <label><input type="checkbox" class="cb-clinica" value="{{ c }}" checked> {{ c }}</label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div>
+      <label>Enfermaria</label>
+      <select id="enfermaria">
+        <option value="">Todas</option>
+        {% for e in enfermarias %}<option>{{ e }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Leito</label>
+      <select id="leito">
+        <option value="">Todos</option>
+        {% for l in leitos %}<option>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="carregar()">Atualizar</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <div id="kpis">
+    <h2 class="section-title">Indicadores Hospitalares</h2>
+    <div class="kpis">
+      <div class="kpi c1">
+        <div class="label">Paciente-dia</div>
+        <div class="value" id="paciente_dia">—</div>
+        <div class="unit">dias</div>
+        <div class="icon">🗓</div>
+      </div>
+      <div class="kpi c2">
+        <div class="label">Saídas</div>
+        <div class="value" id="saidas">—</div>
+        <div class="unit">por destino</div>
+        <div class="kpi-hover-detail" id="saidas_detalhe">—</div>
+        <div class="icon">↗</div>
+      </div>
+      <div class="kpi c3">
+        <div class="label">Tempo Médio Permanência</div>
+        <div class="value" id="tmph">—</div>
+        <div class="unit">dias (paciente-dia/saídas)</div>
+        <div class="icon">📅</div>
+      </div>
+      <div class="kpi c4">
+        <div class="label">Giro de Leito</div>
+        <div class="value" id="giro">—</div>
+        <div class="unit">saídas / leito</div>
+        <div class="icon">🔄</div>
+      </div>
+      <div class="kpi c8">
+        <div class="label">Leito-Dia</div>
+        <div class="value" id="leito_dia">—</div>
+        <div class="unit">leitos disponíveis somados dia a dia</div>
+        <div class="icon">🛏️</div>
+      </div>
+      <div class="kpi c9">
+        <div class="label">Taxa de Ocupação</div>
+        <div class="value" id="taxa_ocupacao">—</div>
+        <div class="unit">% (paciente-dia / leito-dia)</div>
+        <div class="icon">📊</div>
+      </div>
+      <div class="kpi c5">
+        <div class="label">Internações</div>
+        <div class="value" id="internacoes">—</div>
+        <div class="kpi-hover-detail" id="internacoes_detalhe"></div>
+        <div class="icon">🏨</div>
+      </div>
+      <div class="kpi c6">
+        <div class="label">Leitos Disponíveis</div>
+        <div class="value" id="leitos_ativos">—</div>
+        <div class="unit">média diária (arred. para cima)</div>
+        <div class="kpi-hover-detail" id="leitos_ativos_detalhe"></div>
+        <div class="icon">🛏️</div>
+      </div>
+      <div class="kpi c7">
+        <div class="label">Setup de Leito</div>
+        <div class="value" id="setup">—</div>
+        <div class="unit">minutos</div>
+        <div class="icon">🔧</div>
+      </div>
+      <div class="kpi c10">
+        <div class="label">Taxa de Mortalidade Hospitalar</div>
+        <div class="value" id="taxa_mortalidade_hospitalar">—</div>
+        <div class="unit">% (total óbitos / saídas)</div>
+        <div class="icon">⚕️</div>
+      </div>
+      <div class="kpi c11">
+        <div class="label">Taxa de Mortalidade Institucional</div>
+        <div class="value" id="taxa_mortalidade_institucional">—</div>
+        <div class="unit">% (óbitos institucionais / saídas)</div>
+        <div class="icon">⚕️</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+let _loaderCount = 0;
+function loaderOn()  { _loaderCount++; showLoader(); }
+function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loaderCount === 0) hideLoader(); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 300);
+});
+
+function v(id){ return document.getElementById(id).value; }
+function set(id, val, fallback='—'){
+  document.getElementById(id).textContent = val !== null && val !== undefined ? val : fallback;
+}
+
+function setSaidasDetalhe(items) {
+  const el = document.getElementById('saidas_detalhe');
+  if (!items || items.length === 0) { el.textContent = '—'; return; }
+  el.innerHTML = items.map(i => `${i.dsc_destino}: ${i.qtd}`).join('<br>');
+}
+
+function setInternacoesDetalhe(items) {
+  const el = document.getElementById('internacoes_detalhe');
+  if (!items || items.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = '<b>Por clínica:</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+}
+
+function setLeitosAtivosDetalhe(items) {
+  const el = document.getElementById('leitos_ativos_detalhe');
+  if (!items || items.length === 0) { el.innerHTML = ''; return; }
+  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+}
+
+function toggleClinicaPanel(){
+  const btn   = document.getElementById('clinica-btn');
+  const panel = document.getElementById('clinica-panel');
+  btn.classList.toggle('open');
+  panel.classList.toggle('open');
+}
+document.addEventListener('click', function(e){
+  const btn   = document.getElementById('clinica-btn');
+  const panel = document.getElementById('clinica-panel');
+  if (!btn.contains(e.target) && !panel.contains(e.target)) {
+    btn.classList.remove('open');
+    panel.classList.remove('open');
+  }
+});
+function atualizarLabelClinica(){
+  const cbs = Array.from(document.querySelectorAll('.cb-clinica'));
+  const sel = cbs.filter(cb => cb.checked);
+  const lbl = document.getElementById('clinica-btn-label');
+  if (sel.length === 0 || sel.length === cbs.length) lbl.textContent = 'Todas';
+  else if (sel.length === 1) lbl.textContent = sel[0].value;
+  else lbl.textContent = sel.length + ' selecionadas';
+}
+document.addEventListener('change', function(e){
+  if (e.target.classList.contains('cb-clinica')) atualizarLabelClinica();
+});
+function toggleTodasClinicas(){
+  const cbs = document.querySelectorAll('.cb-clinica');
+  const allChecked = Array.from(cbs).every(cb => cb.checked);
+  cbs.forEach(cb => cb.checked = !allChecked);
+  atualizarLabelClinica();
+}
+
+function carregar(){
+  const params = new URLSearchParams({
+    data_ini:   v('data_ini'),
+    data_fim:   v('data_fim'),
+    enfermaria: v('enfermaria'),
+    leito:      v('leito'),
+  });
+  const allCbs = Array.from(document.querySelectorAll('.cb-clinica'));
+  const checked = allCbs.filter(cb => cb.checked).map(cb => cb.value);
+  if (checked.length > 0 && checked.length < allCbs.length) {
+    checked.forEach(val => params.append('clinica', val));
+  }
+  document.getElementById('kpis').classList.add('loading');
+  document.getElementById('erro').style.display = 'none';
+  loaderOn();
+
+  fetch('/api/hcasg/hospitalares/indicadores?' + params)
+    .then(r => r.json())
+    .then(res => {
+      loaderOff();
+      document.getElementById('kpis').classList.remove('loading');
+      if (!res.ok) {
+        document.getElementById('erro').textContent = 'Erro: ' + res.erro;
+        document.getElementById('erro').style.display = 'block';
+        return;
+      }
+      const d = res.dados;
+      set('paciente_dia', d.paciente_dia);
+      set('saidas',       d.saidas);
+      setSaidasDetalhe(d.saidas_detalhe);
+      set('tmph',         d.tmph);
+      set('leito_dia',      d.leito_dia);
+      set('taxa_ocupacao',  d.taxa_ocupacao !== null && d.taxa_ocupacao !== undefined ? d.taxa_ocupacao + '%' : null);
+      set('giro',         d.giro);
+      set('setup',        d.setup);
+      set('taxa_mortalidade_hospitalar', d.taxa_mortalidade_hospitalar !== null && d.taxa_mortalidade_hospitalar !== undefined ? d.taxa_mortalidade_hospitalar + '%' : null);
+      set('taxa_mortalidade_institucional', d.taxa_mortalidade_institucional !== null && d.taxa_mortalidade_institucional !== undefined ? d.taxa_mortalidade_institucional + '%' : null);
+      set('internacoes',    d.internacoes);
+      setInternacoesDetalhe(d.internacoes_detalhe);
+      set('leitos_ativos',  d.leitos_ativos);
+      setLeitosAtivosDetalhe(d.leitos_ativos_detalhe);
+    })
+    .catch(err => {
+      loaderOff();
+      document.getElementById('kpis').classList.remove('loading');
+      document.getElementById('erro').textContent = 'Falha na requisição: ' + err;
+      document.getElementById('erro').style.display = 'block';
+    });
+}
+
+carregar();
+</script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="pt-BR">
+    <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Erro</title>
+        <style>
+            body {
+                font-family: Arial, sans-serif;
+                background-color: #f8d7da;
+                color: #721c24;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                height: 100vh;
+                margin: 0;
+            }
+            .container {
+                text-align: center;
+                padding: 20px;
+                border: 1px solid #f5c6cb;
+                background-color: #f8d7da;
+                border-radius: 5px;
+            }
+            h1 {
+                font-size: 24px;
+                margin-bottom: 10px;
+            }
+            p {
+                font-size: 18px;
+                margin-bottom: 20px;
+            }
+            a {
+                text-decoration: none;
+                color: #721c24;
+                font-weight: bold;
+            }
+            a:hover {
+                text-decoration: underline;
+            }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>Ocorreu um erro</h1>
+            <p>{{ message }}</p>
+            <a href="{{ url_for('index') }}">Voltar para a página inicial</a>
+        </div>
+    </body>
+</html>
