@@ -1,0 +1,624 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Tendência Mensal — Indicadores LEAN</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="/static/chart.umd.min.js"></script>
+<script>
+  // Fallback: se o arquivo local não carregar, busca do CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
+<style>
+:root {
+  --teal:    #3BB5A3;
+  --cyan:    #00B2C9;
+  --green:   #007C6B;
+  --orange:  #EB600A;
+  --amber:   #F3A133;
+  --dark:    #38464D;
+  --blue2:   #2E758C;
+  --teal2:   #0F9688;
+  --peach:   #F7975B;
+  --sky:     #53B7D9;
+  --bg:      #f0f4f5;
+  --card:    #ffffff;
+  --border:  #dde4e6;
+  --muted:   #6b7f86;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'DM Sans', sans-serif;
+  background: var(--bg);
+  color: var(--dark);
+  min-height: 100vh;
+}
+
+header {
+  background: #ffffff;
+  padding: .6rem 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 3px solid var(--teal);
+  box-shadow: 0 2px 8px rgba(0,0,0,.07);
+  gap: 1rem;
+}
+.header-brand {
+  display: flex;
+  align-items: center;
+  gap: .85rem;
+  min-width: 0;
+}
+.header-logo {
+  height: 72px;
+  width: auto;
+  object-fit: contain;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+header h1 {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--dark);
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+header span {
+  font-size: .75rem;
+  color: var(--muted);
+  font-weight: 500;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+/* ---- Loader overlay ---- */
+#loader-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(38,50,56,.45);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+}
+#loader-overlay.active { display: flex; }
+.loader-ring {
+  position: relative;
+  width: 200px;
+  height: 200px;
+}
+.loader-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: spin 1.1s linear infinite;
+}
+.loader-ring svg circle {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 200;
+  stroke-dashoffset: 50;
+}
+.loader-ring img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  border-radius: 50%;
+  background: #fff;
+  padding: 6px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.wrapper { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+.filters {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1.5rem;
+}
+.filters label {
+  display: block;
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: .35rem;
+}
+.filters input, .filters select {
+  width: 100%;
+  padding: .5rem .75rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: .875rem;
+  color: var(--dark);
+  background: var(--bg);
+  outline: none;
+  transition: border .15s;
+}
+.filters input:focus, .filters select:focus {
+  border-color: var(--teal);
+}
+.btn-apply {
+  padding: .55rem 1.4rem;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-family: 'Syne', sans-serif;
+  font-size: .82rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  cursor: pointer;
+  transition: background .15s, transform .1s;
+  white-space: nowrap;
+}
+.btn-apply:hover { background: var(--green); transform: translateY(-1px); }
+
+.section-title {
+  font-family: 'Syne', sans-serif;
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: var(--dark);
+  margin-top: 2rem;
+  margin-bottom: 1rem;
+  border-bottom: 2px solid var(--teal);
+  padding-bottom: .5rem;
+}
+
+.charts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(450px, 1fr));
+  gap: 1.5rem;
+  margin-bottom: 2rem;
+}
+
+.charts-grid.stacked {
+  grid-template-columns: 1fr;
+}
+
+.chart-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.5rem;
+  box-shadow: 0 2px 4px rgba(0,0,0,.05);
+}
+
+.chart-card h3 {
+  font-size: .9rem;
+  font-weight: 600;
+  color: var(--dark);
+  margin-bottom: 1rem;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.chart-container {
+  position: relative;
+  height: 300px;
+}
+
+.error-bar {
+  background: #fde;
+  border: 1px solid #f99;
+  color: #c00;
+  border-radius: 8px;
+  padding: .75rem 1rem;
+  font-size: .85rem;
+  margin-bottom: 1rem;
+  display: none;
+}
+
+@media(max-width:900px){
+  .charts-grid { grid-template-columns: 1fr; }
+}
+
+@media(max-width:600px){
+  .wrapper { padding: 1rem; }
+  header h1 { font-size: .9rem; }
+  .chart-container { height: 250px; }
+}
+</style>
+</head>
+<body>
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="/static/LOGO HM - NOVA (1).png" alt="logo">
+  </div>
+</div>
+
+<header>
+  <div class="header-brand">
+    <img class="header-logo" src="/static/LOGO HM E SESA - NOVA (1).png" alt="logo">
+    <div>
+      <h1>Tendência Mensal</h1>
+      <span>Indicadores LEAN</span>
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:1rem;">
+    <a href="/lean/" style="font-size:.78rem;color:var(--teal);text-decoration:none;font-weight:600;letter-spacing:.04em;">← Indicadores</a>
+    <a href="/lean/auditoria" style="font-size:.78rem;color:var(--teal);text-decoration:none;font-weight:600;letter-spacing:.04em;">🔍 Auditoria</a>
+    <button id="btn-voltar-inicio" style="font-family:'Syne',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--teal);color:#fff;border:none;border-radius:6px;padding:8px 18px;cursor:pointer;transition:background .15s;white-space:nowrap;" onmouseover="this.style.background='var(--green)'" onmouseout="this.style.background='var(--teal)'">Voltar ao Início</button>
+  </div>
+</header>
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label>Clínica</label>
+      <select id="clinica">
+        <option value="">Todas</option>
+        {% for c in clinicas %}<option>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Enfermaria</label>
+      <select id="enfermaria">
+        <option value="">Todas</option>
+        {% for e in enfermarias %}<option>{{ e }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Leito</label>
+      <select id="leito">
+        <option value="">Todos</option>
+        {% for l in leitos %}<option>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Mês Inicial</label>
+      <input type="month" id="mes_ini" value="{{ mes_ini }}">
+    </div>
+    <div>
+      <label>Mês Final</label>
+      <input type="month" id="mes_fim" value="{{ mes_fim }}">
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="carregarGraficos()">Atualizar</button>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="resetarTendenciaMensal()">Resetar Período</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <h2 class="section-title">Indicadores Hospitalares</h2>
+  <div class="charts-grid" id="charts_hospitalares"></div>
+
+  <h2 class="section-title">Indicadores da Emergência</h2>
+  <div class="charts-grid" id="charts_emergencia"></div>
+
+</div>
+
+<script>
+const chartInstances = {};
+
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+let _loaderCount = 0;
+function loaderOn()  { _loaderCount++; showLoader(); }
+function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loaderCount === 0) hideLoader(); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 600);
+});
+
+function v(id){ return document.getElementById(id).value; }
+
+function calcularMedia(valores) {
+  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v));
+  return nums.length > 0 ? parseFloat((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null;
+}
+
+function calcularMediana(valores) {
+  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v)).sort((a, b) => a - b);
+  if (nums.length === 0) return null;
+  const mid = Math.floor(nums.length / 2);
+  return parseFloat((nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2).toFixed(2));
+}
+
+function ajustarLayoutGraficos(qtdMeses) {
+  const hospitalares = document.getElementById('charts_hospitalares');
+  const emergencia = document.getElementById('charts_emergencia');
+  const empilhar = Number(qtdMeses) > 12;
+  hospitalares.classList.toggle('stacked', empilhar);
+  emergencia.classList.toggle('stacked', empilhar);
+}
+
+function resetarTendenciaMensal() {
+  const hoje = new Date();
+  const primeiroMesAtual = new Date(hoje.getFullYear(), hoje.getMonth(), 1);
+  const mesFim = new Date(primeiroMesAtual.getFullYear(), primeiroMesAtual.getMonth() - 1, 1);
+  const mesIni = new Date(primeiroMesAtual.getFullYear(), primeiroMesAtual.getMonth() - 12, 1);
+  const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+  document.getElementById('mes_ini').value = fmt(mesIni);
+  document.getElementById('mes_fim').value = fmt(mesFim);
+  carregarGraficos();
+}
+
+function criarGrafico(container, titulo, meses, valores, cor) {
+  const valoresNum = valores.map(v => parseFloat(v) || null);
+  const media   = calcularMedia(valoresNum);
+  const mediana = calcularMediana(valoresNum);
+
+  const ctx = container.querySelector('canvas');
+
+  if (chartInstances[titulo]) {
+    chartInstances[titulo].destroy();
+  }
+
+  chartInstances[titulo] = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: meses,
+      datasets: [
+        {
+          label: 'Mensal',
+          data: valoresNum,
+          backgroundColor: cor + 'cc',
+          borderColor: cor,
+          borderWidth: 1,
+          borderRadius: 4,
+          order: 2
+        },
+        {
+          label: `Média: ${media}`,
+          data: media !== null ? Array(meses.length).fill(media) : [],
+          type: 'line',
+          borderColor: '#f97316',
+          backgroundColor: 'transparent',
+          borderWidth: 2.5,
+          borderDash: [6, 4],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          tension: 0,
+          fill: false,
+          order: 1
+        },
+        {
+          label: `Mediana: ${mediana}`,
+          data: mediana !== null ? Array(meses.length).fill(mediana) : [],
+          type: 'line',
+          borderColor: '#8b5cf6',
+          backgroundColor: 'transparent',
+          borderWidth: 2.5,
+          borderDash: [2, 3],
+          pointRadius: 0,
+          pointHoverRadius: 0,
+          tension: 0,
+          fill: false,
+          order: 1
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: {
+        intersect: false,
+        mode: 'index'
+      },
+      plugins: {
+        legend: {
+          display: true,
+          position: 'bottom',
+          labels: {
+            usePointStyle: true,
+            padding: 15,
+            font: { size: 12 }
+          }
+        },
+        tooltip: {
+          backgroundColor: 'rgba(0,0,0,.85)',
+          padding: 12,
+          titleFont: { size: 13, weight: 'bold' },
+          bodyFont: { size: 12 },
+          borderColor: 'rgba(255,255,255,.2)',
+          borderWidth: 1,
+          displayColors: true,
+          callbacks: {
+            label: function(ctx) {
+              return ` ${ctx.dataset.label}: ${ctx.parsed.y ?? '—'}`;
+            }
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true },
+        x: { ticks: { font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+function criarGraficoSaidas(container, titulo, meses, totais, destinosMensais) {
+  const ctx = container.querySelector('canvas');
+  if (chartInstances[titulo]) {
+    chartInstances[titulo].destroy();
+  }
+
+  const paleta = ['#00B2C9', '#3BB5A3', '#2E758C', '#F3A133', '#EB600A', '#0F9688'];
+  const destinos = Object.values(destinosMensais || {});
+  const datasets = destinos.map((d, idx) => ({
+    label: `${d.dsc_destino}`,
+    type: 'bar',
+    data: (d.valores || []).map(v => parseFloat(v) || 0),
+    backgroundColor: paleta[idx % paleta.length] + 'cc',
+    borderColor: paleta[idx % paleta.length],
+    borderWidth: 1,
+    borderRadius: 3,
+    stack: 'saidas'
+  }));
+
+  datasets.push({
+    label: 'Total',
+    type: 'line',
+    data: (totais || []).map(v => parseFloat(v) || 0),
+    borderColor: '#38464D',
+    backgroundColor: 'transparent',
+    borderWidth: 2.5,
+    pointRadius: 2,
+    pointHoverRadius: 3,
+    tension: 0.2,
+    fill: false,
+    order: 0
+  });
+
+  chartInstances[titulo] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: meses, datasets },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom' },
+        tooltip: {
+          callbacks: {
+            label: function(ctx) {
+              return ` ${ctx.dataset.label}: ${ctx.parsed.y ?? 0}`;
+            }
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true },
+        y: { beginAtZero: true, stacked: true }
+      }
+    }
+  });
+}
+
+function carregarGraficos() {
+  const clinica = v('clinica');
+  const enfermaria = v('enfermaria');
+  const leito = v('leito');
+  let mesIni = v('mes_ini');
+  let mesFim = v('mes_fim');
+
+  if (mesIni && mesFim && mesIni > mesFim) {
+    const tmp = mesIni;
+    mesIni = mesFim;
+    mesFim = tmp;
+    document.getElementById('mes_ini').value = mesIni;
+    document.getElementById('mes_fim').value = mesFim;
+  }
+
+  const params = new URLSearchParams({
+    clinica: clinica,
+    enfermaria: enfermaria,
+    leito: leito,
+    mes_ini: mesIni,
+    mes_fim: mesFim
+  });
+
+  loaderOn();
+  fetch('/lean/api/indicadores_mensais?' + params)
+    .then(r => r.json())
+    .then(res => {
+      loaderOff();
+      if (!res.ok) {
+        const errEl = document.getElementById('erro');
+        errEl.textContent = 'Erro ao carregar gráficos: ' + res.erro;
+        errEl.style.display = 'block';
+        return;
+      }
+      const d = res.dados;
+      ajustarLayoutGraficos((d.meses || []).length);
+      const chartsHospitalares = document.getElementById('charts_hospitalares');
+      const chartsEmergencia = document.getElementById('charts_emergencia');
+      Object.keys(chartInstances).forEach(k => {
+        try { chartInstances[k].destroy(); } catch(e) {}
+        delete chartInstances[k];
+      });
+      chartsHospitalares.innerHTML = '';
+      chartsEmergencia.innerHTML = '';
+
+      const indicadoresHospitalares = [
+        { key: 'paciente_dia', titulo: 'Paciente-dia (dias)', cor: '#0F9688' },
+        { key: 'saidas', titulo: 'Saídas (qtd)', cor: '#53B7D9' },
+        { key: 'tmph', titulo: 'Tempo Médio Permanência (dias)', cor: '#2E758C' },
+        { key: 'giro', titulo: 'Giro de Leito (saídas/leito)', cor: '#0F9688' },
+        { key: 'setup', titulo: 'Setup de Leito (minutos)', cor: '#38464D' }
+      ];
+
+      const indicadoresEmergencia = [
+        { key: 'los_sem', titulo: 'LOS Sem Internação (minutos)', cor: '#3BB5A3' },
+        { key: 'los_com', titulo: 'LOS Com Internação (minutos)', cor: '#00B2C9' },
+        { key: 'tmp_ps', titulo: 'TMP Leitos PS (dias)', cor: '#EB600A' },
+        { key: 'giro_ps', titulo: 'Giro de Leito PS (saídas/leito)', cor: '#2E758C' },
+        { key: 'porta_medico', titulo: 'Tempo Porta-Médico (minutos)', cor: '#F3A133' },
+        { key: 'internacoes_ps', titulo: 'Internações PS (qtd)', cor: '#007C6B' }
+      ];
+
+      function renderGrupo(indicadores, containerEl) {
+        indicadores.forEach(ind => {
+          const valores = d[ind.key];
+          const temDados = valores && valores.some(v => v !== null && v !== undefined);
+          if (temDados) {
+            const card = document.createElement('div');
+            card.className = 'chart-card';
+            card.innerHTML = `
+              <h3>${ind.titulo}</h3>
+              <div class="chart-container">
+                <canvas></canvas>
+              </div>
+            `;
+            containerEl.appendChild(card);
+            if (ind.key === 'saidas') {
+              criarGraficoSaidas(card, ind.titulo, d.meses, d[ind.key], d.saidas_destinos_mensais);
+            } else {
+              criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor);
+            }
+          }
+        });
+      }
+
+      renderGrupo(indicadoresHospitalares, chartsHospitalares);
+      renderGrupo(indicadoresEmergencia, chartsEmergencia);
+    })
+    .catch(err => {
+      loaderOff();
+      const errEl = document.getElementById('erro');
+      errEl.textContent = 'Erro ao carregar gráficos: ' + err;
+      errEl.style.display = 'block';
+    });
+}
+
+document.getElementById('mes_ini').addEventListener('change', carregarGraficos);
+document.getElementById('mes_fim').addEventListener('change', carregarGraficos);
+
+carregarGraficos();
+</script>
+</body>
+</html>

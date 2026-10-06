@@ -9,6 +9,7 @@ from datetime import datetime, timedelta
 from indicadores_hcasg import get_filtros as hcasg_get_filtros
 from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
 from indicadores_hcasg import get_indicadores_hospitalar, get_indicadores_emergencia
+import indicadores_hcasg as hcasg
 
 app = Flask(__name__)
 
@@ -20,7 +21,7 @@ ARQUIVO_LOGO = 'logo.png'
 
 # Configuração do banco PostgreSQL (ajuste conforme seu ambiente)
 DB_CONFIG = {
-    'host': os.environ.get('DB_HOST', 'localhost'),
+    'host': os.environ.get('DB_HOST', '10.10.29.90'),
     'port': os.environ.get('DB_PORT', '5432'),
     'dbname': os.environ.get('DB_NAME', 'postgres'),
     'user': os.environ.get('DB_USER', 'painel'),
@@ -1132,6 +1133,98 @@ def api_hcasg_emergencia_comparativo():
         if comparativo is None:
             return jsonify({'ok': False, 'erro': 'Não há dados para um dos meses selecionados.'}), 400
         return jsonify({'ok': True, **comparativo})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+# ---------------------------------------------------------------------------
+# INDICADORES LEAN — visão consolidada (hospitalares + emergência) com
+# tendência mensal e auditoria dos registros. Antes era um app separado
+# (porta 5200); usa as mesmas consultas de indicadores_hcasg.
+# ---------------------------------------------------------------------------
+
+def _lean_filtros_tela():
+    try:
+        return hcasg_get_filtros()
+    except Exception:
+        return [], [], []
+
+
+@app.route('/lean/')
+def lean_indicadores():
+    clinicas, enfermarias, leitos = _lean_filtros_tela()
+    hoje = datetime.now().date()
+    return render_template(
+        'lean_indicadores.html',
+        clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
+        data_ini=hoje.replace(day=1).strftime('%Y-%m-%d'), data_fim=hoje.strftime('%Y-%m-%d'),
+    )
+
+
+@app.route('/lean/tendencias')
+def lean_tendencias():
+    clinicas, enfermarias, leitos = _lean_filtros_tela()
+    primeiro_mes_atual = datetime.now().date().replace(day=1)
+    mes_fim = (primeiro_mes_atual - pd.DateOffset(months=1)).date()
+    mes_ini = (primeiro_mes_atual - pd.DateOffset(months=12)).date()
+    return render_template(
+        'lean_tendencias.html',
+        clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
+        mes_ini=mes_ini.strftime('%Y-%m'), mes_fim=mes_fim.strftime('%Y-%m'),
+    )
+
+
+@app.route('/lean/auditoria')
+def lean_auditoria():
+    hoje = datetime.now().date()
+    return render_template(
+        'lean_auditoria.html',
+        data_ini=hoje.replace(day=1).strftime('%Y-%m-%d'), data_fim=hoje.strftime('%Y-%m-%d'),
+    )
+
+
+@app.route('/lean/api/indicadores')
+def api_lean_indicadores():
+    clinica, enfermaria, leito = _hcasg_params_filtro()
+    data_ini = request.args.get('data_ini')
+    data_fim = request.args.get('data_fim')
+    try:
+        dados = hcasg.get_indicadores(data_ini, data_fim, clinica, enfermaria, leito)
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/lean/api/indicadores_mensais')
+def api_lean_indicadores_mensais():
+    clinica, enfermaria, leito = _hcasg_params_filtro()
+    mes_ini = request.args.get('mes_ini') or None
+    mes_fim = request.args.get('mes_fim') or None
+    try:
+        dados = hcasg.get_indicadores_mensais(clinica, enfermaria, leito, mes_ini, mes_fim)
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+LEAN_AUDITORIAS = {
+    'los_com': hcasg.get_auditoria_los_com,
+    'los_sem': hcasg.get_auditoria_los_sem,
+    'porta_medico': hcasg.get_auditoria_porta_medico,
+    'internacoes_ps': hcasg.get_auditoria_internacoes_ps,
+    'tmph': hcasg.get_auditoria_tmph,
+    'tmp_ps': hcasg.get_auditoria_tmp_ps,
+}
+
+
+@app.route('/lean/api/auditoria_<indicador>')
+def api_lean_auditoria(indicador):
+    consulta = LEAN_AUDITORIAS.get(indicador)
+    if consulta is None:
+        return jsonify({'ok': False, 'erro': f'Indicador de auditoria desconhecido: {indicador}'}), 404
+    try:
+        dados = consulta(request.args.get('data_ini'), request.args.get('data_fim'))
+        return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500
 

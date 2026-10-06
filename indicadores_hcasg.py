@@ -19,6 +19,11 @@ mantida, mas dividida em duas funções independentes:
 Cada função só executa as consultas que o respectivo indicador precisa,
 então a página "Indicadores Hospitalares" não paga o custo das consultas
 de emergência, e vice-versa.
+
+A página "Indicadores LEAN" (/lean), que antes era um app separado, usa
+este mesmo módulo: get_indicadores / get_indicadores_mensais apenas juntam
+os dois blocos acima, e as funções get_auditoria_* listam os registros que
+compõem cada indicador. Assim todas as páginas mostram os mesmos números.
 """
 
 import os
@@ -62,42 +67,41 @@ def get_conn():
 
 
 def _should_retry(exc):
-    code = getattr(exc.pgcode, '__str__', lambda: exc.pgcode)() if exc.pgcode else ""
-    return code in _RETRY_ERRORS or "conflict with recovery" in str(exc).lower()
+    # Falhas de conexão (servidor reiniciando, recusando conexões, conexão
+    # caída no meio da consulta) chegam como OperationalError sem pgcode.
+    if isinstance(exc, psycopg2.OperationalError) and not exc.pgcode:
+        return True
+    return exc.pgcode in _RETRY_ERRORS or "conflict with recovery" in str(exc).lower()
+
+
+def _executar(sql, params, fetch):
+    last_exc = None
+    for attempt in range(_MAX_RETRIES):
+        conn = None
+        try:
+            conn = get_conn()
+            # `with conn` só faz commit/rollback; o close() fica no finally.
+            with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
+                cur.execute(sql, params or [])
+                return fetch(cur)
+        except psycopg2.Error as e:
+            last_exc = e
+            if _should_retry(e) and attempt < _MAX_RETRIES - 1:
+                time.sleep(_RETRY_DELAY)
+                continue
+            raise
+        finally:
+            if conn is not None:
+                conn.close()
+    raise last_exc
 
 
 def fetch_one(sql, params=None):
-    last_exc = None
-    for attempt in range(_MAX_RETRIES):
-        try:
-            with get_conn() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute(sql, params or [])
-                    return cur.fetchone()
-        except psycopg2.Error as e:
-            last_exc = e
-            if _should_retry(e) and attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY)
-                continue
-            raise
-    raise last_exc
+    return _executar(sql, params, lambda cur: cur.fetchone())
 
 
 def fetch_all(sql, params=None):
-    last_exc = None
-    for attempt in range(_MAX_RETRIES):
-        try:
-            with get_conn() as conn:
-                with conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                    cur.execute(sql, params or [])
-                    return cur.fetchall()
-        except psycopg2.Error as e:
-            last_exc = e
-            if _should_retry(e) and attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY)
-                continue
-            raise
-    raise last_exc
+    return _executar(sql, params, lambda cur: cur.fetchall())
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +203,26 @@ def _filtros_sql(clinica, enfermaria, leito, prefixo="AND"):
     return prefixo + " " + " AND ".join(conds), vals
 
 
+# Primeira movimentação de cada internação (clínica/enfermaria/leito de entrada).
+_PRIMEIRA_CLINICA_CTE = """
+    WITH primeira_clinica AS (
+        SELECT DISTINCT ON (til.isn_internacao)
+            til.isn_internacao,
+            til.isn_clinica,
+            tc.dsc_clinica,
+            te.dsc_enfermaria,
+            tl.dsc_leito
+        FROM public.t_internacao_leito til
+        JOIN public.t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
+        JOIN public.t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
+        JOIN public.t_leito      tl ON tl.isn_leito      = til.isn_leito
+        ORDER BY til.isn_internacao,
+                 COALESCE(til.dat_internacao_info, til.dat_internacao),
+                 til.isn_internacao_leito
+    )
+"""
+
+
 def _meses_labels(meses_dates):
     return [d.strftime("%b/%y") if d else None for d in meses_dates]
 
@@ -294,7 +318,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 b.dt_entrada,
                 b.dt_saida,
                 GREATEST(b.dt_entrada, gs.mes::date, (SELECT dt_ini FROM limites)) AS ini,
-                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month' - INTERVAL '1 day')::date, (SELECT dt_fim FROM limites)) AS fim
+                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month')::date, (SELECT dt_fim FROM limites) + 1) AS fim  -- fim exclusivo: a noite da virada do mês conta no mês em que começa
             FROM base b
             CROSS JOIN LATERAL generate_series(
                 DATE_TRUNC('month', GREATEST(b.dt_entrada, (SELECT dt_ini FROM limites)))::date,
@@ -981,7 +1005,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 b.dt_entrada,
                 b.dt_saida,
                 GREATEST(b.dt_entrada, gs.mes::date, (SELECT dt_ini FROM limites)) AS ini,
-                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month' - INTERVAL '1 day')::date, (SELECT dt_fim FROM limites)) AS fim
+                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month')::date, (SELECT dt_fim FROM limites) + 1) AS fim  -- fim exclusivo: a noite da virada do mês conta no mês em que começa
             FROM base b
             CROSS JOIN LATERAL generate_series(
                 DATE_TRUNC('month', GREATEST(b.dt_entrada, (SELECT dt_ini FROM limites)))::date,
@@ -1339,7 +1363,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                 b.dt_entrada,
                 b.dt_saida,
                 GREATEST(b.dt_entrada, gs.mes::date, %s::date) AS ini,
-                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month' - INTERVAL '1 day')::date, %s::date) AS fim
+                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month')::date, %s::date + 1) AS fim  -- fim exclusivo: a noite da virada do mês conta no mês em que começa
             FROM base b
             CROSS JOIN LATERAL generate_series(
                 DATE_TRUNC('month', GREATEST(b.dt_entrada, %s::date))::date,
@@ -1556,24 +1580,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         ORDER BY qtd DESC
     """, [data_ini, data_fim] + _leitos_filt_vals)
 
-    _internacoes_cte = f"""
-        WITH primeira_clinica AS (
-            SELECT DISTINCT ON (til.isn_internacao)
-                til.isn_internacao,
-                til.isn_clinica,
-                tc.dsc_clinica,
-                te.dsc_enfermaria,
-                tl.dsc_leito
-            FROM public.t_internacao_leito til
-            JOIN public.t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
-            JOIN public.t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
-            JOIN public.t_leito      tl ON tl.isn_leito      = til.isn_leito
-            ORDER BY til.isn_internacao,
-                     COALESCE(til.dat_internacao_info, til.dat_internacao),
-                     til.isn_internacao_leito
-        )
-    """
-    internacoes_row = fetch_one(_internacoes_cte + f"""
+    internacoes_row = fetch_one(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT COUNT(DISTINCT ti.isn_internacao) AS total
         FROM public.t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
@@ -1583,7 +1590,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         {filt_sql}
     """, [data_ini, data_fim] + filt_vals)
 
-    internacoes_detalhe = fetch_all(_internacoes_cte + f"""
+    internacoes_detalhe = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT pc.dsc_clinica, COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
         FROM public.t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
@@ -1667,7 +1674,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         WHERE ti.isn_tipo_atendimento = 2
           AND til.isn_destino IN (1, 3, 4)
           AND til.dat_alta IS NOT NULL
-          AND ti.dat_cadastro BETWEEN %s AND %s
+          AND ti.dat_cadastro::date BETWEEN %s AND %s
     """, [data_ini, data_fim])
 
     los_com = fetch_one(f"""
@@ -1833,7 +1840,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 b.dt_entrada,
                 b.dt_saida,
                 GREATEST(b.dt_entrada, gs.mes::date, %s::date) AS ini,
-                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month' - INTERVAL '1 day')::date, %s::date) AS fim
+                LEAST(b.dt_saida, (gs.mes + INTERVAL '1 month')::date, %s::date + 1) AS fim  -- fim exclusivo: a noite da virada do mês conta no mês em que começa
             FROM base b
             CROSS JOIN LATERAL generate_series(
                 DATE_TRUNC('month', GREATEST(b.dt_entrada, %s::date))::date,
@@ -2061,6 +2068,18 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         ORDER BY qtd DESC
     """, [data_ini, data_fim] + _leitos_ps_filt_vals)
 
+    internacoes_detalhe_ps = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
+        SELECT pc.dsc_clinica, COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
+        FROM public.t_internacao ti
+        JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
+        WHERE ti.isn_tipo_atendimento = 1
+          AND ti.dat_cadastro::date BETWEEN %s AND %s
+          AND pc.isn_clinica IN ({CLINICAS_PS_SQL})
+        {filt_sql}
+        GROUP BY pc.dsc_clinica
+        ORDER BY qtd DESC
+    """, [data_ini, data_fim] + filt_vals)
+
     saidas_val_ps = tmp_ps["saidas"] if tmp_ps and tmp_ps["saidas"] is not None else None
     giro_ps = round(float(saidas_val_ps) / leitos_ativos_ps_total, 2) if saidas_val_ps and leitos_ativos_ps_total else None
 
@@ -2075,6 +2094,441 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         "giro_ps": giro_ps,
         "internacoes_ps": internacoes_ps_row["total"] if internacoes_ps_row else None,
         "internacoes_ps_media": internacoes_ps_row["media_diaria"] if internacoes_ps_row else None,
+        "internacoes_detalhe_ps": [dict(r) for r in (internacoes_detalhe_ps or [])],
         "leitos_ativos_ps": leitos_ativos_ps_total,
         "leitos_ativos_ps_detalhe": [dict(r) for r in (leitos_ativos_ps_detalhe or [])],
     }
+
+# ---------------------------------------------------------------------------
+# PÁGINA INDICADORES LEAN (/lean) — visão consolidada hospitalar + emergência
+# (antes servida por um app separado na porta 5200)
+# ---------------------------------------------------------------------------
+
+def get_indicadores(data_ini, data_fim, clinica, enfermaria, leito):
+    """Snapshot de um período com todos os indicadores (hospitalares + emergência)."""
+    return {
+        **get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito),
+        **get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito),
+    }
+
+
+def get_indicadores_mensais(clinica, enfermaria, leito, mes_ini=None, mes_fim=None):
+    """Tendência mensal com todos os indicadores (hospitalares + emergência)."""
+    return {
+        **get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini, mes_fim),
+        **get_mensal_emergencia(clinica, enfermaria, leito, mes_ini, mes_fim),
+    }
+
+
+# ---------------------------------------------------------------------------
+# AUDITORIA (/lean/auditoria) — registros que compõem cada indicador
+# ---------------------------------------------------------------------------
+
+def get_auditoria_los_com(data_ini, data_fim):
+    rows = fetch_all(f"""
+        WITH
+        internacao_datas AS (
+            SELECT
+                ti.isn_internacao,
+                tp.num_prontuario,
+                MIN(til.dat_internacao) AS dat_entrada,
+                MAX(til.dat_alta)       AS dat_saida
+            FROM public.t_internacao ti
+            JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+            JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+            WHERE til.dat_internacao IS NOT NULL
+            GROUP BY ti.isn_internacao, tp.num_prontuario
+        ),
+        continuidade AS (
+            SELECT
+                isn_internacao,
+                num_prontuario,
+                dat_entrada,
+                dat_saida,
+                CASE
+                    WHEN LAG(dat_saida) OVER (
+                        PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
+                    ) = dat_entrada
+                    THEN 0 ELSE 1
+                END AS novo_grupo
+            FROM internacao_datas
+        ),
+        grupos AS (
+            SELECT
+                isn_internacao,
+                num_prontuario,
+                dat_entrada,
+                SUM(novo_grupo) OVER (
+                    PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
+                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+                ) AS grp_num
+            FROM continuidade
+        ),
+        cadeia AS (
+            SELECT
+                g.isn_internacao,
+                FIRST_VALUE(g.isn_internacao) OVER (
+                    PARTITION BY g.num_prontuario, g.grp_num
+                    ORDER BY g.dat_entrada, g.isn_internacao
+                ) AS id_grupo
+            FROM grupos g
+        ),
+        base AS (
+            SELECT
+                c.id_grupo,
+                til.isn_clinica,
+                tc.dsc_clinica,
+                COALESCE(
+                    til.dat_internacao_info + til.hor_internacao_info::time,
+                    til.dat_internacao + til.hor_internacao::time
+                ) AS ts_internacao,
+                COALESCE(
+                    til.dat_alta_info + til.hor_alta_info::time,
+                    til.dat_alta + til.hor_alta::time
+                ) AS ts_alta
+            FROM cadeia c
+            JOIN public.t_internacao_leito til ON til.isn_internacao = c.isn_internacao
+            JOIN public.t_clinica tc ON tc.isn_clinica = til.isn_clinica
+            WHERE til.dat_internacao IS NOT NULL
+        ),
+        grupo_primeiro AS (
+            SELECT id_grupo, MIN(ts_internacao) AS ts_primeiro_grupo
+            FROM base
+            GROUP BY id_grupo
+        ),
+        grupo_inicio AS (
+            SELECT
+                b.id_grupo,
+                MIN(b.ts_internacao) AS ts_clinica_1,
+                gp.ts_primeiro_grupo,
+                ti.dat_cadastro
+            FROM base b
+            JOIN grupo_primeiro gp ON gp.id_grupo = b.id_grupo
+            JOIN public.t_internacao ti ON ti.isn_internacao = b.id_grupo
+            JOIN (
+                SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
+                FROM public.t_internacao_leito
+                ORDER BY isn_internacao,
+                    COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
+                    isn_internacao_leito DESC
+            ) til_ult ON til_ult.isn_internacao = b.id_grupo
+            WHERE b.isn_clinica = 1
+              AND ti.isn_tipo_atendimento = 2
+              AND til_ult.isn_destino = 13
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+            GROUP BY b.id_grupo, gp.ts_primeiro_grupo, ti.dat_cadastro
+        ),
+        grupo_destino AS (
+            SELECT
+                b.id_grupo,
+                MIN(b.ts_internacao) AS ts_primeira_clinica,
+                MIN(b.dsc_clinica)   AS dsc_clinica_destino
+            FROM base b
+            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
+            WHERE b.isn_clinica IN ({CLINICAS_LOS_COM_DEST_SQL})
+              AND b.ts_internacao IS NOT NULL
+              AND b.ts_internacao >= g.ts_clinica_1
+            GROUP BY b.id_grupo
+        ),
+        grupo_fallback AS (
+            SELECT
+                b.id_grupo,
+                MAX(COALESCE(b.ts_alta, CURRENT_TIMESTAMP)) AS ts_ultima_alta,
+                BOOL_OR(b.ts_alta IS NULL) AS tem_aberto
+            FROM base b
+            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
+            WHERE b.ts_internacao >= g.ts_clinica_1
+            GROUP BY b.id_grupo
+        ),
+        grupo_final AS (
+            SELECT
+                g.id_grupo,
+                g.dat_cadastro,
+                g.ts_clinica_1,
+                g.ts_primeiro_grupo,
+                d.ts_primeira_clinica,
+                d.dsc_clinica_destino,
+                f.ts_ultima_alta,
+                f.tem_aberto,
+                COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) AS ts_referencia,
+                CASE
+                    WHEN d.ts_primeira_clinica IS NOT NULL THEN 'Destino'
+                    WHEN f.tem_aberto THEN 'Em aberto (hoje)'
+                    ELSE 'Fallback (última alta)'
+                END AS tipo_referencia
+            FROM grupo_inicio g
+            LEFT JOIN grupo_destino d ON d.id_grupo = g.id_grupo
+            LEFT JOIN grupo_fallback f ON f.id_grupo = g.id_grupo
+        )
+        SELECT
+            gf.id_grupo,
+            gf.dat_cadastro::text                              AS dat_cadastro,
+            gf.ts_clinica_1::text                             AS ts_clinica_1,
+            gf.ts_primeiro_grupo::text                        AS ts_primeiro_grupo,
+            gf.ts_referencia::text                            AS ts_referencia,
+            gf.dsc_clinica_destino,
+            gf.tipo_referencia,
+            gf.tem_aberto,
+            ROUND(
+                EXTRACT(EPOCH FROM (gf.ts_referencia - gf.ts_clinica_1)) / 60
+            )::integer                                        AS los_min,
+            ROUND(
+                EXTRACT(EPOCH FROM (gf.ts_referencia - gf.ts_clinica_1)) / 3600.0, 1
+            )::numeric                                        AS los_horas
+        FROM grupo_final gf
+        WHERE gf.ts_referencia > gf.ts_clinica_1
+        ORDER BY gf.ts_primeiro_grupo DESC
+    """, [data_ini, data_fim])
+
+    return [dict(r) for r in (rows or [])]
+
+
+def get_auditoria_los_sem(data_ini, data_fim):
+    """Auditoria LOS Sem Internação — cada atendimento PS com alta direta (sem internação)."""
+    rows = fetch_all("""
+        SELECT
+            ti.isn_internacao,
+            tp.num_prontuario,
+            ti.dat_cadastro,
+            COALESCE(til.dat_internacao_info + til.hor_internacao_info::time,
+                     til.dat_internacao      + til.hor_internacao::time)     AS ts_entrada,
+            COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                     til.dat_alta      + til.hor_alta::time)                 AS ts_saida,
+            ROUND(EXTRACT(EPOCH FROM (
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time, til.dat_alta + til.hor_alta::time)
+                -
+                COALESCE(til.dat_internacao_info + til.hor_internacao_info::time, til.dat_internacao + til.hor_internacao::time)
+            )) / 60::numeric, 1) AS los_min,
+            ROUND(EXTRACT(EPOCH FROM (
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time, til.dat_alta + til.hor_alta::time)
+                -
+                COALESCE(til.dat_internacao_info + til.hor_internacao_info::time, til.dat_internacao + til.hor_internacao::time)
+            )) / 3600::numeric, 2) AS los_horas,
+            td.dsc_destino
+        FROM public.t_internacao ti
+        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+        JOIN public.t_destino td ON td.isn_destino = til.isn_destino
+        WHERE ti.isn_tipo_atendimento = 2
+          AND til.isn_destino IN (1, 3, 4)
+          AND til.dat_alta IS NOT NULL
+          AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ORDER BY ti.dat_cadastro DESC
+    """, [data_ini, data_fim])
+    return [dict(r) for r in (rows or [])]
+
+
+def get_auditoria_porta_medico(data_ini, data_fim):
+    """Auditoria Tempo Porta-Médico — cada atendimento PS com seu tempo de espera até consulta."""
+    rows = fetch_all(f"""
+        WITH primeira_consulta AS (
+            SELECT
+                tia.isn_internacao,
+                MIN(
+                    tia.dat_ini
+                    + COALESCE(NULLIF(TRIM(tia.dsc_hor_ini), ''), '00:00')::time
+                ) AS ts_consulta_med
+            FROM public.t_internacao_atendimento tia
+            WHERE tia.dat_ini IS NOT NULL
+            GROUP BY tia.isn_internacao
+        ),
+        mov_inicio AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                tc.dsc_clinica,
+                te.dsc_enfermaria,
+                tl.dsc_leito
+            FROM public.t_internacao_leito til
+            JOIN public.t_clinica tc ON til.isn_clinica = tc.isn_clinica
+            JOIN public.t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
+            JOIN public.t_leito tl ON til.isn_leito = tl.isn_leito
+            WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
+            ORDER BY
+                til.isn_internacao,
+                COALESCE(til.dat_internacao_info, til.dat_internacao),
+                til.isn_internacao_leito
+        )
+        SELECT
+            ti.isn_internacao,
+            tp.num_prontuario,
+            ti.dat_cadastro,
+            pc.ts_consulta_med,
+            ROUND(
+                EXTRACT(EPOCH FROM (pc.ts_consulta_med - ti.dat_cadastro)) / 60::numeric, 1
+            ) AS tempo_min,
+            ROUND(
+                EXTRACT(EPOCH FROM (pc.ts_consulta_med - ti.dat_cadastro)) / 3600::numeric, 2
+            ) AS tempo_horas,
+            mi.dsc_clinica,
+            mi.dsc_enfermaria,
+            mi.dsc_leito
+        FROM public.t_internacao ti
+        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN mov_inicio mi ON mi.isn_internacao = ti.isn_internacao
+        JOIN primeira_consulta pc ON pc.isn_internacao = ti.isn_internacao
+        WHERE ti.isn_tipo_atendimento = 2
+          AND ti.dat_cadastro::date BETWEEN %s AND %s
+          AND pc.ts_consulta_med >= ti.dat_cadastro
+        ORDER BY ti.dat_cadastro DESC
+    """, [data_ini, data_fim])
+    return [dict(r) for r in (rows or [])]
+
+
+def get_auditoria_internacoes_ps(data_ini, data_fim):
+    """Auditoria Internações PS — cada internação proveniente do PS (isn_destino=13)."""
+    rows = fetch_all("""
+        SELECT
+            ti.isn_internacao,
+            tp.num_prontuario,
+            ti.dat_cadastro,
+            COALESCE(
+                til_ent.dat_internacao_info + til_ent.hor_internacao_info::time,
+                til_ent.dat_internacao      + til_ent.hor_internacao::time
+            ) AS ts_entrada,
+            COALESCE(
+                til_ult.dat_alta_info + til_ult.hor_alta_info::time,
+                til_ult.dat_alta      + til_ult.hor_alta::time
+            ) AS ts_alta,
+            tc_ent.dsc_clinica  AS clinica_entrada,
+            tc_ult.dsc_clinica  AS clinica_alta,
+            td_ult.dsc_destino
+        FROM public.t_internacao ti
+        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        -- primeira movimentação (entrada)
+        JOIN LATERAL (
+            SELECT * FROM public.t_internacao_leito til2
+            WHERE til2.isn_internacao = ti.isn_internacao
+            ORDER BY COALESCE(til2.dat_internacao_info, til2.dat_internacao),
+                     til2.isn_internacao_leito
+            LIMIT 1
+        ) til_ent ON TRUE
+        -- última movimentação (alta)
+        JOIN LATERAL (
+            SELECT * FROM public.t_internacao_leito til3
+            WHERE til3.isn_internacao = ti.isn_internacao
+            ORDER BY COALESCE(til3.dat_alta_info, til3.dat_alta) DESC NULLS LAST,
+                     til3.isn_internacao_leito DESC
+            LIMIT 1
+        ) til_ult ON TRUE
+        JOIN public.t_clinica tc_ent ON tc_ent.isn_clinica = til_ent.isn_clinica
+        JOIN public.t_clinica tc_ult ON tc_ult.isn_clinica = til_ult.isn_clinica
+        LEFT JOIN public.t_destino td_ult ON td_ult.isn_destino = til_ult.isn_destino
+                WHERE ti.isn_tipo_atendimento = 2
+                    AND EXISTS (
+                            SELECT 1 FROM public.t_internacao_leito til
+                            WHERE til.isn_internacao = ti.isn_internacao
+                                AND til.isn_destino = 13
+                                AND COALESCE(til.dat_alta_info, til.dat_alta)::date BETWEEN %s AND %s
+                    )
+        ORDER BY ti.dat_cadastro DESC
+    """, [data_ini, data_fim])
+    return [dict(r) for r in (rows or [])]
+
+
+def get_auditoria_tmph(data_ini, data_fim):
+    """Auditoria TMPH — movimentos de internação que compõem paciente-dia e saídas hospitalares."""
+    rows = fetch_all(f"""
+        WITH movimentos AS (
+            SELECT
+                til.*,
+                LEAD(til.isn_clinica) OVER (
+                    PARTITION BY til.isn_internacao
+                    ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
+                ) AS prox_clinica
+            FROM public.t_internacao_leito til
+        )
+        SELECT
+            mov.isn_internacao_leito,
+            mov.isn_internacao,
+            tp.num_prontuario,
+            tc.dsc_clinica,
+            te.dsc_enfermaria,
+            tl.dsc_leito,
+            COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date AS dt_entrada,
+            COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
+            mov.dat_alta::date AS dt_alta,
+            td.dsc_destino,
+            CASE
+                WHEN (COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date
+                      - COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date) > 0
+                THEN (COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date
+                      - COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date)
+                WHEN (COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date
+                      = COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date)
+                     AND mov.dat_alta IS NOT NULL AND COALESCE(mov.isn_destino, 0) <> 1
+                THEN 1
+                ELSE 0
+            END AS paciente_dia,
+            CASE
+                WHEN mov.isn_destino IN (1, 3, 4)
+                     AND mov.dat_alta::date BETWEEN %s AND %s
+                THEN 1 ELSE 0
+            END AS saida_valida
+        FROM movimentos mov
+        JOIN public.t_internacao ti ON ti.isn_internacao = mov.isn_internacao
+        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+        JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+        JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
+        LEFT JOIN public.t_destino td ON td.isn_destino = mov.isn_destino
+        WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
+          AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
+          AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
+        ORDER BY COALESCE(mov.dat_internacao_info, mov.dat_internacao) DESC
+    """, [data_ini, data_fim, data_fim, data_ini])
+    return [dict(r) for r in (rows or [])]
+
+
+def get_auditoria_tmp_ps(data_ini, data_fim):
+    """Auditoria TMP PS — movimentos de internação nas clínicas do PS."""
+    rows = fetch_all(f"""
+        WITH movimentos AS (
+            SELECT
+                til.*,
+                LEAD(til.isn_clinica) OVER (
+                    PARTITION BY til.isn_internacao
+                    ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
+                ) AS prox_clinica
+            FROM public.t_internacao_leito til
+        )
+        SELECT
+            mov.isn_internacao_leito,
+            mov.isn_internacao,
+            tp.num_prontuario,
+            tc.dsc_clinica,
+            te.dsc_enfermaria,
+            tl.dsc_leito,
+            COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date AS dt_entrada,
+            COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
+            mov.dat_alta::date AS dt_alta,
+            td.dsc_destino,
+            CASE
+                WHEN (COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date
+                      - COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date) > 0
+                THEN (COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date
+                      - COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date)
+                WHEN (COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date
+                      = COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date)
+                     AND mov.dat_alta IS NOT NULL AND COALESCE(mov.isn_destino, 0) <> 1
+                THEN 1
+                ELSE 0
+            END AS paciente_dia,
+            CASE
+                WHEN mov.isn_destino IN (1, 3, 4)
+                     AND mov.dat_alta::date BETWEEN %s AND %s
+                THEN 1 ELSE 0
+            END AS saida_valida
+        FROM movimentos mov
+        JOIN public.t_internacao ti ON ti.isn_internacao = mov.isn_internacao
+        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+        JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+        JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
+        LEFT JOIN public.t_destino td ON td.isn_destino = mov.isn_destino
+        WHERE mov.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
+          AND mov.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
+          AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
+          AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
+        ORDER BY COALESCE(mov.dat_internacao_info, mov.dat_internacao) DESC
+    """, [data_ini, data_fim, data_fim, data_ini])
+    return [dict(r) for r in (rows or [])]

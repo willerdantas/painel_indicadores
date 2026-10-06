@@ -1,0 +1,968 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Auditoria de Indicadores</title>
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<style>
+:root {
+  --teal:   #3BB5A3;
+  --green:  #007C6B;
+  --orange: #EB600A;
+  --amber:  #F3A133;
+  --dark:   #38464D;
+  --blue2:  #2E758C;
+  --cyan:   #00B2C9;
+  --teal2:  #0F9688;
+  --bg:     #f0f4f5;
+  --card:   #ffffff;
+  --border: #dde4e6;
+  --muted:  #6b7f86;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--dark); min-height: 100vh; }
+
+header {
+  background: var(--dark);
+  padding: 0 2rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 64px;
+  border-bottom: 3px solid var(--teal);
+}
+header h1 { font-family: 'Syne', sans-serif; font-size: 1.1rem; font-weight: 800; color: #fff; letter-spacing: .04em; text-transform: uppercase; }
+header a { font-size: .8rem; color: var(--teal); text-decoration: none; font-weight: 600; }
+header a:hover { color: #fff; }
+.btn-inicio {
+  font-family: 'Syne', sans-serif;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  background: var(--teal);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  padding: 8px 18px;
+  cursor: pointer;
+  transition: background .15s;
+  white-space: nowrap;
+}
+.btn-inicio:hover { background: var(--green); }
+
+/* ---- Loader overlay ---- */
+#loader-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  background: rgba(38,50,56,.45);
+  backdrop-filter: blur(2px);
+  align-items: center;
+  justify-content: center;
+}
+#loader-overlay.active { display: flex; }
+.loader-ring {
+  position: relative;
+  width: 200px;
+  height: 200px;
+}
+.loader-ring svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  animation: spin 1.1s linear infinite;
+}
+.loader-ring svg circle {
+  fill: none;
+  stroke: var(--teal);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-dasharray: 200;
+  stroke-dashoffset: 50;
+}
+.loader-ring img {
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  width: 150px;
+  height: 150px;
+  object-fit: contain;
+  border-radius: 50%;
+  background: #fff;
+  padding: 6px;
+}
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.wrapper { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
+
+.filters {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.25rem 1.5rem;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 1rem;
+  align-items: end;
+  margin-bottom: 1.5rem;
+}
+.filters label { display: block; font-size: .72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
+.filters input, .filters select { width: 100%; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: .875rem; color: var(--dark); background: var(--bg); outline: none; }
+.filters input:focus, .filters select:focus { border-color: var(--teal); }
+.btn { padding: .55rem 1.4rem; background: var(--teal); color: #fff; border: none; border-radius: 6px; font-family: 'Syne', sans-serif; font-size: .82rem; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; cursor: pointer; transition: background .15s; }
+.btn:hover { background: var(--green); }
+
+.summary {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+.sum-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  text-align: center;
+}
+.sum-card .lbl { font-size: .68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
+.sum-card .val { font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 800; color: var(--dark); }
+.sum-card .sub { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
+.sum-card.c-dest .val { color: var(--teal); }
+.sum-card.c-fall .val { color: var(--orange); }
+.sum-card.c-open .val { color: var(--amber); }
+.sum-card.c-med  .val { color: var(--blue2); }
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-bottom: .75rem;
+  flex-wrap: wrap;
+}
+.toolbar input[type=text] {
+  flex: 1;
+  min-width: 200px;
+  padding: .45rem .85rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: .875rem;
+  background: var(--card);
+  outline: none;
+}
+.toolbar input:focus { border-color: var(--teal); }
+.toolbar select { padding: .45rem .75rem; border: 1px solid var(--border); border-radius: 6px; font-family: inherit; font-size: .875rem; background: var(--card); color: var(--dark); outline: none; }
+.toolbar label { font-size: .78rem; color: var(--muted); white-space: nowrap; }
+
+.table-wrap { overflow-x: auto; border-radius: 10px; border: 1px solid var(--border); }
+table { width: 100%; border-collapse: collapse; background: var(--card); font-size: .82rem; }
+thead th {
+  background: var(--dark);
+  color: #fff;
+  padding: .65rem .9rem;
+  text-align: left;
+  font-size: .72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+}
+thead th:hover { background: #4a5c65; }
+thead th .sort-icon { margin-left: .3rem; opacity: .5; }
+thead th.asc .sort-icon::after  { content: '▲'; }
+thead th.desc .sort-icon::after { content: '▼'; }
+thead th:not(.asc):not(.desc) .sort-icon::after { content: '⇅'; }
+
+tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+tbody tr:hover { background: #f6f9fa; }
+tbody td { padding: .6rem .9rem; vertical-align: top; }
+
+.badge {
+  display: inline-block;
+  padding: .2rem .55rem;
+  border-radius: 20px;
+  font-size: .7rem;
+  font-weight: 600;
+  letter-spacing: .04em;
+  white-space: nowrap;
+}
+.badge-dest { background: #d4f5ef; color: #007C6B; }
+.badge-fall { background: #ffe5d5; color: #c04a00; }
+.badge-open { background: #fff3cd; color: #a06000; }
+
+.los-bar-wrap { display: flex; align-items: center; gap: .6rem; }
+.los-bar { height: 8px; border-radius: 4px; min-width: 4px; background: var(--teal); }
+
+.pagination {
+  display: flex;
+  align-items: center;
+  gap: .5rem;
+  margin-top: 1rem;
+  flex-wrap: wrap;
+}
+.page-btn {
+  padding: .35rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-size: .8rem;
+  background: var(--card);
+  cursor: pointer;
+  color: var(--dark);
+}
+.page-btn.active { background: var(--teal); color: #fff; border-color: var(--teal); }
+.page-btn:hover:not(.active) { background: var(--bg); }
+.page-info { font-size: .8rem; color: var(--muted); margin-left: auto; }
+
+.error-bar { background: #fde; border: 1px solid #f99; color: #c00; border-radius: 8px; padding: .75rem 1rem; font-size: .85rem; margin-bottom: 1rem; display: none; }
+.loading-msg { text-align: center; padding: 2rem; color: var(--muted); font-size: .9rem; }
+
+/* ---- KPI section ---- */
+.section-title {
+  font-family: 'Syne', sans-serif;
+  font-size: .78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .1em;
+  color: var(--muted);
+  margin: 1.5rem 0 .75rem;
+  padding-left: .1rem;
+  border-left: 3px solid var(--teal);
+  padding-left: .6rem;
+}
+.kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(155px, 1fr));
+  gap: .85rem;
+  margin-bottom: 1.5rem;
+}
+.kpi {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem 1rem;
+  position: relative;
+  overflow: hidden;
+  min-width: 0;
+}
+.kpi::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 3px;
+}
+.kpi.c1::before { background: var(--teal); }
+.kpi.c2::before { background: var(--orange); }
+.kpi.c3::before { background: var(--blue2); }
+.kpi.c4::before { background: var(--amber); }
+.kpi.c5::before { background: var(--cyan); }
+.kpi.c6::before { background: var(--green); }
+.kpi.c7::before { background: var(--teal2); }
+.kpi .label { font-size: .68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
+.kpi .value { font-family: 'Syne', sans-serif; font-size: 1.7rem; font-weight: 800; color: var(--dark); line-height: 1; }
+.kpi .unit  { font-size: .68rem; color: var(--muted); margin-top: .25rem; }
+.kpi .sub   { font-size: .72rem; color: var(--muted); margin-top: .2rem; }
+.kpi .icon  { position: absolute; bottom: .6rem; right: .85rem; font-size: 1.4rem; opacity: .13; }
+.kpi .detail { font-size: .65rem; color: var(--muted); margin-top: .18rem; line-height: 1.45; }
+
+@media(max-width:700px){
+  .wrapper { padding: 1rem; }
+  .summary { grid-template-columns: repeat(2, 1fr); }
+  .kpis { grid-template-columns: repeat(2, 1fr); }
+}
+</style>
+</head>
+<body>
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="/static/LOGO HM - NOVA (1).png" alt="logo">
+  </div>
+</div>
+
+<header>
+  <h1>Auditoria de Indicadores</h1>
+  <div style="display:flex;align-items:center;gap:1rem;">
+    <a href="/lean/">← Indicadores LEAN</a>
+    <button id="btn-voltar-inicio" class="btn-inicio">Voltar ao Início</button>
+  </div>
+</header>
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label>Indicador</label>
+      <select id="indicador" onchange="atualizarDescricao()">
+        <option value="los_com">LOS Com Internação</option>
+        <option value="los_sem">LOS Sem Internação</option>
+        <option value="porta_medico">Tempo Porta-Médico</option>
+        <option value="internacoes_ps">Internações PS</option>
+        <option value="tmph">Paciente-dia / Saídas (TMPH)</option>
+        <option value="tmp_ps">Paciente-dia / Saídas (TMP PS)</option>
+      </select>
+    </div>
+    <div>
+      <label>Data Inicial</label>
+      <input type="date" id="data_ini" value="{{ data_ini }}">
+    </div>
+    <div>
+      <label>Data Final</label>
+      <input type="date" id="data_fim" value="{{ data_fim }}">
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn" onclick="carregar()">Consultar</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <div id="kpis_area" style="display:none">
+    <h2 class="section-title">Indicadores Hospitalares</h2>
+    <div class="kpis">
+      <div class="kpi c1">
+        <div class="label">Paciente-dia</div>
+        <div class="value" id="k_paciente_dia">—</div>
+        <div class="unit">dias</div>
+        <div class="icon">🗓</div>
+      </div>
+      <div class="kpi c2">
+        <div class="label">Saídas</div>
+        <div class="value" id="k_saidas">—</div>
+        <div class="unit">por destino</div>
+        <div class="detail" id="k_saidas_detalhe">—</div>
+        <div class="icon">↗</div>
+      </div>
+      <div class="kpi c3">
+        <div class="label">Tempo Médio Permanência</div>
+        <div class="value" id="k_tmph">—</div>
+        <div class="unit">dias</div>
+        <div class="icon">📅</div>
+      </div>
+      <div class="kpi c6">
+        <div class="label">Giro de Leito</div>
+        <div class="value" id="k_giro">—</div>
+        <div class="unit">saídas / leito</div>
+        <div class="icon">🔄</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Indicadores da Emergência</h2>
+    <div class="kpis">
+      <div class="kpi c1">
+        <div class="label">LOS Sem Internação</div>
+        <div class="value" id="k_los_sem">—</div>
+        <div class="unit">minutos (PS)</div>
+        <div class="sub" id="k_los_sem_sub"></div>
+        <div class="icon">⏱</div>
+      </div>
+      <div class="kpi c2">
+        <div class="label">LOS Com Internação</div>
+        <div class="value" id="k_los_com">—</div>
+        <div class="unit">minutos</div>
+        <div class="sub" id="k_los_com_sub"></div>
+        <div class="icon">🏥</div>
+      </div>
+      <div class="kpi c5">
+        <div class="label">Tempo Porta-Médico</div>
+        <div class="value" id="k_porta_medico">—</div>
+        <div class="unit">minutos</div>
+        <div class="icon">👨‍⚕️</div>
+      </div>
+      <div class="kpi c3">
+        <div class="label">Giro de Leito PS</div>
+        <div class="value" id="k_giro_ps">—</div>
+        <div class="unit">saídas / leito PS</div>
+        <div class="icon">🔁</div>
+      </div>
+      <div class="kpi c4">
+        <div class="label">TMP Leitos PS</div>
+        <div class="value" id="k_tmp_ps">—</div>
+        <div class="unit">dias</div>
+        <div class="icon">🛏</div>
+      </div>
+      <div class="kpi c6">
+        <div class="label">Paciente-dia PS</div>
+        <div class="value" id="k_paciente_dia_ps">—</div>
+        <div class="unit">dias</div>
+        <div class="icon">🗓</div>
+      </div>
+      <div class="kpi c7">
+        <div class="label">Saídas PS</div>
+        <div class="value" id="k_saidas_ps">—</div>
+        <div class="unit">por destino</div>
+        <div class="detail" id="k_saidas_ps_detalhe">—</div>
+        <div class="icon">↗</div>
+      </div>
+      <div class="kpi c2">
+        <div class="label">Internações PS</div>
+        <div class="value" id="k_internacoes_ps">—</div>
+        <div class="unit">pacientes admitidos</div>
+        <div class="sub" id="k_internacoes_ps_sub"></div>
+        <div class="icon">🛋</div>
+      </div>
+    </div>
+  </div>
+
+  <h2 class="section-title" id="audit_title">Auditoria — LOS com Internação</h2>
+
+  <div class="summary" id="summary" style="display:none">
+    <div class="sum-card">
+      <div class="lbl" id="s_lbl_total">Total de Registros</div>
+      <div class="val" id="s_total">—</div>
+    </div>
+    <div class="sum-card c-dest" id="s_card2" style="display:none">
+      <div class="lbl" id="s_lbl2">—</div>
+      <div class="val" id="s_val2">—</div>
+    </div>
+    <div class="sum-card c-fall" id="s_card3" style="display:none">
+      <div class="lbl" id="s_lbl3">—</div>
+      <div class="val" id="s_val3">—</div>
+    </div>
+    <div class="sum-card c-open" id="s_card4" style="display:none">
+      <div class="lbl" id="s_lbl4">—</div>
+      <div class="val" id="s_val4">—</div>
+    </div>
+    <div class="sum-card c-med">
+      <div class="lbl" id="s_lbl_media">Média</div>
+      <div class="val" id="s_media">—</div>
+      <div class="sub" id="s_media_unit">horas</div>
+    </div>
+    <div class="sum-card c-med">
+      <div class="lbl" id="s_lbl_mediana">Mediana</div>
+      <div class="val" id="s_mediana">—</div>
+      <div class="sub" id="s_mediana_unit">horas</div>
+    </div>
+  </div>
+
+  <div id="tabela_area" style="display:none">
+    <div class="toolbar">
+      <input type="text" id="busca" placeholder="Buscar..." oninput="filtrarBusca()">
+      <label>por página:</label>
+      <select id="per_page" onchange="renderPagina(1)">
+        <option value="25">25</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+    </div>
+
+    <div class="table-wrap">
+      <table id="tabela">
+        <thead id="thead_row"></thead>
+        <tbody id="tbody"></tbody>
+      </table>
+    </div>
+
+    <div class="pagination" id="paginacao"></div>
+    <div class="page-info" id="page_info"></div>
+  </div>
+
+</div>
+
+<script>
+let allRows  = [];
+let filtered = [];
+let sortCol  = '';
+let sortDir  = 'desc';
+let currentPage = 1;
+let currentSchema = null;  // coluna schema do indicador atual
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+let _loaderCount = 0;
+function loaderOn()  { _loaderCount++; showLoader(); }
+function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loaderCount === 0) hideLoader(); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 600);
+});
+
+function v(id){ return document.getElementById(id).value; }
+
+function fmt(val){
+  if (val === null || val === undefined || val === '') return '—';
+  const s = String(val);
+  if (s.includes('T') || /\d{4}-\d{2}-\d{2} \d/.test(s)) {
+    const d = new Date(s.replace(' ', 'T'));
+    if (!isNaN(d)) return d.toLocaleDateString('pt-BR') + ' ' + d.toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit'});
+  }
+  return s;
+}
+
+function fmtDate(val){
+  if (!val) return '—';
+  const d = new Date(String(val).replace(' ', 'T'));
+  return isNaN(d) ? val : d.toLocaleDateString('pt-BR');
+}
+
+function numFmt(v, dec=1){ return (v === null || v === undefined) ? '—' : Number(v).toFixed(dec); }
+
+function calcMedia(arr, key){
+  const n = arr.map(r => Number(r[key])).filter(v => !isNaN(v));
+  return n.length ? (n.reduce((a,b)=>a+b,0)/n.length) : null;
+}
+function calcMediana(arr, key){
+  const n = arr.map(r => Number(r[key])).filter(v => !isNaN(v)).sort((a,b)=>a-b);
+  if (!n.length) return null;
+  const m = Math.floor(n.length/2);
+  return n.length % 2 ? n[m] : (n[m-1]+n[m])/2;
+}
+
+function numBar(val, max, warn=48, danger=240){
+  if (val === null || val === undefined) return '—';
+  const h = Number(val);
+  const pct = Math.min(100, (h / max) * 100);
+  const cor = h > danger ? '#EB600A' : h > warn ? '#F3A133' : '#3BB5A3';
+  return `<div class="los-bar-wrap">
+    <div class="los-bar" style="width:${pct.toFixed(0)}px;background:${cor};max-width:120px"></div>
+    <span>${h.toFixed(1)}</span>
+  </div>`;
+}
+
+function badgeTipo(tipo){
+  if (!tipo) return '—';
+  if (tipo === 'Destino')            return `<span class="badge badge-dest">Destino</span>`;
+  if (tipo.startsWith('Em aberto')) return `<span class="badge badge-open">Em aberto</span>`;
+  return `<span class="badge badge-fall">Fallback</span>`;
+}
+
+// -----------------------------------------------------------------------
+// Schemas por indicador: colunas, resumo e renderização de linha
+// -----------------------------------------------------------------------
+const SCHEMAS = {
+  los_com: {
+    title:   'Auditoria — LOS com Internação',
+    defaultSort: 'ts_primeiro_grupo',
+    cols: [
+      { col: 'id_grupo',           label: 'ID Grupo' },
+      { col: 'dat_cadastro',       label: 'Cadastro PS' },
+      { col: 'ts_clinica_1',       label: 'Entrada Clín. 1' },
+      { col: 'ts_referencia',      label: 'Referência Final' },
+      { col: 'tipo_referencia',    label: 'Tipo' },
+      { col: 'dsc_clinica_destino',label: 'Clínica Destino' },
+      { col: 'los_horas',          label: 'LOS (h)' },
+    ],
+    summary(rows){
+      const horas = rows.map(r => r.los_horas);
+      return {
+        cards2: { lbl:'Com Destino',       val: rows.filter(r=>r.tipo_referencia==='Destino').length },
+        cards3: { lbl:'Fallback',          val: rows.filter(r=>(r.tipo_referencia||'').startsWith('Fallback')).length },
+        cards4: { lbl:'Em Aberto',         val: rows.filter(r=>(r.tipo_referencia||'').startsWith('Em aberto')).length },
+        mediaKey: 'los_horas', mediaLabel: 'Média LOS (h)', medianaLabel: 'Mediana LOS (h)', unit: 'horas',
+      };
+    },
+    rowHtml(r, extras){
+      return `<td>${r.id_grupo}</td>
+              <td>${fmt(r.dat_cadastro)}</td>
+              <td>${fmt(r.ts_clinica_1)}</td>
+              <td>${fmt(r.ts_referencia)}</td>
+              <td>${badgeTipo(r.tipo_referencia)}</td>
+              <td>${r.dsc_clinica_destino||'—'}</td>
+              <td>${numBar(r.los_horas, extras.maxHoras)}</td>`;
+    },
+    extras(sorted){ return { maxHoras: Math.max(...sorted.map(r=>Number(r.los_horas)||0), 1) }; },
+  },
+
+  los_sem: {
+    title:   'Auditoria — LOS Sem Internação',
+    defaultSort: 'dat_cadastro',
+    cols: [
+      { col: 'isn_internacao',  label: 'Internação' },
+      { col: 'num_prontuario',  label: 'Prontuário' },
+      { col: 'dat_cadastro',    label: 'Cadastro' },
+      { col: 'ts_entrada',      label: 'Entrada' },
+      { col: 'ts_saida',        label: 'Saída' },
+      { col: 'los_min',         label: 'LOS (min)' },
+      { col: 'los_horas',       label: 'LOS (h)' },
+      { col: 'dsc_destino',     label: 'Destino' },
+    ],
+    summary(rows){
+      return {
+        mediaKey: 'los_min', mediaLabel: 'Média LOS (min)', medianaLabel: 'Mediana LOS (min)', unit: 'minutos',
+      };
+    },
+    rowHtml(r, extras){
+      return `<td>${r.isn_internacao}</td>
+              <td>${r.num_prontuario||'—'}</td>
+              <td>${fmtDate(r.dat_cadastro)}</td>
+              <td>${fmt(r.ts_entrada)}</td>
+              <td>${fmt(r.ts_saida)}</td>
+              <td>${numBar(r.los_min, extras.maxMin, 240, 600)}</td>
+              <td>${numFmt(r.los_horas, 2)}</td>
+              <td>${r.dsc_destino||'—'}</td>`;
+    },
+    extras(sorted){ return { maxMin: Math.max(...sorted.map(r=>Number(r.los_min)||0), 1) }; },
+  },
+
+  porta_medico: {
+    title:   'Auditoria — Tempo Porta-Médico',
+    defaultSort: 'dat_cadastro',
+    cols: [
+      { col: 'isn_internacao',  label: 'Internação' },
+      { col: 'num_prontuario',  label: 'Prontuário' },
+      { col: 'dat_cadastro',    label: 'Cadastro' },
+      { col: 'ts_consulta_med', label: 'Consulta Médica' },
+      { col: 'tempo_min',       label: 'Tempo (min)' },
+      { col: 'tempo_horas',     label: 'Tempo (h)' },
+      { col: 'dsc_clinica',     label: 'Clínica' },
+      { col: 'dsc_enfermaria',  label: 'Enfermaria' },
+    ],
+    summary(rows){
+      return {
+        mediaKey: 'tempo_min', mediaLabel: 'Média (min)', medianaLabel: 'Mediana (min)', unit: 'minutos',
+      };
+    },
+    rowHtml(r, extras){
+      return `<td>${r.isn_internacao}</td>
+              <td>${r.num_prontuario||'—'}</td>
+              <td>${fmt(r.dat_cadastro)}</td>
+              <td>${fmt(r.ts_consulta_med)}</td>
+              <td>${numBar(r.tempo_min, extras.maxMin, 60, 240)}</td>
+              <td>${numFmt(r.tempo_horas, 2)}</td>
+              <td>${r.dsc_clinica||'—'}</td>
+              <td>${r.dsc_enfermaria||'—'}</td>`;
+    },
+    extras(sorted){ return { maxMin: Math.max(...sorted.map(r=>Number(r.tempo_min)||0), 1) }; },
+  },
+
+  internacoes_ps: {
+    title:   'Auditoria — Internações PS',
+    defaultSort: 'dat_cadastro',
+    cols: [
+      { col: 'isn_internacao',   label: 'Internação' },
+      { col: 'num_prontuario',   label: 'Prontuário' },
+      { col: 'dat_cadastro',     label: 'Cadastro PS' },
+      { col: 'ts_entrada',       label: 'Entrada' },
+      { col: 'ts_alta',          label: 'Alta' },
+      { col: 'clinica_entrada',  label: 'Clínica Entrada' },
+      { col: 'clinica_alta',     label: 'Clínica Alta' },
+      { col: 'dsc_destino',      label: 'Destino Final' },
+    ],
+    summary(rows){ return {}; },
+    rowHtml(r, extras){
+      return `<td>${r.isn_internacao}</td>
+              <td>${r.num_prontuario||'—'}</td>
+              <td>${fmt(r.dat_cadastro)}</td>
+              <td>${fmt(r.ts_entrada)}</td>
+              <td>${fmt(r.ts_alta)||'—'}</td>
+              <td>${r.clinica_entrada||'—'}</td>
+              <td>${r.clinica_alta||'—'}</td>
+              <td>${r.dsc_destino||'—'}</td>`;
+    },
+    extras(){ return {}; },
+  },
+
+  tmph: {
+    title:   'Auditoria — Paciente-dia / Saídas (TMPH)',
+    defaultSort: 'dt_entrada',
+    cols: [
+      { col: 'isn_internacao',    label: 'Internação' },
+      { col: 'num_prontuario',    label: 'Prontuário' },
+      { col: 'dsc_clinica',       label: 'Clínica' },
+      { col: 'dsc_enfermaria',    label: 'Enfermaria' },
+      { col: 'dsc_leito',         label: 'Leito' },
+      { col: 'dt_entrada',        label: 'Entrada' },
+      { col: 'dt_saida',          label: 'Saída' },
+      { col: 'dt_alta',           label: 'Alta' },
+      { col: 'dsc_destino',       label: 'Destino' },
+      { col: 'paciente_dia',      label: 'Pac-dia' },
+      { col: 'saida_valida',      label: 'Saída Válida' },
+    ],
+    summary(rows){
+      return {
+        cards2: { lbl:'Total Pac-dia',   val: rows.reduce((s,r)=>s+Number(r.paciente_dia||0),0).toFixed(0) },
+        cards3: { lbl:'Saídas Válidas',  val: rows.filter(r=>r.saida_valida==1).length },
+        mediaKey: 'paciente_dia', mediaLabel: 'Média Pac-dia', medianaLabel: 'Mediana Pac-dia', unit: 'dias',
+      };
+    },
+    rowHtml(r, extras){
+      const sv = r.saida_valida == 1
+        ? `<span class="badge badge-dest">Sim</span>`
+        : `<span class="badge badge-fall">Não</span>`;
+      return `<td>${r.isn_internacao}</td>
+              <td>${r.num_prontuario||'—'}</td>
+              <td>${r.dsc_clinica||'—'}</td>
+              <td>${r.dsc_enfermaria||'—'}</td>
+              <td>${r.dsc_leito||'—'}</td>
+              <td>${fmtDate(r.dt_entrada)}</td>
+              <td>${fmtDate(r.dt_saida)}</td>
+              <td>${fmtDate(r.dt_alta)||'—'}</td>
+              <td>${r.dsc_destino||'—'}</td>
+              <td>${r.paciente_dia??'—'}</td>
+              <td>${sv}</td>`;
+    },
+    extras(){ return {}; },
+  },
+
+  tmp_ps: {
+    title:   'Auditoria — Paciente-dia / Saídas (TMP PS)',
+    defaultSort: 'dt_entrada',
+    cols: [
+      { col: 'isn_internacao',    label: 'Internação' },
+      { col: 'num_prontuario',    label: 'Prontuário' },
+      { col: 'dsc_clinica',       label: 'Clínica' },
+      { col: 'dsc_enfermaria',    label: 'Enfermaria' },
+      { col: 'dsc_leito',         label: 'Leito' },
+      { col: 'dt_entrada',        label: 'Entrada' },
+      { col: 'dt_saida',          label: 'Saída' },
+      { col: 'dt_alta',           label: 'Alta' },
+      { col: 'dsc_destino',       label: 'Destino' },
+      { col: 'paciente_dia',      label: 'Pac-dia' },
+      { col: 'saida_valida',      label: 'Saída Válida' },
+    ],
+    summary(rows){
+      return {
+        cards2: { lbl:'Total Pac-dia',  val: rows.reduce((s,r)=>s+Number(r.paciente_dia||0),0).toFixed(0) },
+        cards3: { lbl:'Saídas Válidas', val: rows.filter(r=>r.saida_valida==1).length },
+        mediaKey: 'paciente_dia', mediaLabel: 'Média Pac-dia', medianaLabel: 'Mediana Pac-dia', unit: 'dias',
+      };
+    },
+    rowHtml(r, extras){
+      const sv = r.saida_valida == 1
+        ? `<span class="badge badge-dest">Sim</span>`
+        : `<span class="badge badge-fall">Não</span>`;
+      return `<td>${r.isn_internacao}</td>
+              <td>${r.num_prontuario||'—'}</td>
+              <td>${r.dsc_clinica||'—'}</td>
+              <td>${r.dsc_enfermaria||'—'}</td>
+              <td>${r.dsc_leito||'—'}</td>
+              <td>${fmtDate(r.dt_entrada)}</td>
+              <td>${fmtDate(r.dt_saida)}</td>
+              <td>${fmtDate(r.dt_alta)||'—'}</td>
+              <td>${r.dsc_destino||'—'}</td>
+              <td>${r.paciente_dia??'—'}</td>
+              <td>${sv}</td>`;
+    },
+    extras(){ return {}; },
+  },
+};
+
+const ENDPOINTS = {
+  los_com:       '/lean/api/auditoria_los_com',
+  los_sem:       '/lean/api/auditoria_los_sem',
+  porta_medico:  '/lean/api/auditoria_porta_medico',
+  internacoes_ps:'/lean/api/auditoria_internacoes_ps',
+  tmph:          '/lean/api/auditoria_tmph',
+  tmp_ps:        '/lean/api/auditoria_tmp_ps',
+};
+
+function atualizarDescricao(){
+  const ind = v('indicador');
+  const sch = SCHEMAS[ind];
+  if (sch) document.getElementById('audit_title').textContent = sch.title;
+}
+
+function renderHeader(schema){
+  const tr = document.createElement('tr');
+  tr.innerHTML = schema.cols.map(c =>
+    `<th onclick="sortBy('${c.col}')" data-col="${c.col}">${c.label} <span class="sort-icon"></span></th>`
+  ).join('');
+  const thead = document.getElementById('thead_row');
+  thead.innerHTML = '';
+  thead.appendChild(tr);
+  // mark default sort
+  tr.querySelectorAll('th').forEach(th => {
+    if (th.dataset.col === sortCol) th.classList.add(sortDir);
+  });
+}
+
+function atualizarSummary(rows, schema){
+  const sum = schema.summary(rows);
+  document.getElementById('s_total').textContent = rows.length;
+  document.getElementById('summary').style.display = '';
+
+  const show = (id, lbl, val) => {
+    document.getElementById('s_card'+id).style.display = '';
+    document.getElementById('s_lbl'+id).textContent = lbl;
+    document.getElementById('s_val'+id).textContent = val;
+  };
+  const hide = (id) => { document.getElementById('s_card'+id).style.display = 'none'; };
+
+  if (sum.cards2) show(2, sum.cards2.lbl, sum.cards2.val); else hide(2);
+  if (sum.cards3) show(3, sum.cards3.lbl, sum.cards3.val); else hide(3);
+  if (sum.cards4) show(4, sum.cards4.lbl, sum.cards4.val); else hide(4);
+
+  if (sum.mediaKey){
+    document.getElementById('s_lbl_media').textContent   = sum.mediaLabel   || 'Média';
+    document.getElementById('s_lbl_mediana').textContent = sum.medianaLabel || 'Mediana';
+    document.getElementById('s_media_unit').textContent  = sum.unit || '';
+    document.getElementById('s_mediana_unit').textContent= sum.unit || '';
+    const med  = calcMedia(rows, sum.mediaKey);
+    const medn = calcMediana(rows, sum.mediaKey);
+    document.getElementById('s_media').textContent   = med   !== null ? med.toFixed(1)  : '—';
+    document.getElementById('s_mediana').textContent = medn  !== null ? medn.toFixed(1) : '—';
+  } else {
+    document.getElementById('s_media').textContent = document.getElementById('s_mediana').textContent = '—';
+  }
+}
+
+function sortBy(col){
+  if (sortCol === col) {
+    sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+  } else {
+    sortCol = col;
+    sortDir = 'desc';
+  }
+  document.querySelectorAll('thead th').forEach(th => {
+    th.classList.remove('asc','desc');
+    if (th.dataset.col === col) th.classList.add(sortDir);
+  });
+  renderPagina(1);
+}
+
+function filtrarBusca(){
+  const q = v('busca').toLowerCase();
+  filtered = allRows.filter(r => {
+    if (!q) return true;
+    return Object.values(r).join(' ').toLowerCase().includes(q);
+  });
+  renderPagina(1);
+}
+
+function renderPagina(page){
+  currentPage = page;
+  const perPage = parseInt(v('per_page'));
+  const schema  = currentSchema;
+  if (!schema) return;
+
+  const sorted = [...filtered].sort((a,b) => {
+    let va = a[sortCol], vb = b[sortCol];
+    if (va === null || va === undefined) va = '';
+    if (vb === null || vb === undefined) vb = '';
+    if (!isNaN(Number(va)) && !isNaN(Number(vb))) { va = Number(va); vb = Number(vb); }
+    if (va < vb) return sortDir === 'asc' ? -1 : 1;
+    if (va > vb) return sortDir === 'asc' ?  1 : -1;
+    return 0;
+  });
+
+  const extras = schema.extras(sorted);
+  const start  = (page - 1) * perPage;
+  const slice  = sorted.slice(start, start + perPage);
+
+  document.getElementById('tbody').innerHTML = slice.map(r =>
+    `<tr>${schema.rowHtml(r, extras)}</tr>`
+  ).join('');
+
+  const total = sorted.length;
+  const pages = Math.ceil(total / perPage);
+  const pagEl = document.getElementById('paginacao');
+  pagEl.innerHTML = '';
+
+  const add = (label, pg, active=false, disabled=false) => {
+    const btn = document.createElement('button');
+    btn.className = 'page-btn' + (active ? ' active' : '');
+    btn.textContent = label;
+    btn.disabled = disabled;
+    if (!disabled) btn.onclick = () => renderPagina(pg);
+    pagEl.appendChild(btn);
+  };
+  add('«', 1, false, page===1);
+  add('‹', page-1, false, page===1);
+  const from = Math.max(1, page-2), to = Math.min(pages, page+2);
+  for (let p = from; p <= to; p++) add(p, p, p===page);
+  add('›', page+1, false, page===pages);
+  add('»', pages, false, page===pages);
+
+  document.getElementById('page_info').textContent =
+    `Exibindo ${start+1}–${Math.min(start+perPage, total)} de ${total} registros`;
+}
+
+function n(val, dec=1){ return (val===null||val===undefined)?'—':Number(val).toFixed(dec); }
+
+function fmtDetalhe(arr){
+  if (!arr || !arr.length) return '—';
+  return arr.map(r => `${r.destino||r.dsc_destino}: ${r.total||r.qtd}`).join(' | ');
+}
+
+function renderKpis(d){
+  document.getElementById('kpis_area').style.display = '';
+  const set = (id, val, dec=1) => { const el=document.getElementById(id); if(el) el.textContent=n(val,dec); };
+  set('k_paciente_dia', d.paciente_dia, 0);
+  set('k_saidas', d.saidas, 0);
+  document.getElementById('k_saidas_detalhe').textContent = fmtDetalhe(d.saidas_detalhe);
+  set('k_tmph', d.tmph, 2);
+  set('k_giro', d.giro, 2);
+  const losSemMin = d.los_sem != null ? Math.round(d.los_sem) : null;
+  set('k_los_sem', losSemMin, 0);
+  if (losSemMin != null) document.getElementById('k_los_sem_sub').textContent = `${(losSemMin/60).toFixed(1)}h | ${(losSemMin/1440).toFixed(2)}d`;
+  const losComMin = d.los_com != null ? Math.round(d.los_com) : null;
+  set('k_los_com', losComMin, 0);
+  if (losComMin != null) document.getElementById('k_los_com_sub').textContent = `${(losComMin/60).toFixed(1)}h | ${(losComMin/1440).toFixed(2)}d`;
+  set('k_porta_medico', d.porta_medico, 0);
+  set('k_giro_ps', d.giro_ps, 2);
+  set('k_tmp_ps', d.tmp_ps, 2);
+  set('k_paciente_dia_ps', d.paciente_dia_tmp_ps, 0);
+  set('k_saidas_ps', d.saidas_tmp_ps, 0);
+  document.getElementById('k_saidas_ps_detalhe').textContent = fmtDetalhe(d.saidas_tmp_ps_detalhe);
+  set('k_internacoes_ps', d.internacoes_ps, 0);
+  if (d.internacoes_ps_media != null) document.getElementById('k_internacoes_ps_sub').textContent = `Média: ${n(d.internacoes_ps_media, 2)} / dia`;
+}
+
+function carregar(){
+  const ind    = v('indicador');
+  const schema = SCHEMAS[ind];
+  const url    = ENDPOINTS[ind];
+  if (!schema || !url) return;
+
+  currentSchema = schema;
+  sortCol = schema.defaultSort;
+  sortDir = 'desc';
+
+  document.getElementById('audit_title').textContent = schema.title;
+  document.getElementById('erro').style.display = 'none';
+  document.getElementById('summary').style.display = 'none';
+  document.getElementById('tabela_area').style.display = '';
+
+  renderHeader(schema);
+  document.getElementById('tbody').innerHTML = `<tr><td colspan="${schema.cols.length}" class="loading-msg">Carregando...</td></tr>`;
+
+  const params = new URLSearchParams({ data_ini: v('data_ini'), data_fim: v('data_fim') });
+
+  // Indicadores gerais (resumo KPI)
+  loaderOn();
+  fetch('/lean/api/indicadores?' + params)
+    .then(r => r.json())
+    .then(res => { if (res.ok) renderKpis(res.dados); })
+    .catch(() => {})
+    .finally(() => loaderOff());
+
+  // Dados de auditoria do indicador selecionado
+  loaderOn();
+  fetch(url + '?' + params)
+    .then(r => r.json())
+    .then(res => {
+      if (!res.ok) {
+        document.getElementById('erro').textContent = 'Erro: ' + res.erro;
+        document.getElementById('erro').style.display = 'block';
+        document.getElementById('tbody').innerHTML = '';
+        return;
+      }
+      allRows  = res.dados;
+      filtered = [...allRows];
+      atualizarSummary(allRows, schema);
+      document.getElementById('busca').value = '';
+      filtrarBusca();
+    })
+    .catch(err => {
+      document.getElementById('erro').textContent = 'Falha: ' + err;
+      document.getElementById('erro').style.display = 'block';
+    })
+    .finally(() => loaderOff());
+}
+
+// Inicializar descrição ao mudar seletor
+document.getElementById('indicador').addEventListener('change', atualizarDescricao);
+</script>
+</body>
+</html>
