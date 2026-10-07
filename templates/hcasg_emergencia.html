@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Indicadores da Emergência</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="/static/chart.umd.min.js"></script>
+<script>
+  // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
 <style>
 :root {
   --teal:    #3BB5A3;
@@ -361,8 +368,108 @@ header span {
   display: none;
 }
 
+/* ---- Atendimentos de emergência ---- */
+.atend-filtros {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1rem 1.25rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem 1.5rem;
+  align-items: flex-end;
+  margin-bottom: 1rem;
+}
+.atend-filtros > div > label {
+  display: block;
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+  margin-bottom: .35rem;
+}
+.atend-filtros select {
+  padding: .45rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  font-family: inherit;
+  font-size: .875rem;
+  color: var(--dark);
+  background: var(--bg);
+}
+.atend-filtros select:focus { border-color: var(--teal); outline: none; }
+.dias-semana { display: flex; flex-wrap: wrap; gap: .35rem; }
+.chip { cursor: pointer; }
+.chip input { position: absolute; opacity: 0; pointer-events: none; }
+.chip span {
+  display: inline-block;
+  padding: .4rem .7rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-size: .8rem;
+  color: var(--muted);
+  background: var(--bg);
+  transition: background .15s, color .15s, border-color .15s;
+  user-select: none;
+}
+.chip input:checked + span { background: var(--teal); border-color: var(--teal); color: #fff; }
+.chip input:focus-visible + span { outline: 2px solid var(--green); outline-offset: 2px; }
+.atend-filtros-nota { font-size: .72rem; color: var(--muted); flex-basis: 100%; }
+.atend-resumo {
+  font-size: .85rem;
+  color: var(--muted);
+  margin-bottom: 1rem;
+}
+.atend-resumo b { color: var(--dark); font-family: 'Syne', sans-serif; font-size: 1rem; }
+.atend-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  min-width: 0;
+}
+.card.full { grid-column: 1 / -1; }
+.card h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--dark);
+  margin-bottom: .75rem;
+}
+.chart-box { position: relative; height: 300px; }
+.tabela-risco { width: 100%; border-collapse: collapse; font-size: .875rem; }
+.tabela-risco th, .tabela-risco td {
+  padding: .55rem .75rem;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+}
+.tabela-risco th {
+  font-size: .72rem;
+  font-weight: 500;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+.tabela-risco td.num, .tabela-risco th.num { text-align: right; font-variant-numeric: tabular-nums; }
+.tabela-risco tfoot td { font-weight: 700; border-bottom: none; }
+.risco-dot {
+  display: inline-block;
+  width: 10px; height: 10px;
+  border-radius: 50%;
+  margin-right: .5rem;
+  vertical-align: middle;
+  background: var(--muted);
+}
+
 @media(max-width:900px){
   .kpis { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+  .atend-grid { grid-template-columns: 1fr; }
 }
 
 @media(max-width:600px){
@@ -508,6 +615,62 @@ header span {
     </div>
   </div>
 
+  <div id="atendimentos">
+    <h2 class="section-title">Atendimentos de Emergência</h2>
+    <div class="atend-filtros">
+      <div>
+        <label>Dias da semana</label>
+        <div class="dias-semana" id="atend_dias_semana">
+          {% for nome in ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'] %}
+          <label class="chip"><input type="checkbox" class="cb-dia-semana" value="{{ loop.index0 }}" checked><span>{{ nome }}</span></label>
+          {% endfor %}
+        </div>
+      </div>
+      <div>
+        <label for="atend_hora_ini">Hora inicial</label>
+        <select id="atend_hora_ini">
+          {% for h in range(24) %}<option value="{{ h }}" {% if h == 0 %}selected{% endif %}>{{ '%02d' % h }}:00</option>{% endfor %}
+        </select>
+      </div>
+      <div>
+        <label for="atend_hora_fim">Hora final</label>
+        <select id="atend_hora_fim">
+          {% for h in range(24) %}<option value="{{ h }}" {% if h == 23 %}selected{% endif %}>{{ '%02d' % h }}:59</option>{% endfor %}
+        </select>
+      </div>
+      <div class="atend-filtros-nota">Faixa com hora inicial maior que a final atravessa a meia-noite (ex.: 19:00 a 07:59).</div>
+    </div>
+    <div class="atend-resumo" id="atend_resumo">—</div>
+    <div class="atend-grid">
+      <div class="card full">
+        <h3>Atendimentos por dia</h3>
+        <div class="chart-box"><canvas id="chart_atend_dia"></canvas></div>
+      </div>
+      <div class="card full">
+        <h3>Atendimentos por horário</h3>
+        <div class="chart-box"><canvas id="chart_atend_hora"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Atendimentos por dia da semana</h3>
+        <div class="chart-box"><canvas id="chart_atend_semana"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Atendimentos por classificação de risco</h3>
+        <table class="tabela-risco">
+          <thead>
+            <tr><th>Classificação</th><th class="num">Atendimentos</th><th class="num">%</th></tr>
+          </thead>
+          <tbody id="tabela_risco_body">
+            <tr><td colspan="3">—</td></tr>
+          </tbody>
+          <tfoot>
+            <tr><td>Total</td><td class="num" id="tabela_risco_total">—</td><td class="num">100%</td></tr>
+          </tfoot>
+        </table>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -589,6 +752,187 @@ function toggleTodasClinicas(){
   atualizarLabelClinica();
 }
 
+// ---- Atendimentos de emergência ----
+const chartsAtend = {};
+
+function corRisco(nome) {
+  const n = (nome || '').toLowerCase();
+  if (n.includes('vermelh')) return '#d32f2f';
+  if (n.includes('laranj'))  return '#EB600A';
+  if (n.includes('amarel'))  return '#F3A133';
+  if (n.includes('verde'))   return '#2e9e4f';
+  if (n.includes('azul'))    return '#2E758C';
+  if (n.includes('branc'))   return '#b0bec5';
+  return '#6b7f86';
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+
+function renderAtendimentos(d) {
+  const fmt = n => Number(n).toLocaleString('pt-BR');
+  const fmtNum = n => (n === null || n === undefined) ? '—' : fmt(n);
+  document.getElementById('atend_resumo').innerHTML =
+    `Total no período: <b>${fmt(d.total)}</b> &nbsp;|&nbsp; Média diária do período: <b>${fmtNum(d.media_diaria)}</b> &nbsp;|&nbsp; Mediana diária do período: <b>${fmtNum(d.mediana_diaria)}</b>`;
+
+  if (chartsAtend.dia) chartsAtend.dia.destroy();
+  chartsAtend.dia = new Chart(document.getElementById('chart_atend_dia'), {
+    type: 'line',
+    data: {
+      labels: d.dias,
+      datasets: [{
+        label: 'Atendimentos', data: d.por_dia,
+        borderColor: '#00B2C9', backgroundColor: 'rgba(0,178,201,.12)',
+        borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
+        tension: 0.25, fill: true, order: 2
+      }, {
+        // mesmas cores/traços das linhas de média e mediana da página de Tendência
+        label: `Média: ${fmtNum(d.media_diaria)}`,
+        data: d.media_diaria !== null ? Array(d.dias.length).fill(d.media_diaria) : [],
+        borderColor: '#f97316', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }, {
+        label: `Mediana: ${fmtNum(d.mediana_diaria)}`,
+        data: d.mediana_diaria !== null ? Array(d.dias.length).fill(d.mediana_diaria) : [],
+        borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'line', padding: 15 } },
+        tooltip: {
+          // a legenda já mostra média/mediana; no tooltip fica só o valor do dia
+          filter: item => item.datasetIndex === 0
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, ticks: { precision: 0 } },
+        x: { ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } }
+      }
+    }
+  });
+
+  if (chartsAtend.hora) chartsAtend.hora.destroy();
+  chartsAtend.hora = new Chart(document.getElementById('chart_atend_hora'), {
+    type: 'bar',
+    data: {
+      labels: d.horas,
+      datasets: [{
+        label: 'Atendimentos', data: d.por_hora,
+        backgroundColor: '#2E758Ccc', borderColor: '#2E758C', borderWidth: 1, borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            title: items => {
+              const h = items[0].label.slice(0, 2);
+              return `${h}:00 – ${h}:59`;
+            },
+            afterLabel: ctx => {
+              const m = d.media_hora[ctx.dataIndex];
+              return m !== null && m !== undefined ? ` Média por dia: ${m.toLocaleString('pt-BR')}` : '';
+            }
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+
+  if (chartsAtend.semana) chartsAtend.semana.destroy();
+  chartsAtend.semana = new Chart(document.getElementById('chart_atend_semana'), {
+    type: 'bar',
+    data: {
+      labels: d.dias_semana,
+      datasets: [{
+        label: 'Atendimentos', data: d.por_dia_semana,
+        backgroundColor: '#3BB5A3cc', borderColor: '#3BB5A3', borderWidth: 1, borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterLabel: ctx => {
+              const m = d.media_dia_semana[ctx.dataIndex];
+              return m !== null && m !== undefined ? ` Média por ${d.dias_semana[ctx.dataIndex].toLowerCase()}: ${m}` : '';
+            }
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+
+  const body = document.getElementById('tabela_risco_body');
+  if (!d.por_risco || d.por_risco.length === 0) {
+    body.innerHTML = '<tr><td colspan="3">Nenhum atendimento no período.</td></tr>';
+  } else {
+    body.innerHTML = d.por_risco.map(r => `
+      <tr>
+        <td><span class="risco-dot" style="background:${corRisco(r.dsc_risco)}"></span>${escapeHtml(r.dsc_risco)}</td>
+        <td class="num">${fmt(r.qtd)}</td>
+        <td class="num">${r.percentual !== null ? r.percentual.toLocaleString('pt-BR') + '%' : '—'}</td>
+      </tr>`).join('');
+  }
+  document.getElementById('tabela_risco_total').textContent = fmt(d.total);
+}
+
+function carregarAtendimentos() {
+  const params = new URLSearchParams({
+    data_ini: v('data_ini'),
+    data_fim: v('data_fim'),
+    hora_ini: v('atend_hora_ini'),
+    hora_fim: v('atend_hora_fim'),
+  });
+  const dias = Array.from(document.querySelectorAll('.cb-dia-semana'));
+  const diasMarcados = dias.filter(cb => cb.checked);
+  if (diasMarcados.length === 0) {
+    document.getElementById('erro').textContent = 'Selecione ao menos um dia da semana.';
+    document.getElementById('erro').style.display = 'block';
+    return;
+  }
+  if (diasMarcados.length < dias.length) {
+    diasMarcados.forEach(cb => params.append('dia_semana', cb.value));
+  }
+  document.getElementById('erro').style.display = 'none';
+  const sec = document.getElementById('atendimentos');
+  sec.classList.add('loading');
+  loaderOn();
+  fetch('/api/hcasg/emergencia/atendimentos?' + params)
+    .then(r => r.json())
+    .then(res => {
+      loaderOff();
+      sec.classList.remove('loading');
+      if (!res.ok) {
+        document.getElementById('erro').textContent = 'Erro (atendimentos): ' + res.erro;
+        document.getElementById('erro').style.display = 'block';
+        return;
+      }
+      renderAtendimentos(res.dados);
+    })
+    .catch(err => {
+      loaderOff();
+      sec.classList.remove('loading');
+      document.getElementById('erro').textContent = 'Falha na requisição (atendimentos): ' + err;
+      document.getElementById('erro').style.display = 'block';
+    });
+}
+
+// Filtros de dia da semana / horário recarregam só a seção de atendimentos.
+document.querySelectorAll('.cb-dia-semana, #atend_hora_ini, #atend_hora_fim')
+  .forEach(el => el.addEventListener('change', carregarAtendimentos));
+
 function carregar(){
   const params = new URLSearchParams({
     data_ini:   v('data_ini'),
@@ -604,6 +948,7 @@ function carregar(){
   document.getElementById('kpis').classList.add('loading');
   document.getElementById('erro').style.display = 'none';
   loaderOn();
+  carregarAtendimentos();
 
   fetch('/api/hcasg/emergencia/indicadores?' + params)
     .then(r => r.json())

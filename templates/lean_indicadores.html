@@ -488,12 +488,6 @@ header span {
         <div class="kpi-hover-detail" id="leitos_ativos_detalhe"></div>
         <div class="icon">🛏️</div>
       </div>
-      <div class="kpi c7">
-        <div class="label">Setup de Leito</div>
-        <div class="value" id="setup">—</div>
-        <div class="unit">minutos</div>
-        <div class="icon">🔧</div>
-      </div>
     </div>
 
     <h2 class="section-title">Indicadores da Emergência</h2>
@@ -723,7 +717,6 @@ function carregar(){
       set('giro_ps',      d.giro_ps);
       set('porta_medico', d.porta_medico);
       set('giro',         d.giro);
-      set('setup',        d.setup);
       set('internacoes',    d.internacoes);
       setInternacoesDetalhe(d.internacoes_detalhe);
       set('leitos_ativos',  d.leitos_ativos);

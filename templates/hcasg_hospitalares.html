@@ -492,12 +492,6 @@ header span {
         <div class="kpi-hover-detail" id="leitos_ativos_detalhe"></div>
         <div class="icon">🛏️</div>
       </div>
-      <div class="kpi c7">
-        <div class="label">Setup de Leito</div>
-        <div class="value" id="setup">—</div>
-        <div class="unit">minutos</div>
-        <div class="icon">🔧</div>
-      </div>
       <div class="kpi c10">
         <div class="label">Taxa de Mortalidade Hospitalar</div>
         <div class="value" id="taxa_mortalidade_hospitalar">—</div>
@@ -616,7 +610,6 @@ function carregar(){
       set('leito_dia',      d.leito_dia);
       set('taxa_ocupacao',  d.taxa_ocupacao !== null && d.taxa_ocupacao !== undefined ? d.taxa_ocupacao + '%' : null);
       set('giro',         d.giro);
-      set('setup',        d.setup);
       set('taxa_mortalidade_hospitalar', d.taxa_mortalidade_hospitalar !== null && d.taxa_mortalidade_hospitalar !== undefined ? d.taxa_mortalidade_hospitalar + '%' : null);
       set('taxa_mortalidade_institucional', d.taxa_mortalidade_institucional !== null && d.taxa_mortalidade_institucional !== undefined ? d.taxa_mortalidade_institucional + '%' : null);
       set('internacoes',    d.internacoes);

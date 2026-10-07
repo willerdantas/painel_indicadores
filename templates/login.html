@@ -1,0 +1,144 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body {
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+            font-family: 'DM Sans', sans-serif;
+            background: #e6e6e6;
+        }
+        .site-header {
+            background-color: #e6e6e6;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            padding: 18px 40px;
+        }
+        .site-header img { height: 72px; cursor: pointer; }
+
+        .main-content {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+            background: linear-gradient(135deg, #19b8b0 0%, #1cb88a 100%);
+            padding: 52px 16px 72px;
+            display: flex;
+            align-items: flex-start;
+            justify-content: center;
+        }
+        .deco { position: absolute; border-radius: 50%; pointer-events: none; }
+        .deco-1 { width: 380px; height: 380px; top: -140px; right: -120px; background: rgba(255,255,255,0.09); }
+        .deco-2 { width: 240px; height: 240px; top: -30px; right: 60px; background: rgba(255,255,255,0.08); }
+
+        .login-card {
+            position: relative;
+            background: #fff;
+            border-radius: 14px;
+            box-shadow: 0 6px 24px rgba(0,0,0,0.15);
+            padding: 32px 32px 28px;
+            width: 100%;
+            max-width: 380px;
+        }
+        .login-card h1 {
+            font-family: 'Syne', sans-serif;
+            font-size: 20px;
+            font-weight: 700;
+            letter-spacing: 3px;
+            text-transform: uppercase;
+            color: #38464D;
+            margin-bottom: 22px;
+        }
+        label {
+            display: block;
+            font-size: 12px;
+            font-weight: 500;
+            color: #6b7f86;
+            text-transform: uppercase;
+            letter-spacing: .06em;
+            margin-bottom: 6px;
+        }
+        input {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #dde4e6;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 15px;
+            color: #38464D;
+            background: #f0f4f5;
+            margin-bottom: 16px;
+        }
+        input:focus { outline: none; border-color: #19b8b0; background: #fff; }
+        .erro {
+            background: #fdecea;
+            border: 1px solid #f5b5ae;
+            color: #a12a1c;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+            margin-bottom: 16px;
+        }
+        .acoes { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 4px; }
+        button {
+            font-family: 'Syne', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            color: #fff;
+            background: #19b8b0;
+            border: none;
+            border-radius: 8px;
+            padding: 11px 26px;
+            cursor: pointer;
+            transition: background .15s;
+        }
+        button:hover { background: #128f89; }
+        .voltar { font-size: 14px; color: #128f89; text-decoration: none; }
+        .voltar:hover { text-decoration: underline; }
+
+        .site-footer {
+            position: absolute;
+            bottom: 18px;
+            right: 40px;
+            color: rgba(255,255,255,0.65);
+            font-size: 12px;
+            font-weight: 300;
+            letter-spacing: 0.5px;
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <img src="/static/LOGO HM E SESA - NOVA (1).png" alt="Logo" onclick="window.location.href='/'">
+    </header>
+
+    <main class="main-content">
+        <div class="deco deco-1"></div>
+        <div class="deco deco-2"></div>
+
+        <form class="login-card" method="post" action="{{ url_for('login') }}">
+            <h1>Login</h1>
+            {% if erro %}<div class="erro" role="alert">{{ erro }}</div>{% endif %}
+            <input type="hidden" name="proximo" value="{{ proximo }}">
+            <label for="usuario">Usuário</label>
+            <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus>
+            <label for="senha">Senha</label>
+            <input type="password" id="senha" name="senha" autocomplete="current-password" required>
+            <div class="acoes">
+                <a href="{{ url_for('index') }}" class="voltar">← Voltar ao painel</a>
+                <button type="submit">Entrar</button>
+            </div>
+        </form>
+
+        <div class="site-footer">Painel de indicadores 2.0 - Desenvolvido por NUTIC - Ano 2025</div>
+    </main>
+</body>
+</html>

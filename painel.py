@@ -1,6 +1,9 @@
 import psycopg2
 from psycopg2.extras import RealDictCursor
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, session, redirect, url_for
+from functools import wraps
+import hmac
+import secrets
 import json
 import pandas as pd
 import os
@@ -10,8 +13,31 @@ from indicadores_hcasg import get_filtros as hcasg_get_filtros
 from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
 from indicadores_hcasg import get_indicadores_hospitalar, get_indicadores_emergencia
 import indicadores_hcasg as hcasg
+import config_banco
 
 app = Flask(__name__)
+
+
+def _carregar_secret_key():
+    """Chave das sessões de login: FLASK_SECRET_KEY ou um arquivo gerado na
+    primeira execução (assim o login sobrevive a reinícios do servidor)."""
+    if os.environ.get('FLASK_SECRET_KEY'):
+        return os.environ['FLASK_SECRET_KEY']
+    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.secret_key')
+    try:
+        with open(caminho, encoding='utf-8') as f:
+            chave = f.read().strip()
+        if chave:
+            return chave
+    except OSError:
+        pass
+    chave = secrets.token_hex(32)
+    with open(caminho, 'w', encoding='utf-8') as f:
+        f.write(chave)
+    return chave
+
+
+app.secret_key = _carregar_secret_key()
 
 # Configura��es
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -19,18 +45,11 @@ PASTA_DADOS = os.path.join(BASE_DIR, 'dados')
 ARQUIVO_EXCEL = 'PRODUÇÃO HOSPITALAR CONSOLIDADA.xlsx'
 ARQUIVO_LOGO = 'logo.png'
 
-# Configuração do banco PostgreSQL (ajuste conforme seu ambiente)
-DB_CONFIG = {
-    'host': os.environ.get('DB_HOST', '10.10.29.90'),
-    'port': os.environ.get('DB_PORT', '5432'),
-    'dbname': os.environ.get('DB_NAME', 'postgres'),
-    'user': os.environ.get('DB_USER', 'painel'),
-    'password': os.environ.get('DB_PASS', '123456')
-}
-
+# Configuração do banco PostgreSQL: centralizada em config_banco.py
+# (editável pela página /admin/banco, variáveis DB_* ou padrões).
 def get_db_connection():
     """Cria e retorna uma conexão com o PostgreSQL"""
-    return psycopg2.connect(**DB_CONFIG)
+    return config_banco.conectar()
 
 def carregar_dados():
     """Carrega e processa os dados da planilha Excel"""
@@ -117,6 +136,106 @@ def calcular_kpis(df):
 def index():
     # Página inicial do painel (menu de dashboards)
     return render_template('index.html')
+
+
+# =============================================================================
+# LOGIN E ADMINISTRAÇÃO
+# Usuário/senha do administrador vêm de ADMIN_USER / ADMIN_PASS
+# (padrão admin / admin — troque definindo as variáveis de ambiente).
+# =============================================================================
+
+def _credenciais_admin():
+    return os.environ.get('ADMIN_USER', 'admin'), os.environ.get('ADMIN_PASS', 'admin')
+
+
+def login_obrigatorio(view):
+    @wraps(view)
+    def wrapper(*args, **kwargs):
+        if not session.get('usuario'):
+            if request.path.startswith('/admin/') and request.method != 'GET':
+                return jsonify({'ok': False, 'erro': 'Sessão expirada. Faça login novamente.'}), 401
+            return redirect(url_for('login', proximo=request.path))
+        return view(*args, **kwargs)
+    return wrapper
+
+
+def _destino_seguro(proximo):
+    # só aceita caminhos internos, para o login não redirecionar para outro site
+    if proximo and proximo.startswith('/') and not proximo.startswith('//') and '\\' not in proximo:
+        return proximo
+    return url_for('admin_menu')
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    proximo = request.values.get('proximo')
+    erro = None
+    if request.method == 'POST':
+        usuario = (request.form.get('usuario') or '').strip()
+        senha = request.form.get('senha') or ''
+        user_ok, pass_ok = _credenciais_admin()
+        valido = hmac.compare_digest(usuario.encode(), user_ok.encode()) & \
+            hmac.compare_digest(senha.encode(), pass_ok.encode())
+        if valido:
+            session.clear()
+            session['usuario'] = usuario
+            return redirect(_destino_seguro(proximo))
+        erro = 'Usuário ou senha inválidos.'
+    return render_template('login.html', erro=erro, proximo=proximo or '')
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('index'))
+
+
+@app.route('/admin')
+@login_obrigatorio
+def admin_menu():
+    return render_template('admin.html', usuario=session.get('usuario'))
+
+
+def _config_do_formulario():
+    """Configuração enviada pela página; senha em branco = manter a atual."""
+    dados = request.get_json(silent=True) or {}
+    atual = config_banco.carregar()
+    cfg = {campo: str(dados.get(campo) or '').strip() for campo in config_banco.CAMPOS}
+    if not cfg['password']:
+        cfg['password'] = atual['password']
+    return cfg
+
+
+@app.route('/admin/banco')
+@login_obrigatorio
+def admin_banco():
+    cfg = config_banco.carregar()
+    cfg.pop('password')  # a senha nunca volta para o navegador
+    return render_template('config_banco.html', cfg=cfg)
+
+
+@app.route('/admin/banco/testar', methods=['POST'])
+@login_obrigatorio
+def admin_banco_testar():
+    cfg = _config_do_formulario()
+    erros = config_banco.validar(cfg)
+    if erros:
+        return jsonify({'ok': False, 'erro': ' '.join(erros)}), 400
+    return jsonify(config_banco.testar(cfg))
+
+
+@app.route('/admin/banco/salvar', methods=['POST'])
+@login_obrigatorio
+def admin_banco_salvar():
+    cfg = _config_do_formulario()
+    erros = config_banco.validar(cfg)
+    if erros:
+        return jsonify({'ok': False, 'erro': ' '.join(erros)}), 400
+    try:
+        config_banco.salvar(cfg)
+    except OSError as e:
+        return jsonify({'ok': False, 'erro': f'Não foi possível salvar: {e}'}), 500
+    return jsonify({'ok': True})
 
 @app.route('/producao_hospitalar')
 def producao_hospitalar():
@@ -619,11 +738,11 @@ def exames_por_clinica():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        cur.execute("SELECT dsc_clinica FROM public.t_clinica ORDER BY dsc_clinica")
+        cur.execute("SELECT dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
         clinicas = [r['dsc_clinica'] for r in cur.fetchall()]
 
         cur.execute("""
-            SELECT DISTINCT classificacao FROM public.t_exame_classificacao
+            SELECT DISTINCT classificacao FROM t_exame_classificacao
             WHERE classificacao IS NOT NULL ORDER BY classificacao
         """)
         classificacoes = [r['classificacao'] for r in cur.fetchall()]
@@ -648,10 +767,10 @@ def exames_por_clinica():
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL) AS baixados,
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados
-            FROM public.t_exame_solic tes
-            JOIN public.t_clinica tc ON tc.isn_clinica = tes.isn_clinica
-            JOIN public.t_exame te ON te.isn_exame = tes.isn_exame
-            LEFT JOIN public.t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
+            FROM t_exame_solic tes
+            JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
+            JOIN t_exame te ON te.isn_exame = tes.isn_exame
+            LEFT JOIN t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
               {filtro_clinica_sql}
               {filtro_classificacao_sql}
@@ -768,17 +887,17 @@ def graficos_mensais():
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
 
-        cur.execute("SELECT dsc_clinica FROM public.t_clinica ORDER BY dsc_clinica")
+        cur.execute("SELECT dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
         clinicas = [r['dsc_clinica'] for r in cur.fetchall()]
 
         cur.execute("""
-            SELECT DISTINCT classificacao FROM public.t_exame_classificacao
+            SELECT DISTINCT classificacao FROM t_exame_classificacao
             WHERE classificacao IS NOT NULL ORDER BY classificacao
         """)
         classificacoes = [r['classificacao'] for r in cur.fetchall()]
 
         cur.execute("""
-            SELECT DISTINCT dsc_exame FROM public.t_exame ORDER BY dsc_exame
+            SELECT DISTINCT dsc_exame FROM t_exame ORDER BY dsc_exame
         """)
         exames = [r['dsc_exame'] for r in cur.fetchall()]
 
@@ -807,10 +926,10 @@ def graficos_mensais():
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL) AS baixados,
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados
-            FROM public.t_exame_solic tes
-            JOIN public.t_clinica tc ON tc.isn_clinica = tes.isn_clinica
-            JOIN public.t_exame te ON te.isn_exame = tes.isn_exame
-            LEFT JOIN public.t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
+            FROM t_exame_solic tes
+            JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
+            JOIN t_exame te ON te.isn_exame = tes.isn_exame
+            LEFT JOIN t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
               {filtros_sql}
             GROUP BY DATE(tes.dat_solicitacao), tc.dsc_clinica, tec.classificacao, te.dsc_exame
@@ -1010,6 +1129,21 @@ def api_hcasg_emergencia_indicadores():
     data_fim = request.args.get('data_fim')
     try:
         dados = get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito)
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/api/hcasg/emergencia/atendimentos')
+def api_hcasg_emergencia_atendimentos():
+    data_ini = request.args.get('data_ini')
+    data_fim = request.args.get('data_fim')
+    try:
+        # dia_semana: 0 = segunda ... 6 = domingo (pode repetir o parâmetro)
+        dias_semana = [int(d) for d in request.args.getlist('dia_semana') if d.isdigit() and int(d) <= 6]
+        hora_ini = min(max(int(request.args.get('hora_ini') or 0), 0), 23)
+        hora_fim = min(max(int(request.args.get('hora_fim') or 23), 0), 23)
+        dados = hcasg.get_atendimentos_emergencia(data_ini, data_fim, dias_semana, hora_ini, hora_fim)
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500

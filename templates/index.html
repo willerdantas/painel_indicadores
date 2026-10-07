@@ -24,8 +24,41 @@
             align-items: center;
             padding: 18px 40px;
         }
+        .site-header {
+            position: relative;
+        }
         .site-header img {
             height: 72px;
+        }
+        .header-acoes {
+            position: absolute;
+            right: 40px;
+            top: 50%;
+            transform: translateY(-50%);
+            display: flex;
+            gap: 10px;
+        }
+        .btn-header {
+            font-family: 'Syne', sans-serif;
+            font-size: 13px;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            text-decoration: none;
+            color: #fff;
+            background: #19b8b0;
+            border: 2px solid #19b8b0;
+            border-radius: 8px;
+            padding: 9px 20px;
+            transition: background .15s, color .15s;
+            white-space: nowrap;
+        }
+        .btn-header:hover { background: #128f89; border-color: #128f89; }
+        .btn-header.secundario { background: transparent; color: #128f89; }
+        .btn-header.secundario:hover { background: #128f89; color: #fff; }
+        @media (max-width: 700px) {
+            .site-header { flex-direction: column; gap: 12px; padding: 16px; }
+            .header-acoes { position: static; transform: none; }
         }
 
         /* ── Main ── */
@@ -171,6 +204,14 @@
 
     <header class="site-header">
         <img src="/static/LOGO HM E SESA - NOVA (1).png" alt="Logo" id="logo-principal">
+        <div class="header-acoes">
+            {% if session.get('usuario') %}
+            <a href="{{ url_for('admin_menu') }}" class="btn-header">Administração</a>
+            <a href="{{ url_for('logout') }}" class="btn-header secundario">Sair</a>
+            {% else %}
+            <a href="{{ url_for('login') }}" class="btn-header">Login</a>
+            {% endif %}
+        </div>
     </header>
 
     <main class="main-content">

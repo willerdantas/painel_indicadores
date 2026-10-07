@@ -26,30 +26,21 @@ os dois blocos acima, e as funções get_auditoria_* listam os registros que
 compõem cada indicador. Assim todas as páginas mostram os mesmos números.
 """
 
-import os
+import statistics
 import time
-from datetime import date
+from datetime import date, timedelta
 
 import psycopg2
 import psycopg2.extras
 import psycopg2.errorcodes
 
-S = "public"
+import config_banco
 
 # ---------------------------------------------------------------------------
-# Conexão (segue a convenção de variáveis de ambiente deste sistema:
-# DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS)
+# Conexão: dados de acesso e schema vêm de config_banco.py (página
+# /admin/banco, variáveis DB_* ou padrões). As consultas não fixam schema;
+# vale o search_path da conexão.
 # ---------------------------------------------------------------------------
-
-DB_CONFIG = {
-    'host': os.environ.get('DB_HOST', 'localhost'),
-    'port': os.environ.get('DB_PORT', '5432'),
-    'dbname': os.environ.get('DB_NAME', 'postgres'),
-    'user': os.environ.get('DB_USER', 'painel'),
-    # aceita DB_PASS (padrão deste sistema) ou DB_PASSWORD (padrão do painel
-    # de indicadores LEAN), para não exigir duplicar a variável de ambiente
-    'password': os.environ.get('DB_PASS', os.environ.get('DB_PASSWORD', '123456')),
-}
 
 _RETRY_ERRORS = {
     psycopg2.errorcodes.ADMIN_SHUTDOWN,
@@ -63,7 +54,7 @@ _RETRY_DELAY = 2
 
 
 def get_conn():
-    return psycopg2.connect(**DB_CONFIG)
+    return config_banco.conectar()
 
 
 def _should_retry(exc):
@@ -157,22 +148,22 @@ def _resolve_month_window(mes_ini, mes_fim):
 def get_filtros():
     clinicas = fetch_all(f"""
         SELECT DISTINCT tc.dsc_clinica
-        FROM {S}.t_internacao_leito til
-        JOIN {S}.t_clinica tc ON tc.isn_clinica = til.isn_clinica
+        FROM t_internacao_leito til
+        JOIN t_clinica tc ON tc.isn_clinica = til.isn_clinica
         WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
         ORDER BY 1
     """)
     enfermar = fetch_all(f"""
         SELECT DISTINCT te.dsc_enfermaria
-        FROM {S}.t_internacao_leito til
-        JOIN {S}.t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
+        FROM t_internacao_leito til
+        JOIN t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
         WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
         ORDER BY 1
     """)
     leitos = fetch_all(f"""
         SELECT DISTINCT tl.dsc_leito
-        FROM {S}.t_internacao_leito til
-        JOIN {S}.t_leito tl ON tl.isn_leito = til.isn_leito
+        FROM t_internacao_leito til
+        JOIN t_leito tl ON tl.isn_leito = til.isn_leito
         WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
         ORDER BY 1
     """)
@@ -212,10 +203,10 @@ _PRIMEIRA_CLINICA_CTE = """
             tc.dsc_clinica,
             te.dsc_enfermaria,
             tl.dsc_leito
-        FROM public.t_internacao_leito til
-        JOIN public.t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
-        JOIN public.t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
-        JOIN public.t_leito      tl ON tl.isn_leito      = til.isn_leito
+        FROM t_internacao_leito til
+        JOIN t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
+        JOIN t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
+        JOIN t_leito      tl ON tl.isn_leito      = til.isn_leito
         ORDER BY til.isn_internacao,
                  COALESCE(til.dat_internacao_info, til.dat_internacao),
                  til.isn_internacao_leito
@@ -286,7 +277,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -301,10 +292,10 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= (SELECT dt_fim FROM limites)
               AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= (SELECT dt_ini FROM limites)
@@ -367,7 +358,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -382,10 +373,10 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= (SELECT dt_fim FROM limites)
               AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= (SELECT dt_ini FROM limites)
@@ -428,9 +419,9 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         ),
         leitos_base_det AS (
             SELECT tl.isn_leito
-            FROM {S}.t_leito tl
-            JOIN {S}.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN {S}.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -448,7 +439,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             FROM dias_por_mes dpm
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
-                SELECT 1 FROM {S}.t_leito_interditado tli
+                SELECT 1 FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= dpm.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > dpm.dt)
@@ -493,9 +484,9 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         ),
         leitos_base_det AS (
             SELECT tl.isn_leito
-            FROM {S}.t_leito tl
-            JOIN {S}.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN {S}.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -513,7 +504,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             FROM dias_por_mes dpm
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
-                SELECT 1 FROM {S}.t_leito_interditado tli
+                SELECT 1 FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= dpm.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > dpm.dt)
@@ -545,7 +536,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -561,9 +552,9 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     mov.dat_alta      + COALESCE(mov.hor_alta, '00:00')::time
                 ) AS ts_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
             WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= (SELECT dt_fim FROM limites)
               AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= (SELECT dt_ini FROM limites)
@@ -572,7 +563,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         base_ti AS (
             SELECT b.*, ti.dat_cadastro
             FROM base b
-            JOIN public.t_internacao ti ON ti.isn_internacao = b.isn_internacao
+            JOIN t_internacao ti ON ti.isn_internacao = b.isn_internacao
         ),
         base_rotulo AS (
             SELECT
@@ -622,7 +613,6 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         "obitos_hospitalares": [],
         "taxa_mortalidade_hospitalar": [],
         "taxa_mortalidade_institucional": [],
-        "setup": [],
     }
 
     mapa_saidas_dest = {}
@@ -685,8 +675,6 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             round(float(obito_inst_mes) / float(saidas_mes) * 100, 2)
             if saidas_mes else None
         )
-
-        result["setup"].append(None)
 
     for k, info in sorted(mapa_saidas_dest.items(), key=lambda x: int(x[0])):
         result["saidas_destinos_mensais"][k] = {
@@ -754,11 +742,11 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                              til.dat_internacao      + til.hor_internacao::time)
                 )) / 60)::numeric, 2
             ) AS los_sem
-        FROM public.t_internacao ti
-        LEFT JOIN public.t_tipo_atendimento tta ON ti.isn_tipo_atendimento = tta.isn_tipo_atendimento
-        LEFT JOIN public.t_internacao_leito til ON ti.isn_internacao = til.isn_internacao
-        JOIN  public.t_paciente tp ON ti.isn_paciente = tp.isn_paciente
-        JOIN  public.t_destino  td ON til.isn_destino = td.isn_destino
+        FROM t_internacao ti
+        LEFT JOIN t_tipo_atendimento tta ON ti.isn_tipo_atendimento = tta.isn_tipo_atendimento
+        LEFT JOIN t_internacao_leito til ON ti.isn_internacao = til.isn_internacao
+        JOIN  t_paciente tp ON ti.isn_paciente = tp.isn_paciente
+        JOIN  t_destino  td ON til.isn_destino = td.isn_destino
         WHERE ti.isn_tipo_atendimento = 2
           AND til.isn_destino IN (1, 3, 4)
           AND til.dat_alta IS NOT NULL
@@ -776,9 +764,9 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 tp.num_prontuario,
                 MIN(til.dat_internacao) AS dat_entrada,
                 MAX(til.dat_alta)       AS dat_saida
-            FROM public.t_internacao ti
-            JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-            JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+            FROM t_internacao ti
+            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
             WHERE til.dat_internacao IS NOT NULL
             GROUP BY ti.isn_internacao, tp.num_prontuario
         ),
@@ -829,7 +817,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     til.dat_alta + til.hor_alta::time
                 ) AS ts_alta
             FROM cadeia c
-            JOIN public.t_internacao_leito til ON til.isn_internacao = c.isn_internacao
+            JOIN t_internacao_leito til ON til.isn_internacao = c.isn_internacao
             WHERE til.dat_internacao IS NOT NULL
         ),
         grupo_primeiro AS (
@@ -846,10 +834,10 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 gp.ts_primeiro_grupo
             FROM base b
             JOIN grupo_primeiro gp ON gp.id_grupo = b.id_grupo
-            JOIN public.t_internacao ti ON ti.isn_internacao = b.id_grupo
+            JOIN t_internacao ti ON ti.isn_internacao = b.id_grupo
             JOIN (
                 SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
-                FROM public.t_internacao_leito
+                FROM t_internacao_leito
                 ORDER BY isn_internacao,
                     COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
                     isn_internacao_leito DESC
@@ -920,7 +908,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     tia.dat_ini
                     + COALESCE(NULLIF(TRIM(tia.dsc_hor_ini), ''), '00:00')::time
                 ) AS ts_consulta_med
-            FROM public.t_internacao_atendimento tia
+            FROM t_internacao_atendimento tia
             WHERE tia.dat_ini IS NOT NULL
             GROUP BY tia.isn_internacao
         ),
@@ -930,10 +918,10 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 tc.dsc_clinica,
                 te.dsc_enfermaria,
                 tl.dsc_leito
-            FROM public.t_internacao_leito til
-            JOIN public.t_clinica tc ON til.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON til.isn_leito = tl.isn_leito
+            FROM t_internacao_leito til
+            JOIN t_clinica tc ON til.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON til.isn_leito = tl.isn_leito
             WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
             ORDER BY
                 til.isn_internacao,
@@ -946,10 +934,10 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 AVG(EXTRACT(EPOCH FROM (pc.ts_consulta_med - ti.dat_cadastro)) / 60)::numeric,
                 2
             ) AS porta_medico
-        FROM public.t_internacao ti
+        FROM t_internacao ti
         JOIN mov_inicio mi ON mi.isn_internacao = ti.isn_internacao
         JOIN primeira_consulta pc ON pc.isn_internacao = ti.isn_internacao
-        LEFT JOIN public.t_admissao ta ON ta.isn_internacao = ti.isn_internacao
+        LEFT JOIN t_admissao ta ON ta.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 2
           AND ti.dat_cadastro::date BETWEEN (SELECT dt_ini FROM limites) AND (SELECT dt_fim FROM limites)
           AND pc.ts_consulta_med >= ti.dat_cadastro
@@ -972,7 +960,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -987,10 +975,10 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
               AND mov.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= (SELECT dt_fim FROM limites)
@@ -1056,7 +1044,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -1071,10 +1059,10 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
               AND mov.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= (SELECT dt_fim FROM limites)
@@ -1098,8 +1086,8 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             SELECT
                 ti.isn_internacao,
                 MIN(COALESCE(til.dat_alta_info, til.dat_alta)::date) AS dt_ref
-            FROM public.t_internacao ti
-            JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+            FROM t_internacao ti
+            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
             WHERE ti.isn_tipo_atendimento = 2
               AND til.isn_destino = 13
               AND COALESCE(til.dat_alta_info, til.dat_alta)::date BETWEEN %s AND %s
@@ -1138,9 +1126,9 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         ),
         leitos_base_det AS (
             SELECT tl.isn_leito, tc.dsc_clinica, te.dsc_enfermaria, tl.dsc_leito
-            FROM {S}.t_leito tl
-            JOIN {S}.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN {S}.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -1159,7 +1147,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             FROM dias_por_mes dpm
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
-                SELECT 1 FROM {S}.t_leito_interditado tli
+                SELECT 1 FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= dpm.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > dpm.dt)
@@ -1251,9 +1239,9 @@ def get_leito_dia_periodo(clinica, enfermaria, leito, data_ini, data_fim):
         ),
         leitos_base_det AS (
             SELECT tl.isn_leito
-            FROM {S}.t_leito tl
-            JOIN {S}.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN {S}.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -1272,7 +1260,7 @@ def get_leito_dia_periodo(clinica, enfermaria, leito, data_ini, data_fim):
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
                 SELECT 1
-                FROM {S}.t_leito_interditado tli
+                FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= d.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > d.dt)
@@ -1332,7 +1320,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -1347,10 +1335,10 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
               AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
@@ -1408,7 +1396,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -1428,10 +1416,10 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                     mov.dat_alta      + COALESCE(mov.hor_alta, '00:00')::time
                 ) AS ts_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
               AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
@@ -1440,7 +1428,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         base_ti AS (
             SELECT b.*, ti.dat_cadastro
             FROM base b
-            JOIN public.t_internacao ti ON ti.isn_internacao = b.isn_internacao
+            JOIN t_internacao ti ON ti.isn_internacao = b.isn_internacao
         ),
         base_rotulo AS (
             SELECT
@@ -1494,9 +1482,9 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         ),
         leitos_base_det AS (
             SELECT te.isn_clinica, tc.dsc_clinica, tl.isn_leito
-            FROM public.t_leito tl
-            JOIN public.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN public.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -1516,7 +1504,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
                 SELECT 1
-                FROM public.t_leito_interditado tli
+                FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= d.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > d.dt)
@@ -1538,9 +1526,9 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         ),
         leitos_base_det AS (
             SELECT te.isn_clinica, tc.dsc_clinica, tl.isn_leito
-            FROM public.t_leito tl
-            JOIN public.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN public.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -1561,7 +1549,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
             FROM dias d
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
-                SELECT 1 FROM public.t_leito_interditado tli
+                SELECT 1 FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= d.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > d.dt)
@@ -1582,7 +1570,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
 
     internacoes_row = fetch_one(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT COUNT(DISTINCT ti.isn_internacao) AS total
-        FROM public.t_internacao ti
+        FROM t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 1
           AND ti.dat_cadastro::date BETWEEN %s AND %s
@@ -1592,7 +1580,7 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
 
     internacoes_detalhe = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT pc.dsc_clinica, COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
-        FROM public.t_internacao ti
+        FROM t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 1
           AND ti.dat_cadastro::date BETWEEN %s AND %s
@@ -1619,7 +1607,6 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         "dias_periodo": dias_periodo,
         "taxa_ocupacao": taxa_ocupacao,
         "giro": giro,
-        "setup": None,
         "internacoes": internacoes_row["total"] if internacoes_row else None,
         "internacoes_detalhe": [dict(r) for r in (internacoes_detalhe or [])],
         "leitos_ativos": leitos_ativos_total,
@@ -1666,11 +1653,11 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                          til.dat_internacao      + til.hor_internacao::time)
             )) / 60)::numeric, 2
         ) AS valor
-        FROM public.t_internacao ti
-        LEFT JOIN public.t_tipo_atendimento tta ON ti.isn_tipo_atendimento = tta.isn_tipo_atendimento
-        LEFT JOIN public.t_internacao_leito til ON ti.isn_internacao = til.isn_internacao
-        JOIN  public.t_paciente tp ON ti.isn_paciente  = tp.isn_paciente
-        JOIN  public.t_destino  td ON til.isn_destino  = td.isn_destino
+        FROM t_internacao ti
+        LEFT JOIN t_tipo_atendimento tta ON ti.isn_tipo_atendimento = tta.isn_tipo_atendimento
+        LEFT JOIN t_internacao_leito til ON ti.isn_internacao = til.isn_internacao
+        JOIN  t_paciente tp ON ti.isn_paciente  = tp.isn_paciente
+        JOIN  t_destino  td ON til.isn_destino  = td.isn_destino
         WHERE ti.isn_tipo_atendimento = 2
           AND til.isn_destino IN (1, 3, 4)
           AND til.dat_alta IS NOT NULL
@@ -1685,9 +1672,9 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 tp.num_prontuario,
                 MIN(til.dat_internacao) AS dat_entrada,
                 MAX(til.dat_alta)       AS dat_saida
-            FROM public.t_internacao ti
-            JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-            JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+            FROM t_internacao ti
+            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
             WHERE til.dat_internacao IS NOT NULL
             GROUP BY ti.isn_internacao, tp.num_prontuario
         ),
@@ -1738,7 +1725,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     til.dat_alta + til.hor_alta::time
                 ) AS ts_alta
             FROM cadeia c
-            JOIN public.t_internacao_leito til ON til.isn_internacao = c.isn_internacao
+            JOIN t_internacao_leito til ON til.isn_internacao = c.isn_internacao
             WHERE til.dat_internacao IS NOT NULL
         ),
         grupo_inicio AS (
@@ -1746,10 +1733,10 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 b.id_grupo,
                 MIN(b.ts_internacao) AS ts_clinica_1
             FROM base b
-            JOIN public.t_internacao ti ON ti.isn_internacao = b.id_grupo
+            JOIN t_internacao ti ON ti.isn_internacao = b.id_grupo
             JOIN (
                 SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
-                FROM public.t_internacao_leito
+                FROM t_internacao_leito
                 ORDER BY isn_internacao,
                     COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
                     isn_internacao_leito DESC
@@ -1808,7 +1795,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -1823,10 +1810,10 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
               AND mov.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
@@ -1876,7 +1863,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         ),
         base AS (
             SELECT
@@ -1891,10 +1878,10 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date AS dt_saida,
                 mov.dat_alta::date AS dt_alta
             FROM movimentos mov
-            JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN public.t_destino td ON mov.isn_destino = td.isn_destino
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
             WHERE mov.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
               AND mov.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
               AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
@@ -1919,7 +1906,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     tia.dat_ini
                     + COALESCE(NULLIF(TRIM(tia.dsc_hor_ini), ''), '00:00')::time
                 ) AS ts_consulta_med
-            FROM public.t_internacao_atendimento tia
+            FROM t_internacao_atendimento tia
             WHERE tia.dat_ini IS NOT NULL
             GROUP BY tia.isn_internacao
         ),
@@ -1929,10 +1916,10 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 tc.dsc_clinica,
                 te.dsc_enfermaria,
                 tl.dsc_leito
-            FROM public.t_internacao_leito til
-            JOIN public.t_clinica tc ON til.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON til.isn_leito = tl.isn_leito
+            FROM t_internacao_leito til
+            JOIN t_clinica tc ON til.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON til.isn_leito = tl.isn_leito
             WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
             ORDER BY
                 til.isn_internacao,
@@ -1944,10 +1931,10 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 AVG(EXTRACT(EPOCH FROM (pc.ts_consulta_med - ti.dat_cadastro)) / 60)::numeric,
                 2
             ) AS valor
-        FROM public.t_internacao ti
+        FROM t_internacao ti
         JOIN mov_inicio mi ON mi.isn_internacao = ti.isn_internacao
         JOIN primeira_consulta pc ON pc.isn_internacao = ti.isn_internacao
-        LEFT JOIN public.t_admissao ta ON ta.isn_internacao = ti.isn_internacao
+        LEFT JOIN t_admissao ta ON ta.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 2
           AND ti.dat_cadastro::date BETWEEN %s AND %s
           AND pc.ts_consulta_med >= ti.dat_cadastro
@@ -1961,10 +1948,10 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 COUNT(*)::numeric
                 / NULLIF((%s::date - %s::date + 1), 0)
             , 2) AS media_diaria
-        FROM public.t_internacao ti
+        FROM t_internacao ti
         WHERE ti.isn_tipo_atendimento = 2
           AND EXISTS (
-              SELECT 1 FROM public.t_internacao_leito til
+              SELECT 1 FROM t_internacao_leito til
               WHERE til.isn_internacao = ti.isn_internacao
                 AND til.isn_destino = 13
                 AND COALESCE(til.dat_alta_info, til.dat_alta)::date BETWEEN %s AND %s
@@ -1980,9 +1967,9 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         ),
         leitos_base_det AS (
             SELECT te.isn_clinica, tc.dsc_clinica, te.dsc_enfermaria, tl.dsc_leito, tl.isn_leito
-            FROM public.t_leito tl
-            JOIN public.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN public.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -2003,7 +1990,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
                 SELECT 1
-                FROM public.t_leito_interditado tli
+                FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= d.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > d.dt)
@@ -2025,9 +2012,9 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         ),
         leitos_base_det AS (
             SELECT te.isn_clinica, tc.dsc_clinica, te.dsc_enfermaria, tl.dsc_leito, tl.isn_leito
-            FROM public.t_leito tl
-            JOIN public.t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
-            JOIN public.t_clinica tc ON tc.isn_clinica = te.isn_clinica
+            FROM t_leito tl
+            JOIN t_enfermaria te ON te.isn_enfermaria = tl.isn_enfermaria
+            JOIN t_clinica tc ON tc.isn_clinica = te.isn_clinica
             WHERE tl.flg_ativo = 'S'
               AND tl.flg_extra = 'N'
               AND te.flg_ativo = 'S'
@@ -2049,7 +2036,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
             FROM dias d
             CROSS JOIN leitos_base_det lbd
             WHERE EXISTS (
-                SELECT 1 FROM public.t_leito_interditado tli
+                SELECT 1 FROM t_leito_interditado tli
                 WHERE tli.isn_leito = lbd.isn_leito
                   AND tli.dat_interdicao::date <= d.dt
                   AND (tli.dat_liberacao IS NULL OR tli.dat_liberacao::date > d.dt)
@@ -2070,7 +2057,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
 
     internacoes_detalhe_ps = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT pc.dsc_clinica, COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
-        FROM public.t_internacao ti
+        FROM t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 1
           AND ti.dat_cadastro::date BETWEEN %s AND %s
@@ -2097,6 +2084,144 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         "internacoes_detalhe_ps": [dict(r) for r in (internacoes_detalhe_ps or [])],
         "leitos_ativos_ps": leitos_ativos_ps_total,
         "leitos_ativos_ps_detalhe": [dict(r) for r in (leitos_ativos_ps_detalhe or [])],
+    }
+
+
+# ---------------------------------------------------------------------------
+# ATENDIMENTOS DE EMERGÊNCIA (por dia, por hora, por dia da semana e por
+# classificação de risco). Atendimento de emergência = t_internacao com
+# isn_tipo_atendimento = 2, datado por dat_cadastro (mesma base do LOS
+# sem internação). Filtros opcionais: dias da semana e faixa de horário.
+# ---------------------------------------------------------------------------
+
+_DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
+
+
+def _horas_da_faixa(hora_ini, hora_fim):
+    """Horas (0-23) da faixa, inclusive. Se hora_ini > hora_fim a faixa
+    atravessa a meia-noite (ex.: 19h-7h)."""
+    if hora_ini <= hora_fim:
+        return list(range(hora_ini, hora_fim + 1))
+    return list(range(hora_ini, 24)) + list(range(0, hora_fim + 1))
+
+
+def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0, hora_fim=23):
+    """dias_semana: lista de 0 (segunda) a 6 (domingo); vazio = todos."""
+    dt_ini = date.fromisoformat(data_ini)
+    dt_fim = date.fromisoformat(data_fim)
+    if dt_ini > dt_fim:
+        dt_ini, dt_fim = dt_fim, dt_ini
+    dias_semana = sorted(set(dias_semana or range(7)))
+    horas = _horas_da_faixa(hora_ini, hora_fim)
+
+    atend_cte = """
+        WITH atend AS (
+            SELECT ti.isn_internacao, ti.dat_cadastro
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 2
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+              AND EXTRACT(ISODOW FROM ti.dat_cadastro)::int - 1 = ANY(%s)
+              AND EXTRACT(HOUR FROM ti.dat_cadastro)::int = ANY(%s)
+        )
+    """
+    atend_vals = [dt_ini, dt_fim, dias_semana, horas]
+
+    # Contagem por dia e hora do período inteiro, SEM os filtros de dia da
+    # semana/horário: daqui saem as séries filtradas dos gráficos e também a
+    # média/mediana, que são sempre do período todo (referência fixa).
+    rows_dia_hora = fetch_all("""
+        SELECT ti.dat_cadastro::date AS dia,
+               EXTRACT(HOUR FROM ti.dat_cadastro)::int AS hora,
+               COUNT(*) AS qtd
+        FROM t_internacao ti
+        WHERE ti.isn_tipo_atendimento = 2
+          AND ti.dat_cadastro::date BETWEEN %s AND %s
+        GROUP BY 1, 2
+    """, [dt_ini, dt_fim])
+    horas_set = set(horas)
+    qtd_por_dia, qtd_por_hora = {}, {}
+    base_por_dia = {}
+    for r in rows_dia_hora or []:
+        dia, hora, qtd = r["dia"], r["hora"], int(r["qtd"])
+        base_por_dia[dia] = base_por_dia.get(dia, 0) + qtd
+        if dia.weekday() in dias_semana and hora in horas_set:
+            qtd_por_dia[dia] = qtd_por_dia.get(dia, 0) + qtd
+            qtd_por_hora[hora] = qtd_por_hora.get(hora, 0) + qtd
+
+    todos_dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
+    base_dia = [base_por_dia.get(d, 0) for d in todos_dias]
+
+    # Só os dias do período que caem nos dias da semana escolhidos.
+    dias = [d for d in todos_dias if d.weekday() in dias_semana]
+    por_dia = [qtd_por_dia.get(d, 0) for d in dias]
+
+    # Dia da semana: total e média (o período pode ter quantidades
+    # diferentes de cada dia da semana, então a média é por ocorrência do dia).
+    totais_semana = [0] * 7
+    ocorrencias_semana = [0] * 7
+    for d, qtd in zip(dias, por_dia):
+        totais_semana[d.weekday()] += qtd
+        ocorrencias_semana[d.weekday()] += 1
+    medias_semana = [
+        round(t / o, 1) if o else None
+        for t, o in zip(totais_semana, ocorrencias_semana)
+    ]
+
+    por_hora = [qtd_por_hora.get(h, 0) for h in horas]
+
+    # Cada internação tem vários registros em t_internacao_risco (o primeiro,
+    # da abertura da triagem, vem com isn_risco nulo; reclassificações geram
+    # novos). Usa-se uma classificação por atendimento: a marcada com
+    # flg_ultimo = 1 entre as que têm risco, senão a mais recente com risco.
+    por_risco = fetch_all(atend_cte + """
+        , risco_final AS (
+            SELECT DISTINCT ON (tir.isn_internacao)
+                tir.isn_internacao,
+                tir.isn_risco
+            FROM t_internacao_risco tir
+            JOIN atend a ON a.isn_internacao = tir.isn_internacao
+            WHERE tir.isn_risco IS NOT NULL
+            ORDER BY tir.isn_internacao,
+                     COALESCE(tir.flg_ultimo, 0) DESC,
+                     tir.isn_internacao_risco DESC
+        )
+        SELECT rf.isn_risco, COUNT(*) AS qtd
+        FROM atend a
+        LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao
+        GROUP BY rf.isn_risco
+    """, atend_vals)
+    qtd_por_risco = {r["isn_risco"]: int(r["qtd"]) for r in (por_risco or [])}
+
+    # Lista todas as classificações de t_risco (mesmo com zero) e, no fim,
+    # "Sem classificação", para a tabela ter sempre as mesmas linhas.
+    riscos = fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco")
+    linhas_risco = [(r["dsc_risco"], qtd_por_risco.get(r["isn_risco"], 0)) for r in (riscos or [])]
+    linhas_risco.append(("Sem classificação", qtd_por_risco.get(None, 0)))
+
+    total = sum(por_dia)
+    qtd_dias = len(dias)
+
+    return {
+        "total": total,
+        # média/mediana do período inteiro, sem filtro de dia da semana/horário
+        "media_diaria": round(sum(base_dia) / len(base_dia), 1) if base_dia else None,
+        "mediana_diaria": round(statistics.median(base_dia), 1) if base_dia else None,
+        "dias": [d.strftime("%d/%m/%Y") for d in dias],
+        "por_dia": por_dia,
+        "horas": [f"{h:02d}h" for h in horas],
+        "por_hora": por_hora,
+        "media_hora": [round(q / qtd_dias, 1) if qtd_dias else None for q in por_hora],
+        "dias_semana": _DIAS_SEMANA,
+        "por_dia_semana": totais_semana,
+        "media_dia_semana": medias_semana,
+        "por_risco": [
+            {
+                "dsc_risco": dsc,
+                "qtd": qtd,
+                "percentual": round(qtd / total * 100, 1) if total else None,
+            }
+            for dsc, qtd in linhas_risco
+        ],
     }
 
 # ---------------------------------------------------------------------------
@@ -2133,9 +2258,9 @@ def get_auditoria_los_com(data_ini, data_fim):
                 tp.num_prontuario,
                 MIN(til.dat_internacao) AS dat_entrada,
                 MAX(til.dat_alta)       AS dat_saida
-            FROM public.t_internacao ti
-            JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-            JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+            FROM t_internacao ti
+            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
             WHERE til.dat_internacao IS NOT NULL
             GROUP BY ti.isn_internacao, tp.num_prontuario
         ),
@@ -2187,8 +2312,8 @@ def get_auditoria_los_com(data_ini, data_fim):
                     til.dat_alta + til.hor_alta::time
                 ) AS ts_alta
             FROM cadeia c
-            JOIN public.t_internacao_leito til ON til.isn_internacao = c.isn_internacao
-            JOIN public.t_clinica tc ON tc.isn_clinica = til.isn_clinica
+            JOIN t_internacao_leito til ON til.isn_internacao = c.isn_internacao
+            JOIN t_clinica tc ON tc.isn_clinica = til.isn_clinica
             WHERE til.dat_internacao IS NOT NULL
         ),
         grupo_primeiro AS (
@@ -2204,10 +2329,10 @@ def get_auditoria_los_com(data_ini, data_fim):
                 ti.dat_cadastro
             FROM base b
             JOIN grupo_primeiro gp ON gp.id_grupo = b.id_grupo
-            JOIN public.t_internacao ti ON ti.isn_internacao = b.id_grupo
+            JOIN t_internacao ti ON ti.isn_internacao = b.id_grupo
             JOIN (
                 SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
-                FROM public.t_internacao_leito
+                FROM t_internacao_leito
                 ORDER BY isn_internacao,
                     COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
                     isn_internacao_leito DESC
@@ -2305,10 +2430,10 @@ def get_auditoria_los_sem(data_ini, data_fim):
                 COALESCE(til.dat_internacao_info + til.hor_internacao_info::time, til.dat_internacao + til.hor_internacao::time)
             )) / 3600::numeric, 2) AS los_horas,
             td.dsc_destino
-        FROM public.t_internacao ti
-        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-        JOIN public.t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
-        JOIN public.t_destino td ON td.isn_destino = til.isn_destino
+        FROM t_internacao ti
+        JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
+        JOIN t_destino td ON td.isn_destino = til.isn_destino
         WHERE ti.isn_tipo_atendimento = 2
           AND til.isn_destino IN (1, 3, 4)
           AND til.dat_alta IS NOT NULL
@@ -2328,7 +2453,7 @@ def get_auditoria_porta_medico(data_ini, data_fim):
                     tia.dat_ini
                     + COALESCE(NULLIF(TRIM(tia.dsc_hor_ini), ''), '00:00')::time
                 ) AS ts_consulta_med
-            FROM public.t_internacao_atendimento tia
+            FROM t_internacao_atendimento tia
             WHERE tia.dat_ini IS NOT NULL
             GROUP BY tia.isn_internacao
         ),
@@ -2338,10 +2463,10 @@ def get_auditoria_porta_medico(data_ini, data_fim):
                 tc.dsc_clinica,
                 te.dsc_enfermaria,
                 tl.dsc_leito
-            FROM public.t_internacao_leito til
-            JOIN public.t_clinica tc ON til.isn_clinica = tc.isn_clinica
-            JOIN public.t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
-            JOIN public.t_leito tl ON til.isn_leito = tl.isn_leito
+            FROM t_internacao_leito til
+            JOIN t_clinica tc ON til.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON til.isn_leito = tl.isn_leito
             WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
             ORDER BY
                 til.isn_internacao,
@@ -2362,8 +2487,8 @@ def get_auditoria_porta_medico(data_ini, data_fim):
             mi.dsc_clinica,
             mi.dsc_enfermaria,
             mi.dsc_leito
-        FROM public.t_internacao ti
-        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        FROM t_internacao ti
+        JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
         JOIN mov_inicio mi ON mi.isn_internacao = ti.isn_internacao
         JOIN primeira_consulta pc ON pc.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 2
@@ -2392,11 +2517,11 @@ def get_auditoria_internacoes_ps(data_ini, data_fim):
             tc_ent.dsc_clinica  AS clinica_entrada,
             tc_ult.dsc_clinica  AS clinica_alta,
             td_ult.dsc_destino
-        FROM public.t_internacao ti
-        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        FROM t_internacao ti
+        JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
         -- primeira movimentação (entrada)
         JOIN LATERAL (
-            SELECT * FROM public.t_internacao_leito til2
+            SELECT * FROM t_internacao_leito til2
             WHERE til2.isn_internacao = ti.isn_internacao
             ORDER BY COALESCE(til2.dat_internacao_info, til2.dat_internacao),
                      til2.isn_internacao_leito
@@ -2404,18 +2529,18 @@ def get_auditoria_internacoes_ps(data_ini, data_fim):
         ) til_ent ON TRUE
         -- última movimentação (alta)
         JOIN LATERAL (
-            SELECT * FROM public.t_internacao_leito til3
+            SELECT * FROM t_internacao_leito til3
             WHERE til3.isn_internacao = ti.isn_internacao
             ORDER BY COALESCE(til3.dat_alta_info, til3.dat_alta) DESC NULLS LAST,
                      til3.isn_internacao_leito DESC
             LIMIT 1
         ) til_ult ON TRUE
-        JOIN public.t_clinica tc_ent ON tc_ent.isn_clinica = til_ent.isn_clinica
-        JOIN public.t_clinica tc_ult ON tc_ult.isn_clinica = til_ult.isn_clinica
-        LEFT JOIN public.t_destino td_ult ON td_ult.isn_destino = til_ult.isn_destino
+        JOIN t_clinica tc_ent ON tc_ent.isn_clinica = til_ent.isn_clinica
+        JOIN t_clinica tc_ult ON tc_ult.isn_clinica = til_ult.isn_clinica
+        LEFT JOIN t_destino td_ult ON td_ult.isn_destino = til_ult.isn_destino
                 WHERE ti.isn_tipo_atendimento = 2
                     AND EXISTS (
-                            SELECT 1 FROM public.t_internacao_leito til
+                            SELECT 1 FROM t_internacao_leito til
                             WHERE til.isn_internacao = ti.isn_internacao
                                 AND til.isn_destino = 13
                                 AND COALESCE(til.dat_alta_info, til.dat_alta)::date BETWEEN %s AND %s
@@ -2435,7 +2560,7 @@ def get_auditoria_tmph(data_ini, data_fim):
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         )
         SELECT
             mov.isn_internacao_leito,
@@ -2465,12 +2590,12 @@ def get_auditoria_tmph(data_ini, data_fim):
                 THEN 1 ELSE 0
             END AS saida_valida
         FROM movimentos mov
-        JOIN public.t_internacao ti ON ti.isn_internacao = mov.isn_internacao
-        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-        JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-        JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-        JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-        LEFT JOIN public.t_destino td ON td.isn_destino = mov.isn_destino
+        JOIN t_internacao ti ON ti.isn_internacao = mov.isn_internacao
+        JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+        JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+        JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+        LEFT JOIN t_destino td ON td.isn_destino = mov.isn_destino
         WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
           AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
           AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
@@ -2489,7 +2614,7 @@ def get_auditoria_tmp_ps(data_ini, data_fim):
                     PARTITION BY til.isn_internacao
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
-            FROM public.t_internacao_leito til
+            FROM t_internacao_leito til
         )
         SELECT
             mov.isn_internacao_leito,
@@ -2519,12 +2644,12 @@ def get_auditoria_tmp_ps(data_ini, data_fim):
                 THEN 1 ELSE 0
             END AS saida_valida
         FROM movimentos mov
-        JOIN public.t_internacao ti ON ti.isn_internacao = mov.isn_internacao
-        JOIN public.t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-        JOIN public.t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-        JOIN public.t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-        JOIN public.t_leito tl ON mov.isn_leito = tl.isn_leito
-        LEFT JOIN public.t_destino td ON td.isn_destino = mov.isn_destino
+        JOIN t_internacao ti ON ti.isn_internacao = mov.isn_internacao
+        JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+        JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+        JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+        LEFT JOIN t_destino td ON td.isn_destino = mov.isn_destino
         WHERE mov.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
           AND mov.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
           AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s

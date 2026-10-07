@@ -1,0 +1,4 @@
+# credenciais locais (geradas pela página /admin/banco e pelo login)
+config_banco.json
+config_banco.json.tmp
+.secret_key
