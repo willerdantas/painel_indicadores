@@ -1149,6 +1149,15 @@ def api_hcasg_emergencia_atendimentos():
         return jsonify({'ok': False, 'erro': str(e)}), 500
 
 
+@app.route('/api/hcasg/emergencia/saidas')
+def api_hcasg_emergencia_saidas():
+    try:
+        dados = hcasg.get_saidas_emergencia(request.args.get('data_ini'), request.args.get('data_fim'))
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
 @app.route('/hcasg/hospitalares/tendencia')
 def hcasg_hospitalares_tendencia():
     clinicas, enfermarias, leitos = hcasg_get_filtros()

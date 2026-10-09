@@ -545,7 +545,8 @@ const SCHEMAS = {
     title:   'Auditoria — LOS com Internação',
     defaultSort: 'ts_primeiro_grupo',
     cols: [
-      { col: 'id_grupo',           label: 'ID Grupo' },
+      { col: 'id_grupo',           label: 'Atendimento PS' },
+      { col: 'id_internacao_vinculada', label: 'Internação vinculada' },
       { col: 'dat_cadastro',       label: 'Cadastro PS' },
       { col: 'ts_clinica_1',       label: 'Entrada Clín. 1' },
       { col: 'ts_referencia',      label: 'Referência Final' },
@@ -564,6 +565,7 @@ const SCHEMAS = {
     },
     rowHtml(r, extras){
       return `<td>${r.id_grupo}</td>
+              <td>${r.id_internacao_vinculada ?? '—'}</td>
               <td>${fmt(r.dat_cadastro)}</td>
               <td>${fmt(r.ts_clinica_1)}</td>
               <td>${fmt(r.ts_referencia)}</td>

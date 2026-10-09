@@ -28,6 +28,7 @@ compõem cada indicador. Assim todas as páginas mostram os mesmos números.
 
 import statistics
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
 import psycopg2
@@ -687,6 +688,149 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
 
 
 # ---------------------------------------------------------------------------
+# LOS COM INTERNAÇÃO — regra única, usada pelo indicador do período, pela
+# tendência mensal e pela auditoria.
+#
+# Um atendimento de emergência (t_internacao com isn_tipo_atendimento = 2)
+# cuja última movimentação termina com destino 13 (internação) é vinculado ao
+# próximo registro de t_internacao do mesmo prontuário (a internação que ele
+# gerou), desde que esse próximo registro seja do tipo 1 (internação).
+#
+# LOS = da entrada na clínica 1 (emergência) até a entrada na primeira clínica
+# de destino (CLINICAS_LOS_COM_DEST); sem clínica de destino, até a última
+# alta do par (ou agora, se ainda não teve alta).
+#
+# Parâmetros: [data_ini, data_fim] — período pela data de cadastro do
+# atendimento de emergência. O resultado fica na CTE los_com_grupos.
+# ---------------------------------------------------------------------------
+
+def _los_com_cte():
+    return f"""
+        WITH
+        atend_periodo AS MATERIALIZED (
+            SELECT ti.isn_internacao, ti.isn_paciente, ti.dat_cadastro
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 2
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ),
+        ultima_mov AS MATERIALIZED (
+            SELECT DISTINCT ON (til.isn_internacao) til.isn_internacao, til.isn_destino
+            FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM atend_periodo)
+            ORDER BY til.isn_internacao,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time, til.dat_alta + til.hor_alta::time) DESC NULLS LAST,
+                til.isn_internacao_leito DESC
+        ),
+        emergencias AS MATERIALIZED (
+            SELECT a.isn_internacao, a.dat_cadastro, tp.num_prontuario
+            FROM atend_periodo a
+            JOIN ultima_mov u ON u.isn_internacao = a.isn_internacao
+            JOIN t_paciente tp ON tp.isn_paciente = a.isn_paciente
+            WHERE u.isn_destino = 13
+        ),
+        proximo_registro AS MATERIALIZED (
+            SELECT DISTINCT ON (e.isn_internacao)
+                e.isn_internacao AS id_emergencia,
+                ti.isn_internacao AS id_proximo,
+                ti.isn_tipo_atendimento
+            FROM emergencias e
+            JOIN t_paciente tp ON tp.num_prontuario = e.num_prontuario
+            JOIN t_internacao ti ON ti.isn_paciente = tp.isn_paciente
+            WHERE ti.dat_cadastro > e.dat_cadastro
+            ORDER BY e.isn_internacao, ti.dat_cadastro, ti.isn_internacao
+        ),
+        vinculo AS MATERIALIZED (
+            SELECT
+                e.isn_internacao AS id_grupo,
+                e.dat_cadastro,
+                CASE WHEN p.isn_tipo_atendimento = 1 THEN p.id_proximo END AS id_internacao_vinculada
+            FROM emergencias e
+            LEFT JOIN proximo_registro p ON p.id_emergencia = e.isn_internacao
+        ),
+        membros AS (
+            SELECT id_grupo, id_grupo AS isn_internacao FROM vinculo
+            UNION ALL
+            SELECT id_grupo, id_internacao_vinculada FROM vinculo WHERE id_internacao_vinculada IS NOT NULL
+        ),
+        base AS MATERIALIZED (
+            SELECT
+                m.id_grupo,
+                til.isn_clinica,
+                tc.dsc_clinica,
+                COALESCE(
+                    til.dat_internacao_info + til.hor_internacao_info::time,
+                    til.dat_internacao + til.hor_internacao::time
+                ) AS ts_internacao,
+                COALESCE(
+                    til.dat_alta_info + til.hor_alta_info::time,
+                    til.dat_alta + til.hor_alta::time
+                ) AS ts_alta
+            FROM membros m
+            JOIN t_internacao_leito til ON til.isn_internacao = m.isn_internacao
+            LEFT JOIN t_clinica tc ON tc.isn_clinica = til.isn_clinica
+            WHERE til.dat_internacao IS NOT NULL
+        ),
+        grupo_inicio AS (
+            SELECT
+                v.id_grupo,
+                v.dat_cadastro,
+                v.id_internacao_vinculada,
+                MIN(b.ts_internacao) FILTER (WHERE b.isn_clinica = 1) AS ts_clinica_1,
+                MIN(b.ts_internacao) AS ts_primeiro_grupo
+            FROM vinculo v
+            JOIN base b ON b.id_grupo = v.id_grupo
+            GROUP BY v.id_grupo, v.dat_cadastro, v.id_internacao_vinculada
+            HAVING BOOL_OR(b.isn_clinica = 1)
+        ),
+        grupo_destino AS (
+            SELECT DISTINCT ON (b.id_grupo)
+                b.id_grupo,
+                b.ts_internacao AS ts_primeira_clinica,
+                b.dsc_clinica   AS dsc_clinica_destino
+            FROM base b
+            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
+            WHERE b.isn_clinica IN ({CLINICAS_LOS_COM_DEST_SQL})
+              AND b.ts_internacao IS NOT NULL
+              AND b.ts_internacao >= g.ts_clinica_1
+            ORDER BY b.id_grupo, b.ts_internacao
+        ),
+        grupo_fallback AS (
+            SELECT
+                b.id_grupo,
+                MAX(COALESCE(b.ts_alta, CURRENT_TIMESTAMP)) AS ts_ultima_alta,
+                BOOL_OR(b.ts_alta IS NULL) AS tem_aberto
+            FROM base b
+            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
+            WHERE b.ts_internacao >= g.ts_clinica_1
+            GROUP BY b.id_grupo
+        ),
+        los_com_grupos AS (
+            SELECT
+                g.id_grupo,
+                g.id_internacao_vinculada,
+                g.dat_cadastro,
+                g.ts_clinica_1,
+                g.ts_primeiro_grupo,
+                d.ts_primeira_clinica,
+                d.dsc_clinica_destino,
+                f.ts_ultima_alta,
+                f.tem_aberto,
+                COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) AS ts_referencia,
+                CASE
+                    WHEN d.ts_primeira_clinica IS NOT NULL THEN 'Destino'
+                    WHEN f.tem_aberto THEN 'Em aberto (hoje)'
+                    ELSE 'Fallback (última alta)'
+                END AS tipo_referencia,
+                EXTRACT(EPOCH FROM (COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) - g.ts_clinica_1)) / 60 AS los_min
+            FROM grupo_inicio g
+            LEFT JOIN grupo_destino d ON d.id_grupo = g.id_grupo
+            LEFT JOIN grupo_fallback f ON f.id_grupo = g.id_grupo
+            WHERE COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) > g.ts_clinica_1
+        )
+    """
+
+
+# ---------------------------------------------------------------------------
 # INDICADORES DA EMERGÊNCIA (mensal)
 # LOS sem/com internação, TMP leitos PS, saídas PS, giro de leito PS,
 # tempo porta-médico, internações PS.
@@ -756,142 +900,13 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         """, [dt_ini, dt_fim])
     mapa_los_sem = {r["mes"]: r["los_sem"] for r in (rows_sem or [])}
 
-    rows_com = fetch_all(f"""
-        WITH
-        internacao_datas AS (
-            SELECT
-                ti.isn_internacao,
-                tp.num_prontuario,
-                MIN(til.dat_internacao) AS dat_entrada,
-                MAX(til.dat_alta)       AS dat_saida
-            FROM t_internacao ti
-            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
-            WHERE til.dat_internacao IS NOT NULL
-            GROUP BY ti.isn_internacao, tp.num_prontuario
-        ),
-        continuidade AS (
-            SELECT
-                isn_internacao,
-                num_prontuario,
-                dat_entrada,
-                dat_saida,
-                CASE
-                    WHEN LAG(dat_saida) OVER (
-                        PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
-                    ) = dat_entrada
-                    THEN 0 ELSE 1
-                END AS novo_grupo
-            FROM internacao_datas
-        ),
-        grupos AS (
-            SELECT
-                isn_internacao,
-                num_prontuario,
-                dat_entrada,
-                SUM(novo_grupo) OVER (
-                    PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS grp_num
-            FROM continuidade
-        ),
-        cadeia AS (
-            SELECT
-                g.isn_internacao,
-                FIRST_VALUE(g.isn_internacao) OVER (
-                    PARTITION BY g.num_prontuario, g.grp_num
-                    ORDER BY g.dat_entrada, g.isn_internacao
-                ) AS id_grupo
-            FROM grupos g
-        ),
-        base AS (
-            SELECT
-                c.id_grupo,
-                til.isn_clinica,
-                COALESCE(
-                    til.dat_internacao_info + til.hor_internacao_info::time,
-                    til.dat_internacao + til.hor_internacao::time
-                ) AS ts_internacao,
-                COALESCE(
-                    til.dat_alta_info + til.hor_alta_info::time,
-                    til.dat_alta + til.hor_alta::time
-                ) AS ts_alta
-            FROM cadeia c
-            JOIN t_internacao_leito til ON til.isn_internacao = c.isn_internacao
-            WHERE til.dat_internacao IS NOT NULL
-        ),
-        grupo_primeiro AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_primeiro_grupo
-            FROM base b
-            GROUP BY b.id_grupo
-        ),
-        grupo_inicio AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_clinica_1,
-                gp.ts_primeiro_grupo
-            FROM base b
-            JOIN grupo_primeiro gp ON gp.id_grupo = b.id_grupo
-            JOIN t_internacao ti ON ti.isn_internacao = b.id_grupo
-            JOIN (
-                SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
-                FROM t_internacao_leito
-                ORDER BY isn_internacao,
-                    COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
-                    isn_internacao_leito DESC
-            ) til_ult ON til_ult.isn_internacao = b.id_grupo
-            WHERE b.isn_clinica = 1
-              AND ti.isn_tipo_atendimento = 2
-              AND til_ult.isn_destino = 13
-              AND gp.ts_primeiro_grupo::date BETWEEN %s AND %s
-            GROUP BY b.id_grupo, gp.ts_primeiro_grupo
-        ),
-        grupo_destino AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_primeira_clinica
-            FROM base b
-            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
-            WHERE b.isn_clinica IN ({CLINICAS_LOS_COM_DEST_SQL})
-              AND b.ts_internacao IS NOT NULL
-              AND b.ts_internacao >= g.ts_clinica_1
-            GROUP BY b.id_grupo
-        ),
-        grupo_fallback AS (
-            SELECT
-                b.id_grupo,
-                MAX(COALESCE(b.ts_alta, CURRENT_TIMESTAMP)) AS ts_ultima_alta
-            FROM base b
-            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
-            WHERE b.ts_internacao >= g.ts_clinica_1
-            GROUP BY b.id_grupo
-        ),
-        grupo_final AS (
-            SELECT
-                g.id_grupo,
-                g.ts_clinica_1,
-                g.ts_primeiro_grupo,
-                COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) AS ts_referencia
-            FROM grupo_inicio g
-            LEFT JOIN grupo_destino d ON d.id_grupo = g.id_grupo
-            LEFT JOIN grupo_fallback f ON f.id_grupo = g.id_grupo
-        ),
-        los_por_grupo AS (
-            SELECT
-                gf.id_grupo,
-                DATE_TRUNC('month', gf.ts_primeiro_grupo)::date AS mes,
-                EXTRACT(EPOCH FROM (gf.ts_referencia - gf.ts_clinica_1)) / 60 AS los_min
-            FROM grupo_final gf
-            WHERE gf.ts_referencia > gf.ts_clinica_1
-        )
+    rows_com = fetch_all(_los_com_cte() + """
         SELECT
-            lpg.mes,
-            ROUND(AVG(lpg.los_min)::numeric, 2) AS los_com
-        FROM los_por_grupo lpg
-        GROUP BY lpg.mes
-        ORDER BY mes
+            DATE_TRUNC('month', dat_cadastro)::date AS mes,
+            ROUND(AVG(los_min)::numeric, 2) AS los_com
+        FROM los_com_grupos
+        GROUP BY 1
+        ORDER BY 1
     """, [dt_ini, dt_fim])
     mapa_los_com = {r["mes"]: r["los_com"] for r in (rows_com or [])}
 
@@ -1643,7 +1658,11 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 )
     """
 
-    los_sem = fetch_one("""
+    # As consultas abaixo são independentes: rodam em paralelo, cada uma na
+    # sua conexão, e o tempo total fica perto do da mais lenta.
+    _consultas = ThreadPoolExecutor(max_workers=9, thread_name_prefix="emergencia")
+
+    los_sem = _consultas.submit(fetch_one, """
         SELECT ROUND(
             AVG(EXTRACT(EPOCH FROM (
                 COALESCE(til.dat_alta_info  + til.hor_alta_info::time,
@@ -1664,131 +1683,23 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
           AND ti.dat_cadastro::date BETWEEN %s AND %s
     """, [data_ini, data_fim])
 
-    los_com = fetch_one(f"""
-        WITH
-        internacao_datas AS (
-            SELECT
-                ti.isn_internacao,
-                tp.num_prontuario,
-                MIN(til.dat_internacao) AS dat_entrada,
-                MAX(til.dat_alta)       AS dat_saida
-            FROM t_internacao ti
-            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
-            WHERE til.dat_internacao IS NOT NULL
-            GROUP BY ti.isn_internacao, tp.num_prontuario
-        ),
-        continuidade AS (
-            SELECT
-                isn_internacao,
-                num_prontuario,
-                dat_entrada,
-                dat_saida,
-                CASE
-                    WHEN LAG(dat_saida) OVER (
-                        PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
-                    ) = dat_entrada
-                    THEN 0 ELSE 1
-                END AS novo_grupo
-            FROM internacao_datas
-        ),
-        grupos AS (
-            SELECT
-                isn_internacao,
-                num_prontuario,
-                dat_entrada,
-                SUM(novo_grupo) OVER (
-                    PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS grp_num
-            FROM continuidade
-        ),
-        cadeia AS (
-            SELECT
-                g.isn_internacao,
-                FIRST_VALUE(g.isn_internacao) OVER (
-                    PARTITION BY g.num_prontuario, g.grp_num
-                    ORDER BY g.dat_entrada, g.isn_internacao
-                ) AS id_grupo
-            FROM grupos g
-        ),
-        base AS (
-            SELECT
-                c.id_grupo,
-                til.isn_clinica,
-                COALESCE(
-                    til.dat_internacao_info + til.hor_internacao_info::time,
-                    til.dat_internacao + til.hor_internacao::time
-                ) AS ts_internacao,
-                COALESCE(
-                    til.dat_alta_info + til.hor_alta_info::time,
-                    til.dat_alta + til.hor_alta::time
-                ) AS ts_alta
-            FROM cadeia c
-            JOIN t_internacao_leito til ON til.isn_internacao = c.isn_internacao
-            WHERE til.dat_internacao IS NOT NULL
-        ),
-        grupo_inicio AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_clinica_1
-            FROM base b
-            JOIN t_internacao ti ON ti.isn_internacao = b.id_grupo
-            JOIN (
-                SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
-                FROM t_internacao_leito
-                ORDER BY isn_internacao,
-                    COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
-                    isn_internacao_leito DESC
-            ) til_ult ON til_ult.isn_internacao = b.id_grupo
-            WHERE b.isn_clinica = 1
-              AND ti.isn_tipo_atendimento = 2
-              AND til_ult.isn_destino = 13
-              AND ti.dat_cadastro::date BETWEEN %s AND %s
-            GROUP BY b.id_grupo
-        ),
-        grupo_destino AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_primeira_clinica
-            FROM base b
-            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
-            WHERE b.isn_clinica IN ({CLINICAS_LOS_COM_DEST_SQL})
-              AND b.ts_internacao IS NOT NULL
-              AND b.ts_internacao >= g.ts_clinica_1
-            GROUP BY b.id_grupo
-        ),
-        grupo_fallback AS (
-            SELECT
-                b.id_grupo,
-                MAX(COALESCE(b.ts_alta, CURRENT_TIMESTAMP)) AS ts_ultima_alta
-            FROM base b
-            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
-            WHERE b.ts_internacao >= g.ts_clinica_1
-            GROUP BY b.id_grupo
-        ),
-        grupo_final AS (
-            SELECT
-                g.id_grupo,
-                g.ts_clinica_1,
-                COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) AS ts_referencia
-            FROM grupo_inicio g
-            LEFT JOIN grupo_destino d ON d.id_grupo = g.id_grupo
-            LEFT JOIN grupo_fallback f ON f.id_grupo = g.id_grupo
-        ),
-        los_por_grupo AS (
-            SELECT
-                gf.id_grupo,
-                EXTRACT(EPOCH FROM (gf.ts_referencia - gf.ts_clinica_1)) / 60 AS los_min
-            FROM grupo_final gf
-            WHERE gf.ts_referencia > gf.ts_clinica_1
-        )
-        SELECT ROUND(AVG(lpg.los_min)::numeric, 2) AS valor
-        FROM los_por_grupo lpg
+    los_com = _consultas.submit(fetch_one, _los_com_cte() + """
+        SELECT ROUND(AVG(los_min)::numeric, 2) AS valor
+        FROM los_com_grupos
     """, [data_ini, data_fim])
 
-    tmp_ps = fetch_one(f"""
-        WITH movimentos AS (
+    tmp_ps = _consultas.submit(fetch_one, f"""
+        WITH internacoes_alvo AS (
+            -- internações com movimentação nos leitos do PS no período: o LEAD
+            -- abaixo só precisa do histórico delas (e não da tabela inteira)
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            WHERE til.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
+              AND til.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
+              AND COALESCE(til.dat_internacao_info, til.dat_internacao)::date <= %s
+              AND COALESCE(til.dat_alta_info, til.dat_alta, CURRENT_DATE)::date >= %s
+        ),
+        movimentos AS (
             SELECT
                 til.*,
                 LEAD(til.isn_clinica) OVER (
@@ -1796,6 +1707,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
             FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_alvo)
         ),
         base AS (
             SELECT
@@ -1853,10 +1765,20 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
             ROUND(aggr.paciente_dia / NULLIF(saidas.saidas, 0), 2) AS valor
         FROM aggr
         CROSS JOIN saidas
-    """, [data_fim, data_ini] + filt_vals + [data_ini, data_fim, data_ini, data_fim, data_ini, data_fim])
+    """, [data_fim, data_ini, data_fim, data_ini] + filt_vals + [data_ini, data_fim, data_ini, data_fim, data_ini, data_fim])
 
-    saidas_tmp_ps_detalhe = fetch_all(f"""
-        WITH movimentos AS (
+    saidas_tmp_ps_detalhe = _consultas.submit(fetch_all, f"""
+        WITH internacoes_alvo AS (
+            -- internações com movimentação nos leitos do PS no período: o LEAD
+            -- abaixo só precisa do histórico delas (e não da tabela inteira)
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            WHERE til.isn_clinica IN ({CLINICAS_TMP_PS_SQL})
+              AND til.isn_leito NOT IN ({LEITOS_TMP_PS_EXCL_SQL})
+              AND COALESCE(til.dat_internacao_info, til.dat_internacao)::date <= %s
+              AND COALESCE(til.dat_alta_info, til.dat_alta, CURRENT_DATE)::date >= %s
+        ),
+        movimentos AS (
             SELECT
                 til.*,
                 LEAD(til.isn_clinica) OVER (
@@ -1864,6 +1786,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
                 ) AS prox_clinica
             FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_alvo)
         ),
         base AS (
             SELECT
@@ -1896,10 +1819,16 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                     AND dt_alta BETWEEN %s AND %s
         GROUP BY dsc_destino, isn_destino
         ORDER BY isn_destino
-    """, [data_fim, data_ini] + filt_vals + [data_ini, data_fim])
+    """, [data_fim, data_ini, data_fim, data_ini] + filt_vals + [data_ini, data_fim])
 
-    porta_medico_row = fetch_one(f"""
-        WITH primeira_consulta AS (
+    porta_medico_row = _consultas.submit(fetch_one, f"""
+        WITH atend_periodo AS (
+            SELECT ti.isn_internacao
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 2
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ),
+        primeira_consulta AS (
             SELECT
                 tia.isn_internacao,
                 MIN(
@@ -1908,6 +1837,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
                 ) AS ts_consulta_med
             FROM t_internacao_atendimento tia
             WHERE tia.dat_ini IS NOT NULL
+              AND tia.isn_internacao IN (SELECT isn_internacao FROM atend_periodo)
             GROUP BY tia.isn_internacao
         ),
         mov_inicio AS (
@@ -1921,10 +1851,18 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
             JOIN t_enfermaria te ON til.isn_enfermaria = te.isn_enfermaria
             JOIN t_leito tl ON til.isn_leito = tl.isn_leito
             WHERE til.isn_clinica IN ({CLINICAS_FILTRO_SQL})
+              AND til.isn_internacao IN (SELECT isn_internacao FROM atend_periodo)
             ORDER BY
                 til.isn_internacao,
                 COALESCE(til.dat_internacao_info, til.dat_internacao),
                 til.isn_internacao_leito
+        ),
+        -- MATERIALIZED: sem estatísticas nas tabelas, o planejador fazia um
+        -- laço que varria t_admissao inteira a cada atendimento (~2 min).
+        admissoes AS MATERIALIZED (
+            SELECT ta.isn_internacao
+            FROM t_admissao ta
+            WHERE ta.isn_internacao IN (SELECT isn_internacao FROM atend_periodo)
         )
         SELECT
             ROUND(
@@ -1934,14 +1872,14 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         FROM t_internacao ti
         JOIN mov_inicio mi ON mi.isn_internacao = ti.isn_internacao
         JOIN primeira_consulta pc ON pc.isn_internacao = ti.isn_internacao
-        LEFT JOIN t_admissao ta ON ta.isn_internacao = ti.isn_internacao
+        LEFT JOIN admissoes ta ON ta.isn_internacao = ti.isn_internacao
         WHERE ti.isn_tipo_atendimento = 2
           AND ti.dat_cadastro::date BETWEEN %s AND %s
           AND pc.ts_consulta_med >= ti.dat_cadastro
           {filt_sql}
-    """, [data_ini, data_fim] + filt_vals)
+    """, [data_ini, data_fim, data_ini, data_fim] + filt_vals)
 
-    internacoes_ps_row = fetch_one("""
+    internacoes_ps_row = _consultas.submit(fetch_one, """
         SELECT
             COUNT(*) AS total,
             ROUND(
@@ -1960,7 +1898,7 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
 
     _leitos_ps_filt_sql, _leitos_ps_filt_vals = _filtros_sql(clinica, enfermaria, leito, prefixo="AND")
 
-    leitos_ativos_ps_row = fetch_one(f"""
+    leitos_ativos_ps_row = _consultas.submit(fetch_one, f"""
         WITH
         dias AS (
             SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS dt
@@ -2003,9 +1941,8 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         CROSS JOIN leitos_base lb
         LEFT JOIN interdicoes_por_dia ipd ON ipd.dt = d.dt
     """, [data_ini, data_fim] + _leitos_ps_filt_vals)
-    leitos_ativos_ps_total = leitos_ativos_ps_row["total"] if leitos_ativos_ps_row else None
 
-    leitos_ativos_ps_detalhe = fetch_all(f"""
+    leitos_ativos_ps_detalhe = _consultas.submit(fetch_all, f"""
         WITH
         dias AS (
             SELECT generate_series(%s::date, %s::date, INTERVAL '1 day')::date AS dt
@@ -2055,18 +1992,52 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
         ORDER BY qtd DESC
     """, [data_ini, data_fim] + _leitos_ps_filt_vals)
 
-    internacoes_detalhe_ps = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
-        SELECT pc.dsc_clinica, COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
-        FROM t_internacao ti
-        JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
-        WHERE ti.isn_tipo_atendimento = 1
-          AND ti.dat_cadastro::date BETWEEN %s AND %s
-          AND pc.isn_clinica IN ({CLINICAS_PS_SQL})
+    # Mesma lógica de _PRIMEIRA_CLINICA_CTE, mas só para as internações do
+    # período (a CTE compartilhada percorre a tabela de movimentações inteira).
+    internacoes_detalhe_ps = _consultas.submit(fetch_all, f"""
+        WITH internacoes_periodo AS (
+            SELECT ti.isn_internacao
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 1
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ),
+        primeira_clinica AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                til.isn_clinica,
+                tc.dsc_clinica,
+                te.dsc_enfermaria,
+                tl.dsc_leito
+            FROM t_internacao_leito til
+            JOIN t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
+            JOIN t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
+            JOIN t_leito      tl ON tl.isn_leito      = til.isn_leito
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_periodo)
+            ORDER BY til.isn_internacao,
+                     COALESCE(til.dat_internacao_info, til.dat_internacao),
+                     til.isn_internacao_leito
+        )
+        SELECT pc.dsc_clinica, COUNT(DISTINCT ip.isn_internacao)::integer AS qtd
+        FROM internacoes_periodo ip
+        JOIN primeira_clinica pc ON pc.isn_internacao = ip.isn_internacao
+        WHERE pc.isn_clinica IN ({CLINICAS_PS_SQL})
         {filt_sql}
         GROUP BY pc.dsc_clinica
         ORDER BY qtd DESC
     """, [data_ini, data_fim] + filt_vals)
 
+    _consultas.shutdown(wait=True)
+    los_sem = los_sem.result()
+    los_com = los_com.result()
+    tmp_ps = tmp_ps.result()
+    saidas_tmp_ps_detalhe = saidas_tmp_ps_detalhe.result()
+    porta_medico_row = porta_medico_row.result()
+    internacoes_ps_row = internacoes_ps_row.result()
+    leitos_ativos_ps_row = leitos_ativos_ps_row.result()
+    leitos_ativos_ps_detalhe = leitos_ativos_ps_detalhe.result()
+    internacoes_detalhe_ps = internacoes_detalhe_ps.result()
+
+    leitos_ativos_ps_total = leitos_ativos_ps_row["total"] if leitos_ativos_ps_row else None
     saidas_val_ps = tmp_ps["saidas"] if tmp_ps and tmp_ps["saidas"] is not None else None
     giro_ps = round(float(saidas_val_ps) / leitos_ativos_ps_total, 2) if saidas_val_ps and leitos_ativos_ps_total else None
 
@@ -2224,6 +2195,120 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
         ],
     }
 
+
+# ---------------------------------------------------------------------------
+# SAÍDAS DA EMERGÊNCIA por dia e destino.
+# Atendimento de emergência (t_internacao.isn_tipo_atendimento = 2) cujo
+# último registro em t_internacao_leito tem destino 1, 3, 4 ou 13; o dia é a
+# data da alta desse último registro.
+# ---------------------------------------------------------------------------
+
+DESTINOS_SAIDA_PS = (1, 3, 4, 13)
+DESTINOS_SAIDA_PS_SQL = ", ".join(str(v) for v in DESTINOS_SAIDA_PS)
+
+
+def get_saidas_emergencia(data_ini, data_fim):
+    dt_ini = date.fromisoformat(data_ini)
+    dt_fim = date.fromisoformat(data_fim)
+    if dt_ini > dt_fim:
+        dt_ini, dt_fim = dt_fim, dt_ini
+
+    rows = fetch_all(f"""
+        WITH candidatas AS MATERIALIZED (
+            -- só atendimentos com alguma alta no período: o último registro
+            -- de cada um (que define a saída) está entre essas altas
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            JOIN t_internacao ti ON ti.isn_internacao = til.isn_internacao
+            WHERE ti.isn_tipo_atendimento = 2
+              AND COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                           til.dat_alta + til.hor_alta::time)::date BETWEEN %s AND %s
+        ),
+        ultimo_registro AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                til.isn_destino,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                         til.dat_alta + til.hor_alta::time) AS ts_saida
+            FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM candidatas)
+            ORDER BY til.isn_internacao,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                         til.dat_alta + til.hor_alta::time) DESC NULLS LAST,
+                til.isn_internacao_leito DESC
+        )
+        SELECT
+            u.ts_saida::date AS dia,
+            u.isn_destino,
+            COUNT(*) AS qtd,
+            -- permanência na emergência: do cadastro do atendimento até a saída
+            COUNT(*) FILTER (WHERE u.ts_saida - ti.dat_cadastro > INTERVAL '24 hours') AS acima_24h
+        FROM ultimo_registro u
+        JOIN t_internacao ti ON ti.isn_internacao = u.isn_internacao
+        WHERE u.isn_destino IN ({DESTINOS_SAIDA_PS_SQL})
+          AND u.ts_saida::date BETWEEN %s AND %s
+        GROUP BY 1, 2
+    """, [dt_ini, dt_fim, dt_ini, dt_fim])
+
+    nomes = {
+        int(r["isn_destino"]): r["dsc_destino"]
+        for r in fetch_all(
+            f"SELECT isn_destino, dsc_destino FROM t_destino WHERE isn_destino IN ({DESTINOS_SAIDA_PS_SQL})"
+        ) or []
+    }
+    dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
+    idx_dia = {d: i for i, d in enumerate(dias)}
+    valores = {dest: [0] * len(dias) for dest in DESTINOS_SAIDA_PS}
+    acima_24h_dia = [0] * len(dias)
+    for r in rows or []:
+        valores[int(r["isn_destino"])][idx_dia[r["dia"]]] = int(r["qtd"])
+        acima_24h_dia[idx_dia[r["dia"]]] += int(r["acima_24h"])
+
+    # Taxa de conversão: % das saídas da emergência que foram para internação
+    # (destino 13), dia a dia e no período. Não depende do filtro de destino.
+    total_dia = [sum(valores[dest][i] for dest in DESTINOS_SAIDA_PS) for i in range(len(dias))]
+    internacao_dia = valores[13]
+    total_periodo = sum(total_dia)
+    perc_24h = [
+        round(acima_24h_dia[i] / total_dia[i] * 100, 1) if total_dia[i] else None
+        for i in range(len(dias))
+    ]
+
+    return {
+        "dias": [d.strftime("%d/%m/%Y") for d in dias],
+        "taxa_conversao": [
+            round(internacao_dia[i] / total_dia[i] * 100, 1) if total_dia[i] else None
+            for i in range(len(dias))
+        ],
+        "taxa_conversao_periodo": (
+            round(sum(internacao_dia) / total_periodo * 100, 1) if total_periodo else None
+        ),
+        # Pacientes que ficaram mais de 24 h na emergência, pela data da saída
+        # (todos os destinos; não depende do filtro de destino).
+        "total_dia": total_dia,
+        "acima_24h": acima_24h_dia,
+        "acima_24h_total": sum(acima_24h_dia),
+        "perc_acima_24h": perc_24h,
+        "perc_acima_24h_periodo": (
+            round(sum(acima_24h_dia) / total_periodo * 100, 1) if total_periodo else None
+        ),
+        # média simples dos percentuais diários (dias sem saída ficam de fora)
+        "media_perc_acima_24h": (
+            round(statistics.mean(p for p in perc_24h if p is not None), 1)
+            if any(p is not None for p in perc_24h) else None
+        ),
+        "destinos": [
+            {
+                "isn_destino": dest,
+                "dsc_destino": (nomes.get(dest) or f"Destino {dest}").strip(),
+                "valores": valores[dest],
+                "total": sum(valores[dest]),
+            }
+            for dest in DESTINOS_SAIDA_PS
+        ],
+        "total": sum(sum(v) for v in valores.values()),
+    }
+
 # ---------------------------------------------------------------------------
 # PÁGINA INDICADORES LEAN (/lean) — visão consolidada hospitalar + emergência
 # (antes servida por um app separado na porta 5200)
@@ -2250,159 +2335,21 @@ def get_indicadores_mensais(clinica, enfermaria, leito, mes_ini=None, mes_fim=No
 # ---------------------------------------------------------------------------
 
 def get_auditoria_los_com(data_ini, data_fim):
-    rows = fetch_all(f"""
-        WITH
-        internacao_datas AS (
-            SELECT
-                ti.isn_internacao,
-                tp.num_prontuario,
-                MIN(til.dat_internacao) AS dat_entrada,
-                MAX(til.dat_alta)       AS dat_saida
-            FROM t_internacao ti
-            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
-            JOIN t_internacao_leito til ON til.isn_internacao = ti.isn_internacao
-            WHERE til.dat_internacao IS NOT NULL
-            GROUP BY ti.isn_internacao, tp.num_prontuario
-        ),
-        continuidade AS (
-            SELECT
-                isn_internacao,
-                num_prontuario,
-                dat_entrada,
-                dat_saida,
-                CASE
-                    WHEN LAG(dat_saida) OVER (
-                        PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
-                    ) = dat_entrada
-                    THEN 0 ELSE 1
-                END AS novo_grupo
-            FROM internacao_datas
-        ),
-        grupos AS (
-            SELECT
-                isn_internacao,
-                num_prontuario,
-                dat_entrada,
-                SUM(novo_grupo) OVER (
-                    PARTITION BY num_prontuario ORDER BY dat_entrada, isn_internacao
-                    ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-                ) AS grp_num
-            FROM continuidade
-        ),
-        cadeia AS (
-            SELECT
-                g.isn_internacao,
-                FIRST_VALUE(g.isn_internacao) OVER (
-                    PARTITION BY g.num_prontuario, g.grp_num
-                    ORDER BY g.dat_entrada, g.isn_internacao
-                ) AS id_grupo
-            FROM grupos g
-        ),
-        base AS (
-            SELECT
-                c.id_grupo,
-                til.isn_clinica,
-                tc.dsc_clinica,
-                COALESCE(
-                    til.dat_internacao_info + til.hor_internacao_info::time,
-                    til.dat_internacao + til.hor_internacao::time
-                ) AS ts_internacao,
-                COALESCE(
-                    til.dat_alta_info + til.hor_alta_info::time,
-                    til.dat_alta + til.hor_alta::time
-                ) AS ts_alta
-            FROM cadeia c
-            JOIN t_internacao_leito til ON til.isn_internacao = c.isn_internacao
-            JOIN t_clinica tc ON tc.isn_clinica = til.isn_clinica
-            WHERE til.dat_internacao IS NOT NULL
-        ),
-        grupo_primeiro AS (
-            SELECT id_grupo, MIN(ts_internacao) AS ts_primeiro_grupo
-            FROM base
-            GROUP BY id_grupo
-        ),
-        grupo_inicio AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_clinica_1,
-                gp.ts_primeiro_grupo,
-                ti.dat_cadastro
-            FROM base b
-            JOIN grupo_primeiro gp ON gp.id_grupo = b.id_grupo
-            JOIN t_internacao ti ON ti.isn_internacao = b.id_grupo
-            JOIN (
-                SELECT DISTINCT ON (isn_internacao) isn_internacao, isn_destino
-                FROM t_internacao_leito
-                ORDER BY isn_internacao,
-                    COALESCE(dat_alta_info + hor_alta_info::time, dat_alta + hor_alta::time) DESC NULLS LAST,
-                    isn_internacao_leito DESC
-            ) til_ult ON til_ult.isn_internacao = b.id_grupo
-            WHERE b.isn_clinica = 1
-              AND ti.isn_tipo_atendimento = 2
-              AND til_ult.isn_destino = 13
-              AND ti.dat_cadastro::date BETWEEN %s AND %s
-            GROUP BY b.id_grupo, gp.ts_primeiro_grupo, ti.dat_cadastro
-        ),
-        grupo_destino AS (
-            SELECT
-                b.id_grupo,
-                MIN(b.ts_internacao) AS ts_primeira_clinica,
-                MIN(b.dsc_clinica)   AS dsc_clinica_destino
-            FROM base b
-            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
-            WHERE b.isn_clinica IN ({CLINICAS_LOS_COM_DEST_SQL})
-              AND b.ts_internacao IS NOT NULL
-              AND b.ts_internacao >= g.ts_clinica_1
-            GROUP BY b.id_grupo
-        ),
-        grupo_fallback AS (
-            SELECT
-                b.id_grupo,
-                MAX(COALESCE(b.ts_alta, CURRENT_TIMESTAMP)) AS ts_ultima_alta,
-                BOOL_OR(b.ts_alta IS NULL) AS tem_aberto
-            FROM base b
-            JOIN grupo_inicio g ON g.id_grupo = b.id_grupo
-            WHERE b.ts_internacao >= g.ts_clinica_1
-            GROUP BY b.id_grupo
-        ),
-        grupo_final AS (
-            SELECT
-                g.id_grupo,
-                g.dat_cadastro,
-                g.ts_clinica_1,
-                g.ts_primeiro_grupo,
-                d.ts_primeira_clinica,
-                d.dsc_clinica_destino,
-                f.ts_ultima_alta,
-                f.tem_aberto,
-                COALESCE(d.ts_primeira_clinica, f.ts_ultima_alta) AS ts_referencia,
-                CASE
-                    WHEN d.ts_primeira_clinica IS NOT NULL THEN 'Destino'
-                    WHEN f.tem_aberto THEN 'Em aberto (hoje)'
-                    ELSE 'Fallback (última alta)'
-                END AS tipo_referencia
-            FROM grupo_inicio g
-            LEFT JOIN grupo_destino d ON d.id_grupo = g.id_grupo
-            LEFT JOIN grupo_fallback f ON f.id_grupo = g.id_grupo
-        )
+    rows = fetch_all(_los_com_cte() + """
         SELECT
-            gf.id_grupo,
-            gf.dat_cadastro::text                              AS dat_cadastro,
-            gf.ts_clinica_1::text                             AS ts_clinica_1,
-            gf.ts_primeiro_grupo::text                        AS ts_primeiro_grupo,
-            gf.ts_referencia::text                            AS ts_referencia,
-            gf.dsc_clinica_destino,
-            gf.tipo_referencia,
-            gf.tem_aberto,
-            ROUND(
-                EXTRACT(EPOCH FROM (gf.ts_referencia - gf.ts_clinica_1)) / 60
-            )::integer                                        AS los_min,
-            ROUND(
-                EXTRACT(EPOCH FROM (gf.ts_referencia - gf.ts_clinica_1)) / 3600.0, 1
-            )::numeric                                        AS los_horas
-        FROM grupo_final gf
-        WHERE gf.ts_referencia > gf.ts_clinica_1
-        ORDER BY gf.ts_primeiro_grupo DESC
+            id_grupo,
+            id_internacao_vinculada,
+            dat_cadastro::text          AS dat_cadastro,
+            ts_clinica_1::text          AS ts_clinica_1,
+            ts_primeiro_grupo::text     AS ts_primeiro_grupo,
+            ts_referencia::text         AS ts_referencia,
+            dsc_clinica_destino,
+            tipo_referencia,
+            tem_aberto,
+            ROUND(los_min)::integer             AS los_min,
+            ROUND((los_min / 60.0)::numeric, 1) AS los_horas
+        FROM los_com_grupos
+        ORDER BY ts_primeiro_grupo DESC
     """, [data_ini, data_fim])
 
     return [dict(r) for r in (rows or [])]

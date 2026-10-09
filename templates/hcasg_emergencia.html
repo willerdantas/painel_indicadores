@@ -671,6 +671,35 @@ header span {
     </div>
   </div>
 
+  <div id="saidas">
+    <h2 class="section-title">Saídas da Emergência</h2>
+    <div class="atend-filtros">
+      <div>
+        <label>Destinos</label>
+        <div class="dias-semana" id="saidas_destinos"><span class="atend-filtros-nota">—</span></div>
+      </div>
+    </div>
+    <div class="atend-resumo" id="saidas_resumo">—</div>
+    <div class="atend-grid">
+      <div class="card full">
+        <h3>Saídas por dia e destino</h3>
+        <div class="chart-box"><canvas id="chart_saidas_dia"></canvas></div>
+      </div>
+      <div class="card full">
+        <h3>Taxa de conversão (% das saídas que foram para internação)</h3>
+        <div class="chart-box"><canvas id="chart_taxa_conversao"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Pacientes acima de 24 h na emergência (pela data da saída)</h3>
+        <div class="chart-box"><canvas id="chart_acima_24h"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>% de pacientes acima de 24 h na emergência</h3>
+        <div class="chart-box"><canvas id="chart_perc_24h"></canvas></div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -933,6 +962,218 @@ function carregarAtendimentos() {
 document.querySelectorAll('.cb-dia-semana, #atend_hora_ini, #atend_hora_fim')
   .forEach(el => el.addEventListener('change', carregarAtendimentos));
 
+// ---- Saídas da emergência por dia e destino ----
+const CORES_DESTINO = ['#00B2C9', '#3BB5A3', '#F3A133', '#EB600A', '#2E758C', '#6b7f86'];
+let dadosSaidas = null;
+let destinosOcultos = new Set();  // isn_destino desmarcados (mantidos ao trocar de período)
+
+function corDestino(idx) { return CORES_DESTINO[idx % CORES_DESTINO.length]; }
+
+function montarFiltroDestinos(d) {
+  const box = document.getElementById('saidas_destinos');
+  box.innerHTML = d.destinos.map((dest, idx) => `
+    <label class="chip">
+      <input type="checkbox" class="cb-destino" value="${dest.isn_destino}" ${destinosOcultos.has(dest.isn_destino) ? '' : 'checked'}>
+      <span><span class="risco-dot" style="background:${corDestino(idx)}"></span>${escapeHtml(dest.dsc_destino)}</span>
+    </label>`).join('');
+  box.querySelectorAll('.cb-destino').forEach(cb => cb.addEventListener('change', () => {
+    const id = Number(cb.value);
+    if (cb.checked) destinosOcultos.delete(id); else destinosOcultos.add(id);
+    renderSaidas();
+  }));
+}
+
+function renderSaidas() {
+  const d = dadosSaidas;
+  if (!d) return;
+  const fmt = n => Number(n).toLocaleString('pt-BR');
+  const visiveis = d.destinos
+    .map((dest, idx) => ({ ...dest, cor: corDestino(idx) }))
+    .filter(dest => !destinosOcultos.has(dest.isn_destino));
+  const total = visiveis.reduce((s, dest) => s + dest.total, 0);
+  document.getElementById('saidas_resumo').innerHTML =
+    `Total de saídas no período: <b>${fmt(total)}</b>` +
+    visiveis.map(dest => ` &nbsp;|&nbsp; ${escapeHtml(dest.dsc_destino)}: <b>${fmt(dest.total)}</b>`).join('');
+
+  if (chartsAtend.saidas) chartsAtend.saidas.destroy();
+  chartsAtend.saidas = new Chart(document.getElementById('chart_saidas_dia'), {
+    type: 'bar',
+    data: {
+      labels: d.dias,
+      datasets: visiveis.map(dest => ({
+        label: dest.dsc_destino, data: dest.valores,
+        backgroundColor: dest.cor + 'cc', borderColor: dest.cor, borderWidth: 1, borderRadius: 2,
+        stack: 'saidas'
+      }))
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
+        tooltip: {
+          callbacks: {
+            footer: items => 'Total: ' + fmt(items.reduce((s, i) => s + (i.parsed.y || 0), 0))
+          }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } },
+        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+// Taxa de conversão: internação / total de saídas. Usa sempre todos os
+// destinos, por isso não acompanha o filtro de destino do gráfico acima.
+function renderTaxaConversao(d) {
+  const fmtPct = n => (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR') + '%';
+  const taxaPeriodo = d.taxa_conversao_periodo;
+  const internacao = d.destinos.find(dest => dest.isn_destino === 13);
+  const internacaoDia = internacao ? internacao.valores : [];
+  const totalDia = d.dias.map((_, i) => d.destinos.reduce((s, dest) => s + dest.valores[i], 0));
+
+  if (chartsAtend.conversao) chartsAtend.conversao.destroy();
+  chartsAtend.conversao = new Chart(document.getElementById('chart_taxa_conversao'), {
+    type: 'line',
+    data: {
+      labels: d.dias,
+      datasets: [{
+        label: 'Taxa de conversão', data: d.taxa_conversao,
+        borderColor: '#EB600A', backgroundColor: 'rgba(235,96,10,.10)',
+        borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
+        tension: 0.25, fill: true, spanGaps: true, order: 2
+      }, {
+        label: `Taxa do período: ${fmtPct(taxaPeriodo)}`,
+        data: taxaPeriodo !== null ? Array(d.dias.length).fill(taxaPeriodo) : [],
+        borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'line', padding: 15 } },
+        tooltip: {
+          filter: item => item.datasetIndex === 0,
+          callbacks: {
+            label: ctx => ` Conversão: ${fmtPct(ctx.parsed.y)}`,
+            afterLabel: ctx => ` ${internacaoDia[ctx.dataIndex] ?? 0} internações de ${totalDia[ctx.dataIndex]} saídas`
+          }
+        }
+      },
+      scales: {
+        y: { beginAtZero: true, suggestedMax: 50, ticks: { callback: v => v + '%' } },
+        x: { ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } }
+      }
+    }
+  });
+}
+
+// Pacientes com mais de 24 h na emergência (do cadastro até a saída), pela
+// data da saída. Usa todos os destinos, como a taxa de conversão.
+function renderAcima24h(d) {
+  const fmt = n => Number(n).toLocaleString('pt-BR');
+  const fmtPct = n => (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR') + '%';
+  const eixoX = { ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 16 } };
+
+  if (chartsAtend.acima24h) chartsAtend.acima24h.destroy();
+  chartsAtend.acima24h = new Chart(document.getElementById('chart_acima_24h'), {
+    type: 'bar',
+    data: {
+      labels: d.dias,
+      datasets: [{
+        label: `Acima de 24 h (total: ${fmt(d.acima_24h_total)})`, data: d.acima_24h,
+        backgroundColor: '#EB600Acc', borderColor: '#EB600A', borderWidth: 1, borderRadius: 3
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` ${fmt(ctx.parsed.y)} pacientes acima de 24 h`,
+            afterLabel: ctx => ` de ${fmt(d.total_dia[ctx.dataIndex])} saídas no dia`
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: eixoX }
+    }
+  });
+
+  const perc = d.perc_acima_24h_periodo;
+  if (chartsAtend.perc24h) chartsAtend.perc24h.destroy();
+  chartsAtend.perc24h = new Chart(document.getElementById('chart_perc_24h'), {
+    type: 'line',
+    data: {
+      labels: d.dias,
+      datasets: [{
+        label: '% acima de 24 h', data: d.perc_acima_24h,
+        borderColor: '#2E758C', backgroundColor: 'rgba(46,117,140,.12)',
+        borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
+        tension: 0.25, fill: true, spanGaps: true, order: 2
+      }, {
+        label: `Média diária: ${fmtPct(d.media_perc_acima_24h)}`,
+        data: d.media_perc_acima_24h !== null ? Array(d.dias.length).fill(d.media_perc_acima_24h) : [],
+        borderColor: '#f97316', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }, {
+        label: `% do período: ${fmtPct(perc)}`,
+        data: perc !== null ? Array(d.dias.length).fill(perc) : [],
+        borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'line', padding: 15 } },
+        tooltip: {
+          filter: item => item.datasetIndex === 0,
+          callbacks: {
+            label: ctx => ` ${fmtPct(ctx.parsed.y)} acima de 24 h`,
+            afterLabel: ctx => ` ${fmt(d.acima_24h[ctx.dataIndex])} de ${fmt(d.total_dia[ctx.dataIndex])} saídas`
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, ticks: { callback: v => v + '%' } }, x: eixoX }
+    }
+  });
+}
+
+function carregarSaidas() {
+  const params = new URLSearchParams({ data_ini: v('data_ini'), data_fim: v('data_fim') });
+  const sec = document.getElementById('saidas');
+  sec.classList.add('loading');
+  loaderOn();
+  fetch('/api/hcasg/emergencia/saidas?' + params)
+    .then(r => r.json())
+    .then(res => {
+      loaderOff();
+      sec.classList.remove('loading');
+      if (!res.ok) {
+        document.getElementById('erro').textContent = 'Erro (saídas): ' + res.erro;
+        document.getElementById('erro').style.display = 'block';
+        return;
+      }
+      dadosSaidas = res.dados;
+      montarFiltroDestinos(dadosSaidas);
+      renderSaidas();
+      renderTaxaConversao(dadosSaidas);
+      renderAcima24h(dadosSaidas);
+    })
+    .catch(err => {
+      loaderOff();
+      sec.classList.remove('loading');
+      document.getElementById('erro').textContent = 'Falha na requisição (saídas): ' + err;
+      document.getElementById('erro').style.display = 'block';
+    });
+}
+
 function carregar(){
   const params = new URLSearchParams({
     data_ini:   v('data_ini'),
@@ -949,6 +1190,7 @@ function carregar(){
   document.getElementById('erro').style.display = 'none';
   loaderOn();
   carregarAtendimentos();
+  carregarSaidas();
 
   fetch('/api/hcasg/emergencia/indicadores?' + params)
     .then(r => r.json())

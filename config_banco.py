@@ -26,12 +26,12 @@ ARQUIVO_CONFIG = os.path.join(BASE_DIR, 'config_banco.json')
 CAMPOS = ('host', 'port', 'dbname', 'user', 'password', 'schema')
 
 _PADROES = {
-    'host': '10.10.28.45',
+    'host': '10.10.29.90',
     'port': '5432',
-    'dbname': 'isivitaedb_hm',
-    'user': 'postgres',
-    'password': 'grandeviagem',
-    'schema': 'integra_local',
+    'dbname': 'postgres',
+    'user': 'painel',
+    'password': '123456',
+    'schema': 'public',
 }
 
 _ENV = {
