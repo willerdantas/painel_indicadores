@@ -5,6 +5,13 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Indicadores Hospitalares</title>
 <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<script src="/static/chart.umd.min.js"></script>
+<script>
+  // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
 <style>
 :root {
   --teal:    #3BB5A3;
@@ -357,8 +364,31 @@ header span {
   display: none;
 }
 
+/* ---- Gráficos (mesmo padrão da página da Emergência) ---- */
+.graf-resumo { font-size: .85rem; color: var(--muted); margin-bottom: 1rem; }
+.graf-resumo b { color: var(--dark); font-family: 'Syne', sans-serif; font-size: 1rem; }
+.graf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
+.graf-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 1.1rem 1.25rem;
+  min-width: 0;
+}
+.graf-card.full { grid-column: 1 / -1; }
+.graf-card h3 {
+  font-family: 'Syne', sans-serif;
+  font-size: .9rem;
+  font-weight: 700;
+  color: var(--dark);
+  margin-bottom: .75rem;
+}
+.graf-card .nota { font-size: .72rem; color: var(--muted); margin-top: .5rem; }
+.chart-box { position: relative; height: 300px; }
+
 @media(max-width:900px){
   .kpis { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
+  .graf-grid { grid-template-columns: 1fr; }
 }
 
 @media(max-width:600px){
@@ -507,6 +537,30 @@ header span {
     </div>
   </div>
 
+  <div id="graficos">
+    <h2 class="section-title">Internações e Saídas</h2>
+    <div class="graf-resumo" id="graf_resumo">—</div>
+    <div class="graf-grid">
+      <div class="graf-card full">
+        <h3>Internações por dia</h3>
+        <div class="chart-box"><canvas id="chart_internacoes_dia"></canvas></div>
+      </div>
+      <div class="graf-card full">
+        <h3>Saídas por dia e destino</h3>
+        <div class="chart-box"><canvas id="chart_saidas_dia"></canvas></div>
+      </div>
+      <div class="graf-card">
+        <h3>Saídas por dia da semana</h3>
+        <div class="chart-box"><canvas id="chart_saidas_semana"></canvas></div>
+      </div>
+      <div class="graf-card">
+        <h3>Saídas por horário</h3>
+        <div class="chart-box"><canvas id="chart_saidas_hora"></canvas></div>
+        <div class="nota" id="saidas_sem_hora"></div>
+      </div>
+    </div>
+  </div>
+
 </div>
 
 <script>
@@ -576,6 +630,155 @@ function toggleTodasClinicas(){
   atualizarLabelClinica();
 }
 
+// ---- Gráficos de internações e saídas ----
+const charts = {};
+const CORES_DESTINO = {
+  'Residência': '#3BB5A3', 'Outro hospital': '#00B2C9', 'Óbito Hospitalar': '#38464D',
+  'Óbito Institucional': '#c0392b', 'Transferência interna': '#F3A133',
+};
+const CORES_EXTRAS = ['#2E758C', '#F7975B', '#53B7D9', '#0F9688', '#6b7f86'];
+function corDestino(nome, idx) { return CORES_DESTINO[nome] || CORES_EXTRAS[idx % CORES_EXTRAS.length]; }
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+const fmt = n => (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR');
+const eixoDias = { ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } };
+
+function novoGrafico(id, config) {
+  if (charts[id]) charts[id].destroy();
+  charts[id] = new Chart(document.getElementById(id), config);
+}
+
+function renderGraficos(d) {
+  document.getElementById('graf_resumo').innerHTML =
+    `Internações no período: <b>${fmt(d.internacoes_total)}</b> &nbsp;|&nbsp; ` +
+    `Média diária: <b>${fmt(d.internacoes_media)}</b> &nbsp;|&nbsp; Mediana diária: <b>${fmt(d.internacoes_mediana)}</b> &nbsp;|&nbsp; ` +
+    `Saídas no período: <b>${fmt(d.saidas_total)}</b>`;
+
+  novoGrafico('chart_internacoes_dia', {
+    type: 'line',
+    data: {
+      labels: d.dias,
+      datasets: [{
+        label: 'Internações', data: d.internacoes,
+        borderColor: '#00B2C9', backgroundColor: 'rgba(0,178,201,.12)',
+        borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
+        tension: 0.25, fill: true, order: 2
+      }, {
+        label: `Média: ${fmt(d.internacoes_media)}`,
+        data: d.internacoes_media !== null ? Array(d.dias.length).fill(d.internacoes_media) : [],
+        borderColor: '#f97316', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }, {
+        label: `Mediana: ${fmt(d.internacoes_mediana)}`,
+        data: d.internacoes_mediana !== null ? Array(d.dias.length).fill(d.internacoes_mediana) : [],
+        borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2,
+        borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'line', padding: 15 } },
+        tooltip: { filter: item => item.datasetIndex === 0 }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } }, x: eixoDias }
+    }
+  });
+
+  novoGrafico('chart_saidas_dia', {
+    type: 'bar',
+    data: {
+      labels: d.dias,
+      datasets: d.saidas_destinos.map((dest, idx) => {
+        const cor = corDestino(dest.destino, idx);
+        return {
+          label: `${dest.destino} (${fmt(dest.total)})`, data: dest.valores,
+          backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 2, stack: 'saidas'
+        };
+      })
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
+        tooltip: { callbacks: { footer: items => 'Total: ' + fmt(items.reduce((s, i) => s + (i.parsed.y || 0), 0)) } }
+      },
+      scales: { x: { ...eixoDias, stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+
+  novoGrafico('chart_saidas_semana', {
+    type: 'bar',
+    data: {
+      labels: d.dias_semana,
+      datasets: [{
+        label: 'Saídas', data: d.saidas_dia_semana,
+        backgroundColor: '#3BB5A3cc', borderColor: '#3BB5A3', borderWidth: 1, borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            afterLabel: ctx => {
+              const m = d.saidas_media_dia_semana[ctx.dataIndex];
+              return m !== null && m !== undefined ? ` Média por ${d.dias_semana[ctx.dataIndex].toLowerCase()}: ${fmt(m)}` : '';
+            }
+          }
+        }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+
+  novoGrafico('chart_saidas_hora', {
+    type: 'bar',
+    data: {
+      labels: d.horas,
+      datasets: [{
+        label: 'Saídas', data: d.saidas_hora,
+        backgroundColor: '#2E758Ccc', borderColor: '#2E758C', borderWidth: 1, borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { callbacks: { title: items => { const h = items[0].label.slice(0, 2); return `${h}:00 – ${h}:59`; } } }
+      },
+      scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
+    }
+  });
+  document.getElementById('saidas_sem_hora').textContent =
+    d.saidas_sem_hora ? `${fmt(d.saidas_sem_hora)} saída(s) sem horário registrado ficaram fora deste gráfico.` : '';
+}
+
+function carregarGraficos(params) {
+  const sec = document.getElementById('graficos');
+  sec.classList.add('loading');
+  fetch('/api/hcasg/hospitalares/graficos?' + params)
+    .then(r => r.json())
+    .then(res => {
+      sec.classList.remove('loading');
+      if (!res.ok) {
+        document.getElementById('erro').textContent = 'Erro (gráficos): ' + res.erro;
+        document.getElementById('erro').style.display = 'block';
+        return;
+      }
+      renderGraficos(res.dados);
+    })
+    .catch(err => {
+      sec.classList.remove('loading');
+      document.getElementById('erro').textContent = 'Falha na requisição (gráficos): ' + err;
+      document.getElementById('erro').style.display = 'block';
+    });
+}
+
 function carregar(){
   const params = new URLSearchParams({
     data_ini:   v('data_ini'),
@@ -590,6 +793,9 @@ function carregar(){
   }
   document.getElementById('kpis').classList.add('loading');
   document.getElementById('erro').style.display = 'none';
+  // gráficos em paralelo com os cards; não entram no contador da tela de
+  // carregamento, então não aumentam a espera
+  carregarGraficos(params);
   loaderOn();
 
   fetch('/api/hcasg/hospitalares/indicadores?' + params)

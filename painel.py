@@ -14,6 +14,7 @@ from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
 from indicadores_hcasg import get_indicadores_hospitalar, get_indicadores_emergencia
 import indicadores_hcasg as hcasg
 import config_banco
+import ambulatorio
 
 app = Flask(__name__)
 
@@ -50,6 +51,57 @@ ARQUIVO_LOGO = 'logo.png'
 def get_db_connection():
     """Cria e retorna uma conexão com o PostgreSQL"""
     return config_banco.conectar()
+
+
+# Margem de segurança da faixa de IDs: cobre solicitações lançadas fora de
+# ordem (com data até alguns dias diferente da posição do ID).
+_MARGEM_FAIXA_EXAMES = timedelta(days=7)
+
+# Origem da solicitação de exame, pela clínica solicitante (t_clinica):
+#   externo    = 2 AMBULATÓRIO, 4 EXAME, 41 UNACON
+#   emergência = 1 EMERGÊNCIA, 10 SALA DE MEDICAÇÃO, 13 SALA DE PARADA,
+#                14 SALA DE PARADA - ESTABILIZAÇÃO, 43 SALA MEDICAÇÃO (CARDIO/PNEUMO),
+#                45 SALA MEDICAÇÃO (COVID)
+#   interno    = todas as demais
+_EXAMES_ORIGEM_EXTERNO_SQL = "2, 4, 41"
+_EXAMES_ORIGEM_EMERGENCIA_SQL = "1, 10, 13, 14, 43, 45"
+
+
+def _faixa_ids_exame_solic(cur, data_inicial, data_final):
+    """Faixa [id_ini, id_fim) de t_exame_solic que contém as solicitações do
+    período. A tabela (~1,5 GB) não tem índice em dat_solicitacao, e filtrar
+    só pela data obriga a ler a tabela inteira a cada consulta. Como
+    isn_exame_solic é sequencial e acompanha a data de solicitação, a faixa é
+    achada por busca binária no índice da chave primária (~25 consultas
+    instantâneas); a consulta principal continua filtrando pela data, então a
+    faixa só reduz o que é lido. Testado contra a varredura completa
+    (contagens idênticas)."""
+    cur.execute("SELECT MIN(isn_exame_solic) AS v FROM t_exame_solic")
+    id_min = cur.fetchone()['v']
+    cur.execute("SELECT MAX(isn_exame_solic) AS v FROM t_exame_solic")
+    id_max = cur.fetchone()['v']
+    if id_min is None:
+        return 0, 0
+
+    def primeiro_id_a_partir(dt):
+        lo, hi = int(id_min), int(id_max) + 1
+        while lo < hi:
+            meio = (lo + hi) // 2
+            cur.execute("""
+                SELECT isn_exame_solic, dat_solicitacao FROM t_exame_solic
+                WHERE isn_exame_solic >= %s AND dat_solicitacao IS NOT NULL
+                ORDER BY isn_exame_solic LIMIT 1
+            """, [meio])
+            r = cur.fetchone()
+            if r is None or r['dat_solicitacao'] >= dt:
+                hi = meio
+            else:
+                lo = int(r['isn_exame_solic']) + 1
+        return lo
+
+    inicio = datetime.combine(data_inicial - _MARGEM_FAIXA_EXAMES, datetime.min.time())
+    fim = datetime.combine(data_final + timedelta(days=1) + _MARGEM_FAIXA_EXAMES, datetime.min.time())
+    return primeiro_id_a_partir(inicio), primeiro_id_a_partir(fim)
 
 def carregar_dados():
     """Carrega e processa os dados da planilha Excel"""
@@ -747,7 +799,8 @@ def exames_por_clinica():
         """)
         classificacoes = [r['classificacao'] for r in cur.fetchall()]
 
-        params = [data_inicial, data_final]
+        id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial, data_final)
+        params = [data_inicial, data_final, id_ini, id_fim]
         filtro_clinica_sql = ""
         if clinica_filtro != 'todos' and clinica_filtro in clinicas:
             filtro_clinica_sql = "AND tc.dsc_clinica = %s"
@@ -761,20 +814,45 @@ def exames_por_clinica():
         cur.execute(f"""
             SELECT
                 tc.dsc_clinica AS clinica,
+                CASE
+                    WHEN tc.isn_clinica IN ({_EXAMES_ORIGEM_EXTERNO_SQL}) THEN 'externo'
+                    WHEN tc.isn_clinica IN ({_EXAMES_ORIGEM_EMERGENCIA_SQL}) THEN 'emergencia'
+                    ELSE 'interno'
+                END AS origem,
                 te.dsc_exame AS exame,
                 COALESCE(tec.classificacao, 'SEM CLASSIFICAÇÃO') AS classificacao,
                 COUNT(*) AS solicitados,
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL) AS baixados,
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS realizados,
-                COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados
+                COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
+                -- tempo da solicitação até a realização (a baixa, dat_agendamento,
+                -- só tem data). Faixas sem sobreposição; realização registrada
+                -- antes da solicitação não entra em nenhuma.
+                COUNT(*) FILTER (WHERE tes.dat_realizacao >= tes.dat_solicitacao
+                                   AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '1 day') AS tempo_ate_1d,
+                COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '1 day'
+                                   AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '2 days') AS tempo_1_2d,
+                COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '2 days'
+                                   AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '4 days') AS tempo_2_4d,
+                COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '4 days') AS tempo_acima_4d,
+                -- tempo da realização até a baixa, em dias de calendário
+                -- (dat_agendamento é só data): diferença entre as datas.
+                -- Baixa registrada antes da realização não entra em nenhuma faixa.
+                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL AND tes.dat_realizacao IS NOT NULL) AS com_realizacao_e_baixa,
+                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date BETWEEN 0 AND 1) AS baixa_ate_1d,
+                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date = 2) AS baixa_1_2d,
+                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date BETWEEN 3 AND 4) AS baixa_2_4d,
+                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date > 4) AS baixa_acima_4d,
+                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame
             LEFT JOIN t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
+              AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
               {filtro_clinica_sql}
               {filtro_classificacao_sql}
-            GROUP BY tc.dsc_clinica, te.dsc_exame, tec.classificacao
+            GROUP BY tc.dsc_clinica, origem, te.dsc_exame, tec.classificacao
             ORDER BY tc.dsc_clinica, te.dsc_exame
         """, params)
         detalhe_rows = cur.fetchall()
@@ -787,12 +865,23 @@ def exames_por_clinica():
     dados_json = [
         {
             'clinica': r['clinica'],
+            'origem': r['origem'],
             'exame': r['exame'],
             'classificacao': r['classificacao'],
             'solicitados': int(r['solicitados']),
             'baixados': int(r['baixados']),
             'realizados': int(r['realizados']),
             'cancelados': int(r['cancelados']),
+            'tempo_ate_1d': int(r['tempo_ate_1d']),
+            'tempo_1_2d': int(r['tempo_1_2d']),
+            'tempo_2_4d': int(r['tempo_2_4d']),
+            'tempo_acima_4d': int(r['tempo_acima_4d']),
+            'com_realizacao_e_baixa': int(r['com_realizacao_e_baixa']),
+            'baixa_ate_1d': int(r['baixa_ate_1d']),
+            'baixa_1_2d': int(r['baixa_1_2d']),
+            'baixa_2_4d': int(r['baixa_2_4d']),
+            'baixa_acima_4d': int(r['baixa_acima_4d']),
+            'sem_agendamento': int(r['sem_agendamento']),
         }
         for r in detalhe_rows
     ]
@@ -842,6 +931,7 @@ def exames_por_clinica():
         'total_baixados': total_geral['baixados'],
         'total_realizados': total_geral['realizados'],
         'total_cancelados': total_geral['cancelados'],
+        'total_sem_agendamento': sum(r['sem_agendamento'] for r in dados_json),
     }
 
     context = {
@@ -1117,6 +1207,39 @@ def api_hcasg_hospitalares_indicadores():
     data_fim = request.args.get('data_fim')
     try:
         dados = get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito)
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/ambulatorio')
+def ambulatorio_pagina():
+    hoje = datetime.now().date()
+    return render_template(
+        'ambulatorio.html',
+        data_ini=hoje.replace(day=1).strftime('%Y-%m-%d'), data_fim=hoje.strftime('%Y-%m-%d'),
+    )
+
+
+@app.route('/api/ambulatorio/dados')
+def api_ambulatorio_dados():
+    try:
+        dados = ambulatorio.get_ambulatorio(
+            request.args.get('data_ini'), request.args.get('data_fim'),
+            especialidade=request.args.get('especialidade') or None,
+            status=request.args.get('status') or None,
+        )
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/api/hcasg/hospitalares/graficos')
+def api_hcasg_hospitalares_graficos():
+    clinica, enfermaria, leito = _hcasg_params_filtro()
+    try:
+        dados = hcasg.get_graficos_hospitalar(
+            request.args.get('data_ini'), request.args.get('data_fim'), clinica, enfermaria, leito)
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500

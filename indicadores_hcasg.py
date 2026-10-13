@@ -1629,6 +1629,190 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
     }
 
 
+def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
+    """Séries diárias da página Indicadores Hospitalares, com as mesmas regras
+    dos cards de get_indicadores_hospitalar:
+      - internações: t_internacao tipo 1 por data de cadastro, primeira
+        clínica em CLINICAS_INTERNACOES;
+      - saídas: altas nas CLINICAS_TMPH com destino válido (1, 3, 4 e, com
+        uma única clínica filtrada, 5), por data da alta; óbito separado em
+        Institucional (> 24 h do cadastro) e Hospitalar.
+    """
+    dt_ini = date.fromisoformat(data_ini)
+    dt_fim = date.fromisoformat(data_fim)
+    if dt_ini > dt_fim:
+        dt_ini, dt_fim = dt_fim, dt_ini
+    filt_sql, filt_vals = _filtros_sql(clinica, enfermaria, leito)
+    _clinica_unica = (isinstance(clinica, str) and clinica) or (isinstance(clinica, list) and len(clinica) == 1)
+    incluir_destino_5 = "TRUE" if _clinica_unica else "FALSE"
+
+    _consultas = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hospitalar")
+
+    rows_internacoes = _consultas.submit(fetch_all, f"""
+        WITH internacoes_periodo AS MATERIALIZED (
+            SELECT ti.isn_internacao, ti.dat_cadastro::date AS dia
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 1
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ),
+        primeira_clinica AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                til.isn_clinica,
+                tc.dsc_clinica,
+                te.dsc_enfermaria,
+                tl.dsc_leito
+            FROM t_internacao_leito til
+            JOIN t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
+            JOIN t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
+            JOIN t_leito      tl ON tl.isn_leito      = til.isn_leito
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_periodo)
+            ORDER BY til.isn_internacao,
+                     COALESCE(til.dat_internacao_info, til.dat_internacao),
+                     til.isn_internacao_leito
+        )
+        SELECT ip.dia, COUNT(DISTINCT ip.isn_internacao) AS qtd
+        FROM internacoes_periodo ip
+        JOIN primeira_clinica pc ON pc.isn_internacao = ip.isn_internacao
+        WHERE pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
+        {filt_sql}
+        GROUP BY ip.dia
+    """, [dt_ini, dt_fim] + filt_vals)
+
+    rows_saidas = _consultas.submit(fetch_all, f"""
+        WITH internacoes_alvo AS MATERIALIZED (
+            -- internações com alta nas clínicas do TMP no período: o LEAD da
+            -- próxima clínica só precisa do histórico delas
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            WHERE til.isn_clinica IN ({CLINICAS_TMPH_SQL})
+              AND til.dat_alta::date BETWEEN %s AND %s
+        ),
+        movimentos AS (
+            SELECT
+                til.*,
+                LEAD(til.isn_clinica) OVER (
+                    PARTITION BY til.isn_internacao
+                    ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
+                ) AS prox_clinica
+            FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_alvo)
+        ),
+        base AS (
+            SELECT
+                mov.isn_clinica,
+                tc.dsc_clinica,
+                te.dsc_enfermaria,
+                tl.dsc_leito,
+                mov.isn_destino,
+                td.dsc_destino,
+                mov.prox_clinica,
+                mov.dat_alta::date AS dt_alta,
+                COALESCE(
+                    mov.dat_alta_info + COALESCE(mov.hor_alta_info, '00:00')::time,
+                    mov.dat_alta      + COALESCE(mov.hor_alta, '00:00')::time
+                ) AS ts_alta,
+                -- hora só quando registrada (sem hora não entra no gráfico por horário)
+                EXTRACT(HOUR FROM COALESCE(
+                    mov.dat_alta_info + mov.hor_alta_info::time,
+                    mov.dat_alta      + mov.hor_alta::time
+                ))::int AS hora_alta,
+                ti.dat_cadastro
+            FROM movimentos mov
+            JOIN t_internacao ti ON ti.isn_internacao = mov.isn_internacao
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
+            WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
+              AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
+              AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
+              {filt_sql}
+        )
+        SELECT
+            dt_alta AS dia,
+            hora_alta AS hora,
+            CASE
+                WHEN isn_destino = 4
+                     AND ts_alta IS NOT NULL AND dat_cadastro IS NOT NULL
+                     AND EXTRACT(EPOCH FROM (ts_alta - dat_cadastro)) > 86400
+                    THEN 'Óbito Institucional'
+                WHEN isn_destino = 4
+                    THEN 'Óbito Hospitalar'
+                ELSE COALESCE(dsc_destino, 'Destino ' || isn_destino::text)
+            END AS destino,
+            MIN(isn_destino) AS isn_destino,
+            COUNT(*) AS qtd
+        FROM base
+        WHERE (
+                isn_destino IN (1, 3, 4)
+                OR (
+                    {incluir_destino_5}
+                    AND isn_destino = 5
+                    AND (isn_clinica <> 22 OR prox_clinica IN (40, 48, 15, 24))
+                )
+              )
+          AND dt_alta BETWEEN %s AND %s
+        GROUP BY 1, 2, 3
+    """, [dt_ini, dt_fim, dt_fim, dt_ini] + filt_vals + [dt_ini, dt_fim])
+
+    _consultas.shutdown(wait=True)
+    rows_internacoes = rows_internacoes.result()
+    rows_saidas = rows_saidas.result()
+
+    dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
+    idx_dia = {d: i for i, d in enumerate(dias)}
+
+    internacoes = [0] * len(dias)
+    for r in rows_internacoes or []:
+        internacoes[idx_dia[r["dia"]]] = int(r["qtd"])
+
+    por_destino = {}            # rótulo -> (isn_destino, valores por dia)
+    saidas_dia = [0] * len(dias)
+    saidas_hora = [0] * 24
+    sem_hora = 0
+    for r in rows_saidas or []:
+        i, qtd = idx_dia[r["dia"]], int(r["qtd"])
+        if r["destino"] not in por_destino:
+            por_destino[r["destino"]] = (int(r["isn_destino"]), [0] * len(dias))
+        por_destino[r["destino"]][1][i] += qtd
+        saidas_dia[i] += qtd
+        if r["hora"] is None:
+            sem_hora += qtd
+        else:
+            saidas_hora[r["hora"]] += qtd
+
+    # Dia da semana: total e média por ocorrência do dia no período.
+    totais_semana = [0] * 7
+    ocorrencias_semana = [0] * 7
+    for d, qtd in zip(dias, saidas_dia):
+        totais_semana[d.weekday()] += qtd
+        ocorrencias_semana[d.weekday()] += 1
+
+    total_saidas = sum(saidas_dia)
+    total_internacoes = sum(internacoes)
+    return {
+        "dias": [d.strftime("%d/%m/%Y") for d in dias],
+        "internacoes": internacoes,
+        "internacoes_total": total_internacoes,
+        "internacoes_media": round(total_internacoes / len(dias), 1) if dias else None,
+        "internacoes_mediana": round(statistics.median(internacoes), 1) if dias else None,
+        "saidas_total": total_saidas,
+        "saidas_destinos": [
+            {"destino": rotulo, "isn_destino": isn, "valores": valores, "total": sum(valores)}
+            for rotulo, (isn, valores) in sorted(por_destino.items(), key=lambda x: (x[1][0], x[0]))
+        ],
+        "dias_semana": _DIAS_SEMANA,
+        "saidas_dia_semana": totais_semana,
+        "saidas_media_dia_semana": [
+            round(t / o, 1) if o else None for t, o in zip(totais_semana, ocorrencias_semana)
+        ],
+        "horas": [f"{h:02d}h" for h in range(24)],
+        "saidas_hora": saidas_hora,
+        "saidas_sem_hora": sem_hora,
+    }
+
+
 def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
     """Snapshot de um período: LOS sem/com internação, tempo porta-médico,
     TMP leitos PS, saídas PS, giro de leito PS, internações PS e leitos

@@ -163,6 +163,7 @@
         .kpi-box:nth-child(2) { background: #1a7a6e; }
         .kpi-box:nth-child(3) { background: #e07b39; }
         .kpi-box:nth-child(4) { background: #c0392b; }
+        .kpi-box:nth-child(5) { background: #38464D; }
         .kpi-box h5 {
             font-family: 'DM Sans', sans-serif;
             font-size: 0.85rem;
@@ -248,6 +249,32 @@
         tr:nth-child(even) { background: #f8fafb; }
         tr.total-row { background: #e8f5e9; font-weight: bold; }
         tr.total-row td { color: #1a7a6e; }
+        /* Total por exame com divisão por origem (externo/emergência/interno) */
+        .tabela-rolagem { overflow-x: auto; }
+        .nota-origem { font-size: 12px; color: #6b7f86; margin: 4px 0 0; }
+        #tabela-exames-classificacao th.grupo-origem,
+        #tabela-tempo-realizacao th.grupo-origem { text-align: center; border-left: 2px solid #c9dfe0; }
+        #tabela-exames-classificacao tr.sub-origem th,
+        #tabela-tempo-realizacao tr.sub-origem th { font-size: 11px; font-weight: 600; }
+        #tabela-exames-classificacao tr.sub-origem th:nth-child(4n+1),
+        #tabela-tempo-realizacao tr.sub-origem th:nth-child(5n+1),
+        #tabela-exames-classificacao td.inicio-grupo,
+        #tabela-tempo-realizacao td.inicio-grupo { border-left: 2px solid #c9dfe0; }
+        #tabela-exames-classificacao td:nth-child(2),
+        #tabela-tempo-realizacao td:nth-child(2) { text-align: left; white-space: normal; min-width: 180px; }
+        #tabela-exames-classificacao td.col-total { font-weight: 700; background: rgba(25,184,176,.06); }
+        /* Painel de exames sem data de agendamento */
+        .painel-sem-agend { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; }
+        .titulo-barras { font-family: 'Syne', sans-serif; font-size: 13px; color: #38464D; margin: 0 0 8px; }
+        .lista-barras { display: flex; flex-direction: column; gap: 6px; }
+        .barra-linha { display: grid; grid-template-columns: minmax(110px, 38%) 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
+        .barra-nome { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #38464D; }
+        .barra-trilho { background: #eef4f6; border-radius: 4px; height: 14px; overflow: hidden; }
+        .barra-valor { display: block; height: 100%; background: #38464D; border-radius: 4px; }
+        .barra-num { font-variant-numeric: tabular-nums; white-space: nowrap; color: #38464D; }
+        .barra-num small { color: #6b7f86; }
+        @media (max-width: 800px) { .painel-sem-agend { grid-template-columns: 1fr; } }
+        #tabela-exames-classificacao th.grupo-total { background: #e3f4f2; }
         td:first-child { text-align: left; font-weight: 500; }
         #tabela-detalhe td:nth-child(2) {
             white-space: normal;
@@ -390,47 +417,86 @@
                 <p data-kpi="total_cancelados">{{ "{:,.0f}".format(kpis['total_cancelados']) }}</p>
                 <div class="kpi-label">No período</div>
             </div>
-        </div>
-
-        <div class="content">
-            <div class="chart-container">
-                <h4>Resumo por Classificação</h4>
-                <table id="tabela-resumo-classificacao">
-                    <thead>
-                        <tr>
-                            <th>Classificação</th>
-                            <th>Solicitados</th>
-                            <th>Baixados</th>
-                            <th>Realizados</th>
-                            <th>Cancelados</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
+            <div class="kpi-box">
+                <h5>Sem Data de Agendamento</h5>
+                <p data-kpi="total_sem_agendamento">{{ "{:,.0f}".format(kpis['total_sem_agendamento']) }}</p>
+                <div class="kpi-label" id="kpi-sem-agendamento-pct">—</div>
             </div>
         </div>
 
         <div class="content">
             <div class="chart-container">
-                <h4>Resumo por Clínica</h4>
-                <table id="tabela-resumo">
+                <h4>Total por Exame (por Classificação)</h4>
+                <p class="nota-origem">Externo: Ambulatório, Exame e UNACON · Emergência: Emergência, Salas de Parada e Salas de Medicação · Interno: demais clínicas</p>
+                <div class="tabela-rolagem">
+                <table id="tabela-exames-classificacao">
                     <thead>
                         <tr>
-                            <th>Clínica</th>
-                            <th>Solicitados</th>
-                            <th>Baixados</th>
-                            <th>Realizados</th>
-                            <th>Cancelados</th>
+                            <th rowspan="2">Classificação</th>
+                            <th rowspan="2">Exame</th>
+                            <th colspan="4" class="grupo-origem">Externo</th>
+                            <th colspan="4" class="grupo-origem">Emergência</th>
+                            <th colspan="4" class="grupo-origem">Interno</th>
+                            <th colspan="4" class="grupo-origem grupo-total">Total</th>
+                        </tr>
+                        <tr class="sub-origem">
+                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
                 </table>
+                </div>
             </div>
         </div>
 
         <div class="content">
             <div class="chart-container">
-                <h4>Detalhamento por Clínica e Exame</h4>
+                <h4>Tempo até a Realização e até a Baixa (por Classificação e Exame)</h4>
+                <p class="nota-origem">Até a realização: da solicitação até a realização (data e hora), sobre os realizados. Até a baixa: da realização até a baixa, pela diferença entre as datas (a baixa não tem hora), sobre os exames com realização e baixa.</p>
+                <div class="tabela-rolagem">
+                <table id="tabela-tempo-realizacao">
+                    <thead>
+                        <tr>
+                            <th rowspan="2">Classificação</th>
+                            <th rowspan="2">Exame</th>
+                            <th colspan="5" class="grupo-origem">Até a Realização</th>
+                            <th colspan="5" class="grupo-origem">Até a Baixa</th>
+                        </tr>
+                        <tr class="sub-origem">
+                            <th>Realizados</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th><th>Mais de 4 dias</th>
+                            <th>Com baixa</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th><th>Mais de 4 dias</th>
+                        </tr>
+                    </thead>
+                    <tbody></tbody>
+                </table>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="chart-container">
+                <h4>Exames sem Data de Agendamento</h4>
+                <p class="nota-origem">Solicitações do período sem data de agendamento (baixa). Percentual sobre os solicitados do grupo.</p>
+                <div class="painel-sem-agend">
+                    <div>
+                        <h5 class="titulo-barras">Por classificação</h5>
+                        <div id="barras-sem-agend-classificacao" class="lista-barras"></div>
+                    </div>
+                    <div>
+                        <h5 class="titulo-barras">Por clínica (10 maiores)</h5>
+                        <div id="barras-sem-agend-clinica" class="lista-barras"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="content">
+            <div class="chart-container">
+                <h4>Resumo por Clínica e Exame</h4>
+                <p class="nota-origem">Clique na clínica para ver os exames. O filtro de clínica acima é aplicado nesta tabela na hora.</p>
                 <table id="tabela-detalhe">
                     <thead>
                         <tr>
@@ -473,71 +539,202 @@
             return dadosDetalhe.filter(d => d.clinica === clinica);
         }
 
-        function renderTabelaResumo(tableId, dados, campo) {
-            const tbody = document.querySelector(`#${tableId} tbody`);
-            let html = '';
-            dados.forEach(row => {
-                const isTotal = row[campo] === 'TOTAL GERAL';
-                html += `<tr class="${isTotal ? 'total-row' : ''}">
-                    <td>${row[campo]}</td>
-                    <td>${formatarNumero(row.solicitados)}</td>
-                    <td>${formatarNumero(row.baixados)}</td>
-                    <td>${formatarNumero(row.realizados)}</td>
-                    <td>${formatarNumero(row.cancelados)}</td>
-                </tr>`;
-            });
-            // Adiciona linha de total geral se não estiver no resumo
-            if (!dados.some(d => d[campo] === 'TOTAL GERAL') && totalGeral.clinica) {
-                html += `<tr class="total-row">
-                    <td>${totalGeral.clinica}</td>
-                    <td>${formatarNumero(totalGeral.solicitados)}</td>
-                    <td>${formatarNumero(totalGeral.baixados)}</td>
-                    <td>${formatarNumero(totalGeral.realizados)}</td>
-                    <td>${formatarNumero(totalGeral.cancelados)}</td>
-                </tr>`;
-            }
-            tbody.innerHTML = html;
-        }
-
-        function atualizarTabelaResumo() {
-            renderTabelaResumo('tabela-resumo', dadosResumo, 'clinica');
-            renderTabelaResumo('tabela-resumo-classificacao', dadosResumoClassificacao, 'classificacao');
-        }
-
+        // Resumo por clínica e exame (junta o antigo resumo por clínica com o
+        // detalhamento): cada clínica com o subtotal, que se abre nos exames.
         function atualizarTabelaDetalhe() {
-            const filtrados = filtrarPorClinica();
+            const campos = ['solicitados', 'baixados', 'realizados', 'cancelados'];
+            const novo = () => Object.fromEntries(campos.map(k => [k, 0]));
+            const grupos = {};
+            const geral = novo();
+            filtrarPorClinica().forEach(r => {
+                const g = grupos[r.clinica] ||= { total: novo(), exames: {} };
+                const e = g.exames[r.exame] ||= novo();
+                campos.forEach(k => { e[k] += r[k]; g.total[k] += r[k]; geral[k] += r[k]; });
+            });
+            const celulas = v => campos.map(k => `<td>${formatarNumero(v[k])}</td>`).join('');
+
             const tbody = document.querySelector('#tabela-detalhe tbody');
             let html = '';
-            let clinicaAtual = '';
-            let grupo = -1;
-            filtrados.forEach(row => {
-                if (row.clinica !== clinicaAtual) {
-                    clinicaAtual = row.clinica;
-                    grupo++;
-                    html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
-                        <td colspan="6" style="text-align:left;color:#1a7a6e;">
-                            <span class="toggle-icon">▶</span> ${row.clinica}
-                        </td>
-                    </tr>`;
-                }
-                html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
-                    <td></td>
-                    <td style="text-align:left;">${row.exame}</td>
-                    <td>${formatarNumero(row.solicitados)}</td>
-                    <td>${formatarNumero(row.baixados)}</td>
-                    <td>${formatarNumero(row.realizados)}</td>
-                    <td>${formatarNumero(row.cancelados)}</td>
+            Object.keys(grupos).sort().forEach((clinica, grupo) => {
+                const g = grupos[clinica];
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
+                    <td style="text-align:left;color:#1a7a6e;"><span class="toggle-icon">▶</span> ${clinica}</td>
+                    <td style="text-align:left;color:#1a7a6e;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
                 </tr>`;
+                Object.entries(g.exames)
+                    .sort((a, b) => b[1].solicitados - a[1].solicitados || a[0].localeCompare(b[0]))
+                    .forEach(([exame, v]) => {
+                        html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
+                            <td></td>
+                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                        </tr>`;
+                    });
             });
-            if (filtrados.length === 0) {
+            if (html) {
+                html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
+            } else {
                 html = '<tr><td colspan="6" style="text-align:center;color:#999;">Nenhum dado encontrado para o período selecionado.</td></tr>';
             }
             tbody.innerHTML = html;
         }
 
-        // Expande/recolhe as linhas de exames de uma clínica ao clicar no cabeçalho do grupo
-        function configurarToggleDetalhe() {
-            const tbody = document.querySelector('#tabela-detalhe tbody');
+        // Painel de exames sem data de agendamento: KPI (percentual) e barras
+        // por classificação e pelas 10 clínicas com mais casos.
+        function atualizarSemAgendamento() {
+            let totalSolic = 0, totalSem = 0;
+            const somar = campo => {
+                const acc = {};
+                dadosDetalhe.forEach(r => {
+                    const a = acc[r[campo]] ||= { solicitados: 0, sem: 0 };
+                    a.solicitados += r.solicitados;
+                    a.sem += r.sem_agendamento || 0;
+                });
+                return Object.entries(acc)
+                    .map(([nome, v]) => ({ nome, ...v }))
+                    .filter(x => x.sem > 0)
+                    .sort((a, b) => b.sem - a.sem || a.nome.localeCompare(b.nome));
+            };
+            dadosDetalhe.forEach(r => { totalSolic += r.solicitados; totalSem += r.sem_agendamento || 0; });
+
+            const pct = (n, base) => base ? (n / base * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+            document.getElementById('kpi-sem-agendamento-pct').textContent =
+                totalSolic ? `${pct(totalSem, totalSolic)} dos solicitados` : 'No período';
+
+            const barras = (id, itens) => {
+                const el = document.getElementById(id);
+                if (itens.length === 0) {
+                    el.innerHTML = '<p class="nota-origem">Nenhuma solicitação sem data de agendamento no período.</p>';
+                    return;
+                }
+                const max = Math.max(...itens.map(x => x.sem));
+                el.innerHTML = itens.map(x => `
+                    <div class="barra-linha" title="${x.nome}: ${formatarNumero(x.sem)} de ${formatarNumero(x.solicitados)} solicitados">
+                        <span class="barra-nome">${x.nome}</span>
+                        <span class="barra-trilho"><span class="barra-valor" style="width:${(x.sem / max * 100).toFixed(1)}%"></span></span>
+                        <span class="barra-num">${formatarNumero(x.sem)} <small>(${pct(x.sem, x.solicitados)})</small></span>
+                    </div>`).join('');
+            };
+            barras('barras-sem-agend-classificacao', somar('classificacao'));
+            barras('barras-sem-agend-clinica', somar('clinica').slice(0, 10));
+        }
+
+        // Total por exame, agrupado por classificação: soma as clínicas do
+        // detalhe (que já vem com os filtros do servidor aplicados), separando
+        // cada indicador pela origem da solicitação (externo/emergência/interno).
+        const METRICAS = ['solicitados', 'baixados', 'realizados', 'cancelados'];
+        const ORIGENS = ['externo', 'emergencia', 'interno'];
+        function novoAcumulador() {
+            const a = {};
+            METRICAS.forEach(m => ORIGENS.forEach(o => a[`${m}_${o}`] = 0));
+            return a;
+        }
+        function atualizarTabelaExamesClassificacao() {
+            const grupos = {};
+            const geral = novoAcumulador();
+            dadosDetalhe.forEach(r => {
+                const g = grupos[r.classificacao] ||= { total: novoAcumulador(), exames: {} };
+                const e = g.exames[r.exame] ||= novoAcumulador();
+                METRICAS.forEach(m => {
+                    const chave = `${m}_${r.origem}`;
+                    e[chave] += r[m];
+                    g.total[chave] += r[m];
+                    geral[chave] += r[m];
+                });
+            });
+            const totalSolicitados = v => ORIGENS.reduce((s, o) => s + v[`solicitados_${o}`], 0);
+            // ordem das colunas: origem (externo, emergência, interno) e, dentro
+            // de cada uma, solicitados / baixados / realizados / cancelados;
+            // no fim, o total das três origens
+            const celulas = v =>
+                ORIGENS.map(o => METRICAS.map((m, i) =>
+                    `<td class="${i === 0 ? 'inicio-grupo' : ''}">${formatarNumero(v[`${m}_${o}`])}</td>`).join('')).join('') +
+                METRICAS.map((m, i) =>
+                    `<td class="col-total ${i === 0 ? 'inicio-grupo' : ''}">${formatarNumero(ORIGENS.reduce((s, o) => s + v[`${m}_${o}`], 0))}</td>`).join('');
+
+            const tbody = document.querySelector('#tabela-exames-classificacao tbody');
+            let html = '';
+            Object.keys(grupos).sort().forEach((classificacao, grupo) => {
+                const g = grupos[classificacao];
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
+                    <td style="text-align:left;color:#1a7a6e;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#1a7a6e;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
+                </tr>`;
+                // exames do grupo, do mais solicitado para o menos
+                Object.entries(g.exames)
+                    .sort((a, b) => totalSolicitados(b[1]) - totalSolicitados(a[1]) || a[0].localeCompare(b[0]))
+                    .forEach(([exame, v]) => {
+                        html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
+                            <td></td>
+                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                        </tr>`;
+                    });
+            });
+            if (html) {
+                html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
+            } else {
+                html = '<tr><td colspan="18" style="text-align:center;color:#999;">Nenhum dado encontrado para o período selecionado.</td></tr>';
+            }
+            tbody.innerHTML = html;
+        }
+
+        // Tabela de tempo por classificação e exame, com duas categorias lado a
+        // lado: até a realização (solicitação → realização) e até a baixa
+        // (realização → baixa). `base` é a coluna de referência dos percentuais.
+        const CATEGORIAS_TEMPO = [
+            { base: 'realizados', faixas: ['tempo_ate_1d', 'tempo_1_2d', 'tempo_2_4d', 'tempo_acima_4d'] },
+            { base: 'com_realizacao_e_baixa', faixas: ['baixa_ate_1d', 'baixa_1_2d', 'baixa_2_4d', 'baixa_acima_4d'] },
+        ];
+        function atualizarTabelaTempo() {
+            const campos = CATEGORIAS_TEMPO.flatMap(c => [c.base, ...c.faixas]);
+            const novo = () => Object.fromEntries(campos.map(k => [k, 0]));
+            const grupos = {};
+            const geral = novo();
+            dadosDetalhe.forEach(r => {
+                const g = grupos[r.classificacao] ||= { total: novo(), exames: {} };
+                const e = g.exames[r.exame] ||= novo();
+                campos.forEach(k => {
+                    e[k] += r[k] || 0;
+                    g.total[k] += r[k] || 0;
+                    geral[k] += r[k] || 0;
+                });
+            });
+            const pct = (n, total) => total ? ` <small style="color:#6b7f86;">(${(n / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%)</small>` : '';
+            const celulas = v => CATEGORIAS_TEMPO.map(c =>
+                `<td class="inicio-grupo">${formatarNumero(v[c.base])}</td>` +
+                c.faixas.map(k => `<td>${formatarNumero(v[k])}${pct(v[k], v[c.base])}</td>`).join('')).join('');
+            const temDados = v => CATEGORIAS_TEMPO.some(c => v[c.base] > 0);
+            const ordem = v => v.realizados;
+
+            const tbody = document.querySelector('#tabela-tempo-realizacao tbody');
+            let html = '';
+            Object.keys(grupos).sort().forEach((classificacao, grupo) => {
+                const g = grupos[classificacao];
+                const exames = Object.entries(g.exames).filter(([, v]) => temDados(v));
+                if (exames.length === 0) return;  // classificação sem realização nem baixa
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
+                    <td style="text-align:left;color:#1a7a6e;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#1a7a6e;">${exames.length} exames</td>${celulas(g.total)}
+                </tr>`;
+                exames
+                    .sort((a, b) => ordem(b[1]) - ordem(a[1]) || a[0].localeCompare(b[0]))
+                    .forEach(([exame, v]) => {
+                        html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
+                            <td></td>
+                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                        </tr>`;
+                    });
+            });
+            if (html) {
+                html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
+            } else {
+                html = '<tr><td colspan="12" style="text-align:center;color:#999;">Nenhum exame no período selecionado.</td></tr>';
+            }
+            tbody.innerHTML = html;
+        }
+
+        // Expande/recolhe as linhas de exames de um grupo ao clicar no cabeçalho
+        function configurarToggle(tabelaId) {
+            const tbody = document.querySelector(`#${tabelaId} tbody`);
             tbody.addEventListener('click', (e) => {
                 const header = e.target.closest('tr.clinica-toggle-row');
                 if (!header) return;
@@ -550,8 +747,16 @@
             });
         }
 
+        function configurarToggleDetalhe() {
+            configurarToggle('tabela-detalhe');
+            configurarToggle('tabela-exames-classificacao');
+            configurarToggle('tabela-tempo-realizacao');
+        }
+
         function atualizarTudo() {
-            atualizarTabelaResumo();
+            atualizarTabelaExamesClassificacao();
+            atualizarTabelaTempo();
+            atualizarSemAgendamento();
             atualizarTabelaDetalhe();
         }
 
