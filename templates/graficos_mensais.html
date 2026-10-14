@@ -28,7 +28,7 @@
             align-items: center;
             justify-content: space-between;
             background: #fff;
-            border-bottom: 3px solid #19b8b0;
+            border-bottom: 3px solid #00A1A2;
             box-shadow: 0 2px 8px rgba(0,0,0,.07);
             padding: 14px 28px;
             margin-bottom: 22px;
@@ -62,7 +62,7 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
             border: none;
             border-radius: 6px;
@@ -77,11 +77,11 @@
         .header .back-btn:hover, .header .nav-btn:hover { background: #007C6B; }
         .header .nav-btn {
             background: #fff;
-            color: #19b8b0;
-            border: 2px solid #19b8b0;
+            color: #00A1A2;
+            border: 2px solid #00A1A2;
         }
         .header .nav-btn:hover {
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
         }
         .page-content { padding: 0 28px; }
@@ -122,7 +122,7 @@
             display: inline-block;
         }
         .filter-actions .btn-apply {
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
         }
         .filter-actions .btn-apply:hover { background: #007C6B; }
@@ -161,26 +161,37 @@
             color: #444;
             outline: none;
         }
-        select:focus, input[type="date"]:focus { border-color: #19b8b0; }
+        select:focus, input[type="date"]:focus { border-color: #00A1A2; }
+        /* Totais numa linha só; médias mensais numa segunda linha logo abaixo */
         .kpi-container {
             display: flex;
             gap: 16px;
             margin-bottom: 22px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+            overflow-x: auto;
         }
+        .kpi-container.medias { margin-top: -8px; }
         .kpi-box {
             flex: 1;
-            min-width: 160px;
+            min-width: 150px;
             padding: 20px 16px;
             border-radius: 12px;
             text-align: center;
             color: #fff;
         }
-        .kpi-box:nth-child(1) { background: #19b8b0; }
-        .kpi-box:nth-child(2) { background: #1a7a6e; }
-        .kpi-box:nth-child(3) { background: #e07b39; }
-        .kpi-box:nth-child(4) { background: #c0392b; }
-        .kpi-box:nth-child(5) { background: #8e44ad; }
+        .kpi-box:nth-child(1) { background: #00A1A2; }
+        .kpi-box:nth-child(2) { background: #007C6B; }
+        .kpi-box:nth-child(3) { background: #3BB5A3; }
+        .kpi-box:nth-child(4) { background: #EB600A; }
+        .kpi-box:nth-child(5) { background: #38464D; }
+        /* médias: variações da mesma família de cor do total correspondente */
+        .medias .kpi-box { padding: 14px 16px; }
+        .medias .kpi-box p { font-size: 1.5rem; }
+        .medias .kpi-box:nth-child(1) { background: #53B7D9; }
+        .medias .kpi-box:nth-child(2) { background: #0F9688; }
+        .medias .kpi-box:nth-child(3) { background: #2E758C; }
+        .medias .kpi-box:nth-child(4) { background: #F7975B; }
+        .medias .kpi-box:nth-child(5) { background: #F3A133; }
         .kpi-box h5 {
             font-family: 'DM Sans', sans-serif;
             font-size: 0.85rem;
@@ -279,7 +290,7 @@
             transition: all 0.2s;
         }
         .toggle-btn.active {
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
         }
         @media (max-width: 900px) {
@@ -313,7 +324,7 @@
         }
         .loader-ring svg circle {
             fill: none;
-            stroke: #19b8b0;
+            stroke: #00A1A2;
             stroke-width: 4;
             stroke-linecap: round;
             stroke-dasharray: 200;
@@ -390,16 +401,6 @@
                     {% endfor %}
                 </select>
             </div>
-            <div class="filter-group">
-                <label for="status">Status:</label>
-                <select id="status" name="status">
-                    <option value="todos" {% if status_selecionado == 'todos' %}selected{% endif %}>Todos</option>
-                    <option value="solicitados" {% if status_selecionado == 'solicitados' %}selected{% endif %}>Solicitados</option>
-                    <option value="baixados" {% if status_selecionado == 'baixados' %}selected{% endif %}>Baixados</option>
-                    <option value="realizados" {% if status_selecionado == 'realizados' %}selected{% endif %}>Realizados</option>
-                    <option value="cancelados" {% if status_selecionado == 'cancelados' %}selected{% endif %}>Cancelados</option>
-                </select>
-            </div>
             <div class="filter-actions">
                 <button type="submit" class="btn-apply">Aplicar Filtros</button>
                 <button type="button" id="reset-filtros-btn" class="btn-reset">Resetar Filtros</button>
@@ -428,39 +429,38 @@
                 <div class="kpi-label">No período</div>
             </div>
             <div class="kpi-box">
-                <h5>Média Diária</h5>
-                <p data-kpi="media_diaria">{{ "{:,.1f}".format(kpis.get('media_diaria', 0)) }}</p>
-                <div class="kpi-label">Exames por dia</div>
+                <h5>Sem Agendamento</h5>
+                <p data-kpi="total_sem_agendamento">{{ "{:,.0f}".format(kpis['total_sem_agendamento']) }}</p>
+                <div class="kpi-label">Solicitados sem data de agendamento</div>
             </div>
         </div>
 
-        <div class="content">
-            <div class="chart-container">
-                <div class="chart-header">
-                    <h4>Total de Exames por Período — uma linha para cada exame</h4>
-                    <div class="toggle-group">
-                        <label>Agregação:</label>
-                        <button type="button" class="toggle-btn active" id="btn-mes-total" onclick="setModoTotal('mes')">Mês</button>
-                        <button type="button" class="toggle-btn" id="btn-dia-total" onclick="setModoTotal('dia')">Dia</button>
-                    </div>
-                </div>
-                <div id="grafico-total"></div>
+        <div class="kpi-container medias">
+            {% for chave, titulo in [('media_solicitados', 'Média Solicitados'), ('media_baixados', 'Média Baixados'),
+                                     ('media_realizados', 'Média Realizados'), ('media_cancelados', 'Média Cancelados'),
+                                     ('media_sem_agendamento', 'Média sem Agendamento')] %}
+            <div class="kpi-box">
+                <h5>{{ titulo }}</h5>
+                <p data-kpi="{{ chave }}">{{ "{:,.1f}".format(kpis[chave]) }}</p>
+                <div class="kpi-label">Por mês</div>
             </div>
+            {% endfor %}
         </div>
 
+        {% for id, titulo in [('solicitados', 'Exames Solicitados por Mês'),
+                              ('realizados', 'Exames Realizados por Mês'),
+                              ('baixados', 'Exames Baixados por Mês'),
+                              ('cancelados', 'Exames Cancelados por Mês'),
+                              ('sem_agendamento', 'Exames Solicitados sem Agendamento por Mês')] %}
         <div class="content">
             <div class="chart-container">
                 <div class="chart-header">
-                    <h4>Total de Exames Baixados por Classificação</h4>
-                    <div class="toggle-group">
-                        <label>Agregação:</label>
-                        <button type="button" class="toggle-btn active" id="btn-mes-class" onclick="setModoClass('mes')">Mês</button>
-                        <button type="button" class="toggle-btn" id="btn-dia-class" onclick="setModoClass('dia')">Dia</button>
-                    </div>
+                    <h4>{{ titulo }} — por Classificação</h4>
                 </div>
-                <div id="grafico-classificacao"></div>
+                <div id="grafico-{{ id }}"></div>
             </div>
         </div>
+        {% endfor %}
 
         </div>
     </div>
@@ -473,196 +473,72 @@
     </div>
 
     <script>
-        let dadosBrutos = {{ dados_json|tojson }};
-        let totalGeral = {{ total_geral|tojson }};
-        let modoTotal = 'mes';
-        let modoClass = 'mes';
-
-        function formatarDataBR(str) {
-            if (!str) return '';
-            const [ano, mes, dia] = str.split('-');
-            return `${dia}/${mes}/${ano}`;
-        }
-
-        function formatarMesAno(str) {
-            if (!str) return '';
-            const [ano, mes] = str.split('-');
-            return `${mes}/${ano}`;
-        }
+        let dadosGraficos = {{ graficos|tojson }};
 
         function formatarNumero(n) {
             return (n || 0).toLocaleString('pt-BR');
         }
 
-        function calcularMedia(arr) {
-            if (!arr.length) return 0;
-            return arr.reduce((a, b) => a + b, 0) / arr.length;
-        }
+        // Gráficos mensais: barras empilhadas por classificação + linha de total.
+        // Só o total aparece escrito no gráfico; os valores de cada
+        // classificação aparecem ao passar o mouse (hover unificado por mês).
+        const GRAFICOS = [
+            { id: 'solicitados', nome: 'Solicitados' },
+            { id: 'realizados', nome: 'Realizados' },
+            { id: 'baixados', nome: 'Baixados' },
+            { id: 'cancelados', nome: 'Cancelados' },
+            { id: 'sem_agendamento', nome: 'Sem agendamento' },
+        ];
+        // paleta da instituição: cores principais e, depois, as variações
+        const CORES_CLASSIFICACAO = ['#00A1A2', '#EB600A', '#00B2C9', '#007C6B', '#F3A133',
+                                     '#3BB5A3', '#2E758C', '#F7975B', '#0F9688', '#53B7D9'];
 
-        // ===== GRÁFICO 1: Total por Período — uma linha para cada EXAME + linha de média =====
-        function agruparPorMesPorExame(dados, campo) {
-            const series = {};
-            const mesesSet = new Set();
-            dados.forEach(d => {
-                const mes = d.data.substring(0, 7);
-                mesesSet.add(mes);
-                if (!series[d.exame]) series[d.exame] = {};
-                series[d.exame][mes] = (series[d.exame][mes] || 0) + d[campo];
-            });
-            const meses = Array.from(mesesSet).sort();
-            const coresLista = ['#19b8b0', '#e07b39', '#8e44ad', '#c0392b', '#2980b9', '#27ae60', '#f39c12', '#d35400', '#16a085', '#2c3e50', '#e74c3c', '#9b59b6'];
-            return Object.keys(series).sort().map((exame, idx) => ({
-                x: meses.map(m => formatarMesAno(m)),
-                y: meses.map(m => series[exame][m] || 0),
-                name: exame,
-                type: 'scatter',
-                mode: 'lines+markers',
-                line: { width: 2, color: coresLista[idx % coresLista.length] },
-                marker: { size: 6, color: coresLista[idx % coresLista.length] }
+        function desenharGrafico(cfg) {
+            const d = dadosGraficos;
+            const meses = d.meses || [];
+            const classificacoes = d.classificacoes || [];
+            const series = (d.series || {})[cfg.id] || {};
+
+            const barras = classificacoes.map((cls, idx) => ({
+                x: meses,
+                y: series[cls] || meses.map(() => 0),
+                name: cls,
+                type: 'bar',
+                marker: { color: CORES_CLASSIFICACAO[idx % CORES_CLASSIFICACAO.length] },
+                hovertemplate: `${cls}: %{y:,}<extra></extra>`,
             }));
-        }
-
-        function agruparPorDiaPorExame(dados, campo) {
-            const series = {};
-            const diasSet = new Set();
-            dados.forEach(d => {
-                diasSet.add(d.data);
-                if (!series[d.exame]) series[d.exame] = {};
-                series[d.exame][d.data] = (series[d.exame][d.data] || 0) + d[campo];
-            });
-            const dias = Array.from(diasSet).sort();
-            const coresLista = ['#19b8b0', '#e07b39', '#8e44ad', '#c0392b', '#2980b9', '#27ae60', '#f39c12', '#d35400', '#16a085', '#2c3e50', '#e74c3c', '#9b59b6'];
-            return Object.keys(series).sort().map((exame, idx) => ({
-                x: dias.map(d => formatarDataBR(d)),
-                y: dias.map(d => series[exame][d] || 0),
-                name: exame,
+            const totais = meses.map((_, i) => classificacoes.reduce((s, cls) => s + ((series[cls] || [])[i] || 0), 0));
+            const linhaTotal = {
+                x: meses,
+                y: totais,
+                name: 'Total',
                 type: 'scatter',
-                mode: 'lines+markers',
-                line: { width: 2, color: coresLista[idx % coresLista.length] },
-                marker: { size: 4, color: coresLista[idx % coresLista.length] }
-            }));
-        }
-
-        function criarTraceMedia(xLabels, valores, nome) {
-            const media = calcularMedia(valores);
-            return {
-                x: xLabels,
-                y: xLabels.map(() => media),
-                name: nome,
-                type: 'scatter',
-                mode: 'lines',
-                line: { width: 2, color: '#000', dash: 'dash' },
-                hovertemplate: `Média: ${formatarNumero(media)}<extra></extra>`,
-                showlegend: true
+                mode: 'lines+markers+text',
+                text: totais.map(formatarNumero),
+                textposition: 'top center',
+                textfont: { size: 12, color: '#38464D' },
+                line: { color: '#38464D', width: 2 },
+                marker: { size: 6, color: '#38464D' },
+                hovertemplate: `<b>Total: %{y:,}</b><extra></extra>`,
             };
-        }
+            const maximo = Math.max(1, ...totais);
 
-        function atualizarGraficoTotal() {
-            const statusSelecionado = document.getElementById('status').value;
-            const campo = statusSelecionado === 'todos' ? 'solicitados' : statusSelecionado;
-            const tituloStatus = statusSelecionado === 'todos' ? 'Solicitados' : statusSelecionado.charAt(0).toUpperCase() + statusSelecionado.slice(1);
-
-            const tracesExames = modoTotal === 'mes'
-                ? agruparPorMesPorExame(dadosBrutos, campo)
-                : agruparPorDiaPorExame(dadosBrutos, campo);
-
-            // Calcula média geral (soma de todos os exames em cada período)
-            const xLabels = tracesExames.length > 0 ? tracesExames[0].x : [];
-            const somaPorPeriodo = xLabels.map((_, i) => tracesExames.reduce((acc, t) => acc + (t.y[i] || 0), 0));
-            const traceMedia = criarTraceMedia(xLabels, somaPorPeriodo, `Média (${tituloStatus})`);
-
-            const traces = [...tracesExames, traceMedia];
-
-            const tituloX = modoTotal === 'mes' ? 'Mês' : 'Dia';
-            Plotly.react('grafico-total', traces, {
-                xaxis: { title: tituloX, tickangle: modoTotal === 'mes' ? -45 : -60, tickfont: { size: 12 } },
-                yaxis: { title: `Quantidade (${tituloStatus})`, gridcolor: '#e0e0e0' },
+            Plotly.react(`grafico-${cfg.id}`, [...barras, linhaTotal], {
+                barmode: 'stack',
+                separators: ',.',
+                xaxis: { title: 'Mês', tickangle: -45, tickfont: { size: 12 } },
+                // folga no topo para o rótulo do total não ser cortado
+                yaxis: { title: cfg.nome, gridcolor: '#e0e0e0', range: [0, maximo * 1.15], tickformat: ',d' },
                 plot_bgcolor: '#fff',
                 paper_bgcolor: '#fff',
-                legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center' },
-                margin: { l: 60, r: 20, t: 20, b: modoTotal === 'mes' ? 100 : 120 },
-                hovermode: 'x unified'
+                legend: { orientation: 'h', y: -0.25, x: 0.5, xanchor: 'center' },
+                margin: { l: 60, r: 20, t: 20, b: 110 },
+                hovermode: 'x unified',
             }, { responsive: true });
         }
 
-        // ===== GRÁFICO 2: Total Baixados por Classificação + linha de média =====
-        function agruparClassPorMes(dados) {
-            const series = {};
-            const mesesSet = new Set();
-            dados.forEach(d => {
-                const mes = d.data.substring(0, 7);
-                mesesSet.add(mes);
-                if (!series[d.classificacao]) series[d.classificacao] = {};
-                series[d.classificacao][mes] = (series[d.classificacao][mes] || 0) + d.baixados;
-            });
-            const meses = Array.from(mesesSet).sort();
-            const coresLista = ['#19b8b0', '#e07b39', '#8e44ad', '#c0392b', '#2980b9', '#27ae60', '#f39c12', '#d35400'];
-            return Object.keys(series).sort().map((cls, idx) => ({
-                x: meses.map(m => formatarMesAno(m)),
-                y: meses.map(m => series[cls][m] || 0),
-                name: cls,
-                type: 'scatter',
-                mode: 'lines+markers',
-                line: { width: 3, color: coresLista[idx % coresLista.length] },
-                marker: { size: 7, color: coresLista[idx % coresLista.length] }
-            }));
-        }
-
-        function agruparClassPorDia(dados) {
-            const series = {};
-            const diasSet = new Set();
-            dados.forEach(d => {
-                diasSet.add(d.data);
-                if (!series[d.classificacao]) series[d.classificacao] = {};
-                series[d.classificacao][d.data] = (series[d.classificacao][d.data] || 0) + d.baixados;
-            });
-            const dias = Array.from(diasSet).sort();
-            const coresLista = ['#19b8b0', '#e07b39', '#8e44ad', '#c0392b', '#2980b9', '#27ae60', '#f39c12', '#d35400'];
-            return Object.keys(series).sort().map((cls, idx) => ({
-                x: dias.map(d => formatarDataBR(d)),
-                y: dias.map(d => series[cls][d] || 0),
-                name: cls,
-                type: 'scatter',
-                mode: 'lines+markers',
-                line: { width: 2, color: coresLista[idx % coresLista.length] },
-                marker: { size: 5, color: coresLista[idx % coresLista.length] }
-            }));
-        }
-
-        function atualizarGraficoClassificacao() {
-            const tracesClass = modoClass === 'mes' ? agruparClassPorMes(dadosBrutos) : agruparClassPorDia(dadosBrutos);
-
-            // Calcula média geral (soma de todas as classificações em cada período)
-            const xLabels = tracesClass.length > 0 ? tracesClass[0].x : [];
-            const somaPorPeriodo = xLabels.map((_, i) => tracesClass.reduce((acc, t) => acc + (t.y[i] || 0), 0));
-            const traceMedia = criarTraceMedia(xLabels, somaPorPeriodo, 'Média (Baixados)');
-
-            const traces = [...tracesClass, traceMedia];
-
-            const tituloX = modoClass === 'mes' ? 'Mês' : 'Dia';
-            Plotly.react('grafico-classificacao', traces, {
-                xaxis: { title: tituloX, tickangle: modoClass === 'mes' ? -45 : -60, tickfont: { size: 12 } },
-                yaxis: { title: 'Quantidade', gridcolor: '#e0e0e0' },
-                plot_bgcolor: '#fff',
-                paper_bgcolor: '#fff',
-                legend: { orientation: 'h', y: -0.18, x: 0.5, xanchor: 'center' },
-                margin: { l: 60, r: 20, t: 20, b: modoClass === 'mes' ? 100 : 120 },
-                hovermode: 'x unified'
-            }, { responsive: true });
-        }
-
-        function setModoTotal(modo) {
-            modoTotal = modo;
-            document.getElementById('btn-mes-total').classList.toggle('active', modo === 'mes');
-            document.getElementById('btn-dia-total').classList.toggle('active', modo === 'dia');
-            atualizarGraficoTotal();
-        }
-
-        function setModoClass(modo) {
-            modoClass = modo;
-            document.getElementById('btn-mes-class').classList.toggle('active', modo === 'mes');
-            document.getElementById('btn-dia-class').classList.toggle('active', modo === 'dia');
-            atualizarGraficoClassificacao();
+        function atualizarGraficos() {
+            GRAFICOS.forEach(desenharGrafico);
         }
 
         function mostrarCarregamento() {
@@ -681,8 +557,7 @@
         }
 
         function aplicarDadosRecebidos(data) {
-            dadosBrutos = data.dados_json || [];
-            totalGeral = data.total_geral || {};
+            dadosGraficos = data.graficos || {};
 
             document.getElementById('data-inicial').value = data.data_inicial;
             document.getElementById('data-final').value = data.data_final;
@@ -691,8 +566,7 @@
                 el.textContent = formatarNumero(data.kpis[el.dataset.kpi]);
             });
 
-            atualizarGraficoTotal();
-            atualizarGraficoClassificacao();
+            atualizarGraficos();
         }
 
         async function aplicarFiltrosAjax() {
@@ -704,7 +578,6 @@
                     clinica: document.getElementById('clinica').value,
                     classificacao: document.getElementById('classificacao').value,
                     exame: document.getElementById('exame').value,
-                    status: document.getElementById('status').value,
                 });
                 const resp = await fetch(`/graficos_mensais?${params.toString()}`, {
                     headers: { 'X-Requested-With': 'XMLHttpRequest' }
@@ -720,19 +593,17 @@
             }
         }
 
+        // Os 12 últimos meses completos, sem o mês corrente (mesmo padrão do servidor).
         function getUltimos12Meses() {
             const hoje = new Date();
-            const primeiroDia12MesesAtras = new Date(hoje.getFullYear(), hoje.getMonth() - 11, 1);
-            const ultimoDiaMesAtual = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
-            return {
-                inicio: primeiroDia12MesesAtras.toISOString().split('T')[0],
-                fim: ultimoDiaMesAtual.toISOString().split('T')[0]
-            };
+            const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 12, 1);
+            const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);  // último dia do mês anterior
+            const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+            return { inicio: iso(inicio), fim: iso(fim) };
         }
 
         document.addEventListener('DOMContentLoaded', () => {
-            atualizarGraficoTotal();
-            atualizarGraficoClassificacao();
+            atualizarGraficos();
 
             document.getElementById('form-filtros').addEventListener('submit', (e) => {
                 e.preventDefault();
@@ -746,7 +617,6 @@
                 document.getElementById('clinica').value = 'todos';
                 document.getElementById('classificacao').value = 'todos';
                 document.getElementById('exame').value = 'todos';
-                document.getElementById('status').value = 'todos';
                 aplicarFiltrosAjax();
             });
 

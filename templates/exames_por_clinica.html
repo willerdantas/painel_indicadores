@@ -27,7 +27,7 @@
             align-items: center;
             justify-content: space-between;
             background: #fff;
-            border-bottom: 3px solid #19b8b0;
+            border-bottom: 3px solid #00A1A2;
             box-shadow: 0 2px 8px rgba(0,0,0,.07);
             padding: 14px 28px;
             margin-bottom: 22px;
@@ -61,7 +61,7 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
             border: none;
             border-radius: 6px;
@@ -106,7 +106,7 @@
             white-space: nowrap;
         }
         .filter-actions .btn-apply {
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
         }
         .filter-actions .btn-apply:hover { background: #007C6B; }
@@ -144,26 +144,37 @@
             color: #444;
             outline: none;
         }
-        select:focus, input[type="date"]:focus { border-color: #19b8b0; }
+        select:focus, input[type="date"]:focus { border-color: #00A1A2; }
+        /* Totais numa linha só; médias numa segunda linha logo abaixo */
         .kpi-container {
             display: flex;
             gap: 16px;
             margin-bottom: 22px;
-            flex-wrap: wrap;
+            flex-wrap: nowrap;
+            overflow-x: auto;
         }
+        .kpi-container.medias { margin-top: -8px; }
         .kpi-box {
             flex: 1;
-            min-width: 200px;
+            min-width: 150px;
             padding: 20px 16px;
             border-radius: 12px;
             text-align: center;
             color: #fff;
         }
-        .kpi-box:nth-child(1) { background: #19b8b0; }
-        .kpi-box:nth-child(2) { background: #1a7a6e; }
-        .kpi-box:nth-child(3) { background: #e07b39; }
-        .kpi-box:nth-child(4) { background: #c0392b; }
+        .kpi-box:nth-child(1) { background: #00A1A2; }
+        .kpi-box:nth-child(2) { background: #007C6B; }
+        .kpi-box:nth-child(3) { background: #3BB5A3; }
+        .kpi-box:nth-child(4) { background: #EB600A; }
         .kpi-box:nth-child(5) { background: #38464D; }
+        /* médias: variações da mesma família de cor do total correspondente */
+        .medias .kpi-box { padding: 14px 16px; }
+        .medias .kpi-box p { font-size: 1.5rem; }
+        .medias .kpi-box:nth-child(1) { background: #53B7D9; }
+        .medias .kpi-box:nth-child(2) { background: #0F9688; }
+        .medias .kpi-box:nth-child(3) { background: #2E758C; }
+        .medias .kpi-box:nth-child(4) { background: #F7975B; }
+        .medias .kpi-box:nth-child(5) { background: #F3A133; }
         .kpi-box h5 {
             font-family: 'DM Sans', sans-serif;
             font-size: 0.85rem;
@@ -239,7 +250,7 @@
         }
         th {
             background: #f0f4f5;
-            color: #19b8b0;
+            color: #00A1A2;
             font-family: 'Syne', sans-serif;
             font-weight: 700;
             letter-spacing: 0.03em;
@@ -247,8 +258,8 @@
             top: 0;
         }
         tr:nth-child(even) { background: #f8fafb; }
-        tr.total-row { background: #e8f5e9; font-weight: bold; }
-        tr.total-row td { color: #1a7a6e; }
+        tr.total-row { background: #E0F3F3; font-weight: bold; }
+        tr.total-row td { color: #007C6B; }
         /* Total por exame com divisão por origem (externo/emergência/interno) */
         .tabela-rolagem { overflow-x: auto; }
         .nota-origem { font-size: 12px; color: #6b7f86; margin: 4px 0 0; }
@@ -262,7 +273,7 @@
         #tabela-tempo-realizacao td.inicio-grupo { border-left: 2px solid #c9dfe0; }
         #tabela-exames-classificacao td:nth-child(2),
         #tabela-tempo-realizacao td:nth-child(2) { text-align: left; white-space: normal; min-width: 180px; }
-        #tabela-exames-classificacao td.col-total { font-weight: 700; background: rgba(25,184,176,.06); }
+        #tabela-exames-classificacao td.col-total { font-weight: 700; background: rgba(0,161,162,.06); }
         /* Painel de exames sem data de agendamento */
         .painel-sem-agend { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-top: 12px; }
         .titulo-barras { font-family: 'Syne', sans-serif; font-size: 13px; color: #38464D; margin: 0 0 8px; }
@@ -274,7 +285,7 @@
         .barra-num { font-variant-numeric: tabular-nums; white-space: nowrap; color: #38464D; }
         .barra-num small { color: #6b7f86; }
         @media (max-width: 800px) { .painel-sem-agend { grid-template-columns: 1fr; } }
-        #tabela-exames-classificacao th.grupo-total { background: #e3f4f2; }
+        #tabela-exames-classificacao th.grupo-total { background: #E0F3F3; }
         td:first-child { text-align: left; font-weight: 500; }
         #tabela-detalhe td:nth-child(2) {
             white-space: normal;
@@ -284,7 +295,7 @@
             cursor: pointer;
         }
         #tabela-detalhe tr.clinica-toggle-row:hover td {
-            background: #d9efe9;
+            background: #CCEBEB;
         }
         #tabela-detalhe .toggle-icon {
             display: inline-block;
@@ -323,7 +334,7 @@
         }
         .loader-ring svg circle {
             fill: none;
-            stroke: #19b8b0;
+            stroke: #00A1A2;
             stroke-width: 4;
             stroke-linecap: round;
             stroke-dasharray: 200;
@@ -424,6 +435,18 @@
             </div>
         </div>
 
+        <div class="kpi-container medias">
+            {% for chave, titulo in [('media_solicitados', 'Média Solicitados'), ('media_baixados', 'Média Baixados'),
+                                     ('media_realizados', 'Média Realizados'), ('media_cancelados', 'Média Cancelados'),
+                                     ('media_sem_agendamento', 'Média sem Agendamento')] %}
+            <div class="kpi-box">
+                <h5>{{ titulo }}</h5>
+                <p data-kpi="{{ chave }}">{{ "{:,.1f}".format(kpis[chave]) }}</p>
+                <div class="kpi-label">Por dia</div>
+            </div>
+            {% endfor %}
+        </div>
+
         <div class="content">
             <div class="chart-container">
                 <h4>Total por Exame (por Classificação)</h4>
@@ -486,7 +509,7 @@
                         <div id="barras-sem-agend-classificacao" class="lista-barras"></div>
                     </div>
                     <div>
-                        <h5 class="titulo-barras">Por clínica (10 maiores)</h5>
+                        <h5 class="titulo-barras">Por clínica</h5>
                         <div id="barras-sem-agend-clinica" class="lista-barras"></div>
                     </div>
                 </div>
@@ -557,9 +580,9 @@
             let html = '';
             Object.keys(grupos).sort().forEach((clinica, grupo) => {
                 const g = grupos[clinica];
-                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
-                    <td style="text-align:left;color:#1a7a6e;"><span class="toggle-icon">▶</span> ${clinica}</td>
-                    <td style="text-align:left;color:#1a7a6e;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${clinica}</td>
+                    <td style="text-align:left;color:#007C6B;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
                 </tr>`;
                 Object.entries(g.exames)
                     .sort((a, b) => b[1].solicitados - a[1].solicitados || a[0].localeCompare(b[0]))
@@ -579,7 +602,7 @@
         }
 
         // Painel de exames sem data de agendamento: KPI (percentual) e barras
-        // por classificação e pelas 10 clínicas com mais casos.
+        // por classificação e por clínica (todas as que têm casos).
         function atualizarSemAgendamento() {
             let totalSolic = 0, totalSem = 0;
             const somar = campo => {
@@ -615,7 +638,7 @@
                     </div>`).join('');
             };
             barras('barras-sem-agend-classificacao', somar('classificacao'));
-            barras('barras-sem-agend-clinica', somar('clinica').slice(0, 10));
+            barras('barras-sem-agend-clinica', somar('clinica'));
         }
 
         // Total por exame, agrupado por classificação: soma as clínicas do
@@ -655,9 +678,9 @@
             let html = '';
             Object.keys(grupos).sort().forEach((classificacao, grupo) => {
                 const g = grupos[classificacao];
-                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
-                    <td style="text-align:left;color:#1a7a6e;"><span class="toggle-icon">▶</span> ${classificacao}</td>
-                    <td style="text-align:left;color:#1a7a6e;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#007C6B;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
                 </tr>`;
                 // exames do grupo, do mais solicitado para o menos
                 Object.entries(g.exames)
@@ -711,9 +734,9 @@
                 const g = grupos[classificacao];
                 const exames = Object.entries(g.exames).filter(([, v]) => temDados(v));
                 if (exames.length === 0) return;  // classificação sem realização nem baixa
-                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#e8f5e9;font-weight:bold;">
-                    <td style="text-align:left;color:#1a7a6e;"><span class="toggle-icon">▶</span> ${classificacao}</td>
-                    <td style="text-align:left;color:#1a7a6e;">${exames.length} exames</td>${celulas(g.total)}
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#007C6B;">${exames.length} exames</td>${celulas(g.total)}
                 </tr>`;
                 exames
                     .sort((a, b) => ordem(b[1]) - ordem(a[1]) || a[0].localeCompare(b[0]))

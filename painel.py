@@ -933,6 +933,10 @@ def exames_por_clinica():
         'total_cancelados': total_geral['cancelados'],
         'total_sem_agendamento': sum(r['sem_agendamento'] for r in dados_json),
     }
+    # média diária de cada total (cards de média abaixo dos totais)
+    dias_no_periodo = max(1, (data_final - data_inicial).days + 1)
+    for chave in list(kpis):
+        kpis[chave.replace('total_', 'media_')] = round(kpis[chave] / dias_no_periodo, 1)
 
     context = {
         'data_inicial': data_inicial.strftime('%Y-%m-%d'),
@@ -956,8 +960,10 @@ def exames_por_clinica():
 
 @app.route('/graficos_mensais', methods=['GET'])
 def graficos_mensais():
+    # Padrão: os 12 últimos meses completos, sem o mês corrente.
     hoje = datetime.now().date()
-    primeiro_dia_12meses = (hoje.replace(day=1) - pd.DateOffset(months=11)).date()
+    fim_mes_anterior = hoje.replace(day=1) - timedelta(days=1)
+    primeiro_dia_12meses = (fim_mes_anterior.replace(day=1) - pd.DateOffset(months=11)).date()
 
     try:
         data_inicial = datetime.strptime(request.args.get('data_inicial', ''), '%Y-%m-%d').date()
@@ -966,12 +972,11 @@ def graficos_mensais():
     try:
         data_final = datetime.strptime(request.args.get('data_final', ''), '%Y-%m-%d').date()
     except ValueError:
-        data_final = hoje
+        data_final = fim_mes_anterior
 
     clinica_filtro = request.args.get('clinica') or 'todos'
     classificacao_filtro = request.args.get('classificacao') or 'todos'
     exame_filtro = request.args.get('exame') or 'todos'
-    status_filtro = request.args.get('status') or 'todos'
 
     try:
         conn = get_db_connection()
@@ -1006,24 +1011,25 @@ def graficos_mensais():
             filtros_sql += " AND te.dsc_exame = %s"
             params.append(exame_filtro)
 
+        # Já agrupado por mês × classificação, que é o que os gráficos mostram
+        # (antes vinha uma linha por dia × clínica × classificação × exame, dezenas
+        # de MB para 12 meses). Todos os indicadores pelo mês da solicitação.
         cur.execute(f"""
             SELECT
-                DATE(tes.dat_solicitacao) AS data,
-                tc.dsc_clinica AS clinica,
+                DATE_TRUNC('month', tes.dat_solicitacao)::date AS mes,
                 COALESCE(tec.classificacao, 'SEM CLASSIFICAÇÃO') AS classificacao,
-                te.dsc_exame AS exame,
                 COUNT(*) AS solicitados,
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL) AS baixados,
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS realizados,
-                COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados
+                COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
+                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame
             LEFT JOIN t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
               {filtros_sql}
-            GROUP BY DATE(tes.dat_solicitacao), tc.dsc_clinica, tec.classificacao, te.dsc_exame
-            ORDER BY data, clinica, classificacao, exame
+            GROUP BY 1, 2
         """, params)
         rows = cur.fetchall()
 
@@ -1032,40 +1038,37 @@ def graficos_mensais():
     except Exception as e:
         return render_template('error.html', message=f"Erro ao carregar dados dos gráficos mensais: {e}")
 
-    dados_json = [
-        {
-            'data': r['data'].strftime('%Y-%m-%d') if r['data'] else '',
-            'clinica': r['clinica'],
-            'classificacao': r['classificacao'],
-            'exame': r['exame'],
-            'solicitados': int(r['solicitados']),
-            'baixados': int(r['baixados']),
-            'realizados': int(r['realizados']),
-            'cancelados': int(r['cancelados']),
-        }
-        for r in rows
-    ]
+    metricas = ['solicitados', 'baixados', 'realizados', 'cancelados', 'sem_agendamento']
 
-    total_geral = {
-        'solicitados': sum(d['solicitados'] for d in dados_json),
-        'baixados': sum(d['baixados'] for d in dados_json),
-        'realizados': sum(d['realizados'] for d in dados_json),
-        'cancelados': sum(d['cancelados'] for d in dados_json),
-    }
+    # Todos os meses do período (inclusive os sem nenhum exame), em ordem.
+    meses = []
+    mes = data_inicial.replace(day=1)
+    while mes <= data_final:
+        meses.append(mes)
+        mes = (mes.replace(day=28) + timedelta(days=4)).replace(day=1)
+    idx_mes = {m: i for i, m in enumerate(meses)}
 
-    # Calcula média diária baseada no total de solicitados e número de dias no período
-    dias_no_periodo = max(1, (data_final - data_inicial).days + 1)
-    media_diaria = round(total_geral['solicitados'] / dias_no_periodo, 1)
+    classificacoes_graf = sorted({r['classificacao'] for r in rows})
+    series = {m: {c: [0] * len(meses) for c in classificacoes_graf} for m in metricas}
+    for r in rows:
+        i = idx_mes.get(r['mes'])
+        if i is None:
+            continue
+        for m in metricas:
+            series[m][r['classificacao']][i] += int(r[m])
+
+    total_geral = {m: sum(sum(v) for v in series[m].values()) for m in metricas}
 
     kpis = {
         'total_solicitados': total_geral['solicitados'],
         'total_baixados': total_geral['baixados'],
         'total_realizados': total_geral['realizados'],
         'total_cancelados': total_geral['cancelados'],
-        'media_diaria': media_diaria,
-        'total_clinicas': len(set(d['clinica'] for d in dados_json)),
-        'total_exames': len(set(d['exame'] for d in dados_json)),
+        'total_sem_agendamento': total_geral['sem_agendamento'],
     }
+    # média mensal de cada total (cards de média abaixo dos totais)
+    for chave in list(kpis):
+        kpis[chave.replace('total_', 'media_')] = round(kpis[chave] / max(1, len(meses)), 1)
 
     context = {
         'data_inicial': data_inicial.strftime('%Y-%m-%d'),
@@ -1076,9 +1079,12 @@ def graficos_mensais():
         'clinica_selecionada': clinica_filtro,
         'classificacao_selecionada': classificacao_filtro,
         'exame_selecionado': exame_filtro,
-        'status_selecionado': status_filtro,
         'kpis': kpis,
-        'dados_json': dados_json,
+        'graficos': {
+            'meses': [m.strftime('%m/%Y') for m in meses],
+            'classificacoes': classificacoes_graf,
+            'series': series,
+        },
         'total_geral': total_geral,
     }
 
