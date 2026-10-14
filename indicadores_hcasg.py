@@ -2328,24 +2328,28 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
     # da abertura da triagem, vem com isn_risco nulo; reclassificações geram
     # novos). Usa-se uma classificação por atendimento: a marcada com
     # flg_ultimo = 1 entre as que têm risco, senão a mais recente com risco.
-    por_risco = fetch_all(atend_cte + """
-        , risco_final AS (
-            SELECT DISTINCT ON (tir.isn_internacao)
-                tir.isn_internacao,
-                tir.isn_risco
-            FROM t_internacao_risco tir
-            JOIN atend a ON a.isn_internacao = tir.isn_internacao
-            WHERE tir.isn_risco IS NOT NULL
-            ORDER BY tir.isn_internacao,
-                     COALESCE(tir.flg_ultimo, 0) DESC,
-                     tir.isn_internacao_risco DESC
-        )
-        SELECT rf.isn_risco, COUNT(*) AS qtd
-        FROM atend a
-        LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao
-        GROUP BY rf.isn_risco
-    """, atend_vals)
-    qtd_por_risco = {r["isn_risco"]: int(r["qtd"]) for r in (por_risco or [])}
+    def contar_por_risco(vals):
+        rows = fetch_all(atend_cte + """
+            , risco_final AS (
+                SELECT DISTINCT ON (tir.isn_internacao)
+                    tir.isn_internacao,
+                    tir.isn_risco
+                FROM t_internacao_risco tir
+                JOIN atend a ON a.isn_internacao = tir.isn_internacao
+                WHERE tir.isn_risco IS NOT NULL
+                ORDER BY tir.isn_internacao,
+                         COALESCE(tir.flg_ultimo, 0) DESC,
+                         tir.isn_internacao_risco DESC
+            )
+            SELECT rf.isn_risco, COUNT(*) AS qtd
+            FROM atend a
+            LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao
+            GROUP BY rf.isn_risco
+        """, vals)
+        return {r["isn_risco"]: int(r["qtd"]) for r in (rows or [])}
+
+    qtd_por_risco = contar_por_risco(atend_vals)
+
 
     # Lista todas as classificações de t_risco (mesmo com zero) e, no fim,
     # "Sem classificação", para a tabela ter sempre as mesmas linhas.
@@ -2391,6 +2395,25 @@ DESTINOS_SAIDA_PS = (1, 3, 4, 13)
 DESTINOS_SAIDA_PS_SQL = ", ".join(str(v) for v in DESTINOS_SAIDA_PS)
 
 
+def _montar_clinica_risco(rows, riscos):
+    """Linhas = primeira clínica de internação; colunas = classificações de
+    t_risco + 'Sem classificação'; ordenado do maior total para o menor."""
+    colunas = [(r["isn_risco"], r["dsc_risco"]) for r in (riscos or [])] + [(None, "Sem classificação")]
+    idx = {isn: i for i, (isn, _) in enumerate(colunas)}
+    por_clinica = {}
+    for r in rows or []:
+        valores = por_clinica.setdefault(r["clinica"], [0] * len(colunas))
+        valores[idx.get(r["isn_risco"], len(colunas) - 1)] += int(r["qtd"])
+    linhas = sorted(({"clinica": c, "valores": v, "total": sum(v)} for c, v in por_clinica.items()),
+                    key=lambda x: (-x["total"], x["clinica"]))
+    return {
+        "riscos": [dsc.strip() for _, dsc in colunas],
+        "linhas": linhas,
+        "totais": [sum(l["valores"][i] for l in linhas) for i in range(len(colunas))],
+        "total": sum(l["total"] for l in linhas),
+    }
+
+
 def get_saidas_emergencia(data_ini, data_fim):
     dt_ini = date.fromisoformat(data_ini)
     dt_fim = date.fromisoformat(data_fim)
@@ -2433,6 +2456,88 @@ def get_saidas_emergencia(data_ini, data_fim):
           AND u.ts_saida::date BETWEEN %s AND %s
         GROUP BY 1, 2
     """, [dt_ini, dt_fim, dt_ini, dt_fim])
+
+    # Primeira clínica de internação x classificação de risco, com a MESMA base
+    # das saídas: atendimentos de emergência que saíram no período com destino
+    # 13 (pela data da saída). Cada um é ligado ao próximo registro do mesmo
+    # prontuário quando ele é uma internação (tipo 1), como no LOS com
+    # internação; sem esse vínculo, entra como "Sem internação vinculada" — assim
+    # o total da tabela é igual ao de internações do gráfico de saídas.
+    rows_clinica_risco = fetch_all('''
+        WITH candidatas AS MATERIALIZED (
+            -- só atendimentos com alguma alta no período: o último registro
+            -- de cada um (que define a saída) está entre essas altas
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            JOIN t_internacao ti ON ti.isn_internacao = til.isn_internacao
+            WHERE ti.isn_tipo_atendimento = 2
+              AND COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                           til.dat_alta + til.hor_alta::time)::date BETWEEN %s AND %s
+        ),
+        ultimo_registro AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                til.isn_destino,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                         til.dat_alta + til.hor_alta::time) AS ts_saida
+            FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM candidatas)
+            ORDER BY til.isn_internacao,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                         til.dat_alta + til.hor_alta::time) DESC NULLS LAST,
+                til.isn_internacao_leito DESC
+        ),
+        saidas_internacao AS MATERIALIZED (
+            SELECT u.isn_internacao, ti.dat_cadastro, tp.num_prontuario
+            FROM ultimo_registro u
+            JOIN t_internacao ti ON ti.isn_internacao = u.isn_internacao
+            JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+            WHERE u.isn_destino = 13
+              AND u.ts_saida::date BETWEEN %s AND %s
+        ),
+        proximo AS MATERIALIZED (
+            SELECT DISTINCT ON (si.isn_internacao)
+                si.isn_internacao AS id_emergencia,
+                ti.isn_internacao AS id_internacao,
+                ti.isn_tipo_atendimento
+            FROM saidas_internacao si
+            JOIN t_paciente tp ON tp.num_prontuario = si.num_prontuario
+            JOIN t_internacao ti ON ti.isn_paciente = tp.isn_paciente
+            WHERE ti.dat_cadastro > si.dat_cadastro
+            ORDER BY si.isn_internacao, ti.dat_cadastro, ti.isn_internacao
+        ),
+        vinculadas AS MATERIALIZED (
+            SELECT id_emergencia, id_internacao FROM proximo WHERE isn_tipo_atendimento = 1
+        ),
+        primeira_clinica AS (
+            SELECT DISTINCT ON (til.isn_internacao) til.isn_internacao, tc.dsc_clinica
+            FROM t_internacao_leito til
+            JOIN t_clinica tc ON tc.isn_clinica = til.isn_clinica
+            WHERE til.isn_internacao IN (SELECT id_internacao FROM vinculadas)
+            ORDER BY til.isn_internacao,
+                     COALESCE(til.dat_internacao_info, til.dat_internacao),
+                     til.isn_internacao_leito
+        ),
+        risco_final AS (
+            SELECT DISTINCT ON (tir.isn_internacao) tir.isn_internacao, tir.isn_risco
+            FROM t_internacao_risco tir
+            WHERE tir.isn_internacao IN (SELECT isn_internacao FROM saidas_internacao)
+              AND tir.isn_risco IS NOT NULL
+            ORDER BY tir.isn_internacao, COALESCE(tir.flg_ultimo, 0) DESC, tir.isn_internacao_risco DESC
+        )
+        SELECT
+            CASE WHEN v.id_internacao IS NULL THEN 'Sem internação vinculada'
+                 ELSE COALESCE(TRIM(pc.dsc_clinica), 'Sem movimentação') END AS clinica,
+            rf.isn_risco,
+            COUNT(*) AS qtd
+        FROM saidas_internacao s
+        LEFT JOIN vinculadas v ON v.id_emergencia = s.isn_internacao
+        LEFT JOIN primeira_clinica pc ON pc.isn_internacao = v.id_internacao
+        LEFT JOIN risco_final rf ON rf.isn_internacao = s.isn_internacao
+        GROUP BY 1, 2
+    ''', [dt_ini, dt_fim, dt_ini, dt_fim])
+    internacao_clinica_risco = _montar_clinica_risco(
+        rows_clinica_risco, fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco"))
 
     nomes = {
         int(r["isn_destino"]): r["dsc_destino"]
@@ -2491,6 +2596,7 @@ def get_saidas_emergencia(data_ini, data_fim):
             for dest in DESTINOS_SAIDA_PS
         ],
         "total": sum(sum(v) for v in valores.values()),
+        "internacao_clinica_risco": internacao_clinica_risco,
     }
 
 # ---------------------------------------------------------------------------

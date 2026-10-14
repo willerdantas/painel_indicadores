@@ -573,38 +573,6 @@ header span {
         <div class="unit">minutos</div>
         <div class="icon">👨‍⚕️</div>
       </div>
-      <div class="kpi c4">
-        <div class="label">Giro de Leito PS</div>
-        <div class="value" id="giro_ps">—</div>
-        <div class="unit">saídas PS / leitos PS</div>
-        <div class="icon">🔁</div>
-      </div>
-      <div class="kpi c5">
-        <div class="label">Paciente-dia PS</div>
-        <div class="value" id="paciente_dia_tmp_ps">—</div>
-        <div class="unit">dias</div>
-        <div class="icon">🗓</div>
-      </div>
-      <div class="kpi c6">
-        <div class="label">Saídas PS</div>
-        <div class="value" id="saidas_tmp_ps">—</div>
-        <div class="unit">por destino</div>
-        <div class="kpi-hover-detail" id="saidas_tmp_ps_detalhe">—</div>
-        <div class="icon">↗</div>
-      </div>
-      <div class="kpi c7">
-        <div class="label">TMP Leitos PS</div>
-        <div class="value" id="tmp_ps">—</div>
-        <div class="unit">dias (paciente-dia/saídas)</div>
-        <div class="icon">🛏</div>
-      </div>
-      <div class="kpi c8">
-        <div class="label">Internações PS</div>
-        <div class="value" id="internacoes_ps">—</div>
-        <div class="sub" id="internacoes_ps_sub"></div>
-        <div class="kpi-hover-detail" id="internacoes_detalhe_ps"></div>
-        <div class="icon">🛋</div>
-      </div>
       <div class="kpi c9">
         <div class="label">Leitos Disponíveis PS</div>
         <div class="value" id="leitos_ativos_ps">—</div>
@@ -656,6 +624,7 @@ header span {
       </div>
       <div class="card">
         <h3>Atendimentos por classificação de risco</h3>
+        <div class="atend-resumo" id="resumo_classificados">—</div>
         <table class="tabela-risco">
           <thead>
             <tr><th>Classificação</th><th class="num">Atendimentos</th><th class="num">%</th></tr>
@@ -667,6 +636,20 @@ header span {
             <tr><td>Total</td><td class="num" id="tabela_risco_total">—</td><td class="num">100%</td></tr>
           </tfoot>
         </table>
+      </div>
+      <div class="card full">
+        <h3>Pacientes internados pela emergência: primeira clínica de internação x classificação de risco</h3>
+        <div style="overflow-x:auto;">
+          <table class="tabela-risco" id="tabela_clinica_risco">
+            <thead><tr><th>Primeira clínica</th></tr></thead>
+            <tbody><tr><td>—</td></tr></tbody>
+          </table>
+        </div>
+        <p class="atend-filtros-nota" style="margin-top:.5rem;">
+          Mesma base do gráfico de saídas: atendimentos de emergência que saíram no período com destino internação (13),
+          pela data da saída (o total bate com as internações do gráfico). Cada um é ligado à internação seguinte do mesmo
+          prontuário; sem esse vínculo, entra como "Sem internação vinculada". Não segue os filtros de dia da semana e horário.
+        </p>
       </div>
     </div>
   </div>
@@ -695,6 +678,7 @@ header span {
       </div>
       <div class="card">
         <h3>% de pacientes acima de 24 h na emergência</h3>
+        <div class="atend-resumo" id="resumo_perc_24h">—</div>
         <div class="chart-box"><canvas id="chart_perc_24h"></canvas></div>
       </div>
     </div>
@@ -729,18 +713,6 @@ function setLosSub(id, minutos) {
   const h    = (min / 60).toFixed(1);
   const d    = (min / 1440).toFixed(2);
   el.innerHTML = `${h} horas&nbsp;&nbsp;|&nbsp;&nbsp;${d} dias`;
-}
-
-function setSaidasTmpPsDetalhe(items) {
-  const el = document.getElementById('saidas_tmp_ps_detalhe');
-  if (!items || items.length === 0) { el.textContent = '—'; return; }
-  el.innerHTML = items.map(i => `${i.dsc_destino}: ${i.qtd}`).join('<br>');
-}
-
-function setInternacoesDetalhePs(items) {
-  const el = document.getElementById('internacoes_detalhe_ps');
-  if (!items || items.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = '<b>Por clínica:</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
 }
 
 function setLeitosAtivosPsDetalhe(items) {
@@ -802,6 +774,7 @@ function escapeHtml(s) {
 function renderAtendimentos(d) {
   const fmt = n => Number(n).toLocaleString('pt-BR');
   const fmtNum = n => (n === null || n === undefined) ? '—' : fmt(n);
+
   document.getElementById('atend_resumo').innerHTML =
     `Total no período: <b>${fmt(d.total)}</b> &nbsp;|&nbsp; Média diária do período: <b>${fmtNum(d.media_diaria)}</b> &nbsp;|&nbsp; Mediana diária do período: <b>${fmtNum(d.mediana_diaria)}</b>`;
 
@@ -915,6 +888,42 @@ function renderAtendimentos(d) {
       </tr>`).join('');
   }
   document.getElementById('tabela_risco_total').textContent = fmt(d.total);
+
+  // taxa de pacientes classificados: mesmos números da tabela (com os filtros da seção)
+  const semClassificacao = (d.por_risco || []).filter(r => r.dsc_risco === 'Sem classificação')
+    .reduce((s, r) => s + r.qtd, 0);
+  const classificados = d.total - semClassificacao;
+  document.getElementById('resumo_classificados').innerHTML = d.total
+    ? `Taxa de pacientes classificados: <b>${(classificados / d.total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b>` +
+      ` &nbsp;(${fmt(classificados)} de ${fmt(d.total)} atendimentos)`
+    : 'Taxa de pacientes classificados: —';
+}
+
+// Primeira clínica de internação (linhas) x classificação de risco (colunas)
+function renderClinicaRisco(m) {
+  const fmt = n => Number(n).toLocaleString('pt-BR');
+  const tabela = document.getElementById('tabela_clinica_risco');
+  if (!m || !m.linhas || m.linhas.length === 0) {
+    tabela.querySelector('thead').innerHTML = '<tr><th>Primeira clínica</th></tr>';
+    tabela.querySelector('tbody').innerHTML = '<tr><td>Nenhum paciente internado pela emergência no período.</td></tr>';
+    const pe = tabela.querySelector('tfoot'); if (pe) pe.remove();
+    return;
+  }
+  tabela.querySelector('thead').innerHTML = '<tr><th>Primeira clínica</th>' +
+    m.riscos.map(r => `<th class="num"><span class="risco-dot" style="background:${corRisco(r)}"></span>${escapeHtml(r)}</th>`).join('') +
+    '<th class="num">Total</th><th class="num">%</th></tr>';
+  const pct = v => m.total ? (v / m.total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+  tabela.querySelector('tbody').innerHTML = m.linhas.map(l => `
+    <tr>
+      <td>${escapeHtml(l.clinica)}</td>
+      ${l.valores.map(v => `<td class="num">${v ? fmt(v) : '—'}</td>`).join('')}
+      <td class="num"><b>${fmt(l.total)}</b></td>
+      <td class="num">${pct(l.total)}</td>
+    </tr>`).join('');
+  let pe = tabela.querySelector('tfoot');
+  if (!pe) { pe = document.createElement('tfoot'); tabela.appendChild(pe); }
+  pe.innerHTML = '<tr><td>Total</td>' + m.totais.map(v => `<td class="num">${fmt(v)}</td>`).join('') +
+    `<td class="num">${fmt(m.total)}</td><td class="num">100%</td></tr>`;
 }
 
 function carregarAtendimentos() {
@@ -983,6 +992,40 @@ function montarFiltroDestinos(d) {
   }));
 }
 
+// Escreve os valores no gráfico de saídas: dentro de cada segmento da barra
+// (só quando há altura para o número) e em cima dos pontos da linha de total.
+const pluginRotulosSaidas = {
+  id: 'rotulosSaidas',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const fmt = n => Number(n).toLocaleString('pt-BR');
+    ctx.save();
+    ctx.textAlign = 'center';
+    chart.data.datasets.forEach((ds, i) => {
+      const meta = chart.getDatasetMeta(i);
+      if (meta.hidden) return;
+      meta.data.forEach((el, j) => {
+        const v = ds.data[j];
+        if (!v) return;
+        if (ds.type === 'line') {
+          ctx.font = 'bold 11px "DM Sans", sans-serif';
+          ctx.fillStyle = '#38464D';
+          ctx.textBaseline = 'bottom';
+          ctx.fillText(fmt(v), el.x, el.y - 6);
+        } else {
+          const altura = Math.abs(el.base - el.y);
+          if (altura < 14 || el.width < 16) return;  // segmento pequeno demais para o número
+          ctx.font = '10px "DM Sans", sans-serif';
+          ctx.fillStyle = '#fff';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(fmt(v), el.x, (el.y + el.base) / 2);
+        }
+      });
+    });
+    ctx.restore();
+  }
+};
+
 function renderSaidas() {
   const d = dadosSaidas;
   if (!d) return;
@@ -991,6 +1034,7 @@ function renderSaidas() {
     .map((dest, idx) => ({ ...dest, cor: corDestino(idx) }))
     .filter(dest => !destinosOcultos.has(dest.isn_destino));
   const total = visiveis.reduce((s, dest) => s + dest.total, 0);
+  const totaisDia = d.dias.map((_, i) => visiveis.reduce((s, dest) => s + (dest.valores[i] || 0), 0));
   document.getElementById('saidas_resumo').innerHTML =
     `Total de saídas no período: <b>${fmt(total)}</b>` +
     visiveis.map(dest => ` &nbsp;|&nbsp; ${escapeHtml(dest.dsc_destino)}: <b>${fmt(dest.total)}</b>`).join('');
@@ -1000,18 +1044,28 @@ function renderSaidas() {
     type: 'bar',
     data: {
       labels: d.dias,
-      datasets: visiveis.map(dest => ({
-        label: dest.dsc_destino, data: dest.valores,
-        backgroundColor: dest.cor + 'cc', borderColor: dest.cor, borderWidth: 1, borderRadius: 2,
-        stack: 'saidas'
-      }))
+      datasets: [
+        ...visiveis.map(dest => ({
+          label: dest.dsc_destino, data: dest.valores,
+          backgroundColor: dest.cor + 'cc', borderColor: dest.cor, borderWidth: 1, borderRadius: 2,
+          stack: 'saidas', order: 2
+        })),
+        // linha de total (só dos destinos visíveis); pilha própria para não somar às barras
+        {
+          type: 'line', label: 'Total', data: totaisDia, stack: 'total', order: 1,
+          borderColor: '#38464D', backgroundColor: '#38464D', borderWidth: 2,
+          pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5, tension: 0, fill: false
+        }
+      ]
     },
+    plugins: [pluginRotulosSaidas],
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
         tooltip: {
+          filter: item => item.dataset.type !== 'line',
           callbacks: {
             footer: items => 'Total: ' + fmt(items.reduce((s, i) => s + (i.parsed.y || 0), 0))
           }
@@ -1019,7 +1073,8 @@ function renderSaidas() {
       },
       scales: {
         x: { stacked: true, ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } },
-        y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+        // folga no topo para o valor do total não ser cortado
+        y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(1, ...totaisDia) * 1.12, ticks: { precision: 0 } }
       }
     }
   });
@@ -1077,6 +1132,9 @@ function renderTaxaConversao(d) {
 function renderAcima24h(d) {
   const fmt = n => Number(n).toLocaleString('pt-BR');
   const fmtPct = n => (n === null || n === undefined) ? '—' : Number(n).toLocaleString('pt-BR') + '%';
+  document.getElementById('resumo_perc_24h').innerHTML =
+    `Taxa de permanência &gt; 24 h no período: <b>${fmtPct(d.perc_acima_24h_periodo)}</b>` +
+    ` &nbsp;(${fmt(d.acima_24h_total)} de ${fmt(d.total)} saídas da emergência)`;
   const eixoX = { ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 16 } };
 
   if (chartsAtend.acima24h) chartsAtend.acima24h.destroy();
@@ -1165,6 +1223,7 @@ function carregarSaidas() {
       renderSaidas();
       renderTaxaConversao(dadosSaidas);
       renderAcima24h(dadosSaidas);
+      renderClinicaRisco(dadosSaidas.internacao_clinica_risco);
     })
     .catch(err => {
       loaderOff();
@@ -1207,20 +1266,9 @@ function carregar(){
       set('los_com',      d.los_com);
       setLosSub('los_sem_sub', d.los_sem);
       setLosSub('los_com_sub', d.los_com);
-      set('paciente_dia_tmp_ps', d.paciente_dia_tmp_ps);
-      set('saidas_tmp_ps',       d.saidas_tmp_ps);
-      setSaidasTmpPsDetalhe(d.saidas_tmp_ps_detalhe);
-      set('tmp_ps',       d.tmp_ps);
-      set('giro_ps',      d.giro_ps);
       set('porta_medico', d.porta_medico);
-      set('internacoes_ps', d.internacoes_ps);
-      setInternacoesDetalhePs(d.internacoes_detalhe_ps);
       set('leitos_ativos_ps',  d.leitos_ativos_ps);
       setLeitosAtivosPsDetalhe(d.leitos_ativos_ps_detalhe);
-      const subIPS = document.getElementById('internacoes_ps_sub');
-      if (d.internacoes_ps_media !== null && d.internacoes_ps_media !== undefined) {
-        subIPS.textContent = `Média: ${d.internacoes_ps_media} / dia`;
-      } else { subIPS.textContent = ''; }
     })
     .catch(err => {
       loaderOff();
