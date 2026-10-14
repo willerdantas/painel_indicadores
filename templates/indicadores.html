@@ -340,42 +340,71 @@
                 const media = atualizarMediaIndicador(indicadorSelecionado, dataInicial, dataFinal);
                 const linhaMedia = Array(meses.length).fill(media);
 
+                // valores no formato brasileiro (até 2 casas: há indicadores em taxa)
+                const fmt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+
+                // Resultado mês a mês, com o valor escrito dentro de cada barra
                 const traceBarras = {
                     x: meses,
                     y: resultados,
                     type: 'bar',
                     name: 'Resultado',
-                    marker: { color: '#19b8b0' }
+                    marker: { color: '#19b8b0' },
+                    text: resultados.map(fmt),
+                    textposition: 'inside',
+                    insidetextanchor: 'middle',
+                    textfont: { color: '#fff', size: 12 },
+                    hovertemplate: 'Resultado: %{text}<extra></extra>'
                 };
 
                 const traces = [traceBarras];
 
-                // Adicionar a linha de meta
-                const traceLinhaMeta = {
-                    x: meses,
-                    y: metas,
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    name: 'Meta',
-                    line: { color: '#FF5733', width: 2 }
-                };
-                traces.push(traceLinhaMeta);
+                // Linha de meta: só nos meses com meta diferente de 0 (os demais
+                // ficam vazios); sem nenhuma meta no período, a linha não aparece.
+                // O valor é escrito no primeiro mês e sempre que a meta muda.
+                const metasVisiveis = metas.map(m => (m && Number(m) !== 0) ? Number(m) : null);
+                if (metasVisiveis.some(m => m !== null)) {
+                    traces.push({
+                        x: meses,
+                        y: metasVisiveis,
+                        type: 'scatter',
+                        mode: 'lines+markers+text',
+                        name: 'Meta',
+                        line: { color: '#FF5733', width: 2 },
+                        text: metasVisiveis.map((m, i) => {
+                            if (m === null) return '';
+                            const anterior = metasVisiveis.slice(0, i).reverse().find(v => v !== null);
+                            return anterior === undefined || anterior !== m ? `Meta: ${fmt(m)}` : '';
+                        }),
+                        textposition: 'top center',
+                        textfont: { color: '#FF5733', size: 12 },
+                        customdata: metasVisiveis.map(m => m === null ? '' : fmt(m)),
+                        hovertemplate: 'Meta: %{customdata}<extra></extra>',
+                    });
+                }
 
-                // Adicionar a linha de média
-                const traceLinhaMedia = {
+                // Linha de média: valor na legenda e escrito uma vez, no fim da linha
+                traces.push({
                     x: meses,
                     y: linhaMedia,
                     type: 'scatter',
-                    mode: 'lines',
-                    name: 'Média',
-                    line: { color: '#1E90FF', dash: 'dot', width: 2 }
-                };
-                traces.push(traceLinhaMedia);
+                    mode: 'lines+text',
+                    name: `Média: ${fmt(media)}`,
+                    line: { color: '#1E90FF', dash: 'dot', width: 2 },
+                    text: linhaMedia.map((_, i) => i === linhaMedia.length - 1 ? `Média: ${fmt(media)}` : ''),
+                    textposition: 'top left',
+                    textfont: { color: '#1E90FF', size: 12 },
+                    hovertemplate: `Média: ${fmt(media)}<extra></extra>`
+                });
 
+                // folga no topo para os valores escritos não serem cortados
+                const maiorValor = Math.max(0, ...resultados, ...metasVisiveis.filter(m => m !== null), media);
                 const layout = {
                     title: `Resultado Mensal com Meta e Média - Indicador: ${indicadorSelecionado}`,
                     xaxis: { title: 'Mês' },
-                    yaxis: { title: 'Quantidade' },
+                    yaxis: { title: 'Quantidade', range: [0, (maiorValor || 1) * 1.18] },
+                    separators: ',.',
+                    hovermode: 'x unified',
                     plot_bgcolor: 'rgba(0,0,0,0)',
                     paper_bgcolor: 'rgba(0,0,0,0)',
                     barmode: 'group'
