@@ -28,7 +28,7 @@
             align-items: center;
             justify-content: space-between;
             background: #fff;
-            border-bottom: 3px solid #19b8b0;
+            border-bottom: 3px solid #00A1A2;
             box-shadow: 0 2px 8px rgba(0,0,0,.07);
             padding: 14px 28px;
             margin-bottom: 22px;
@@ -64,7 +64,7 @@
             font-weight: 700;
             letter-spacing: 0.08em;
             text-transform: uppercase;
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
             border: none;
             border-radius: 6px;
@@ -76,6 +76,91 @@
         .header .back-btn:hover {
             background: #007C6B;
         }
+        /* Resumo abaixo do gráfico de Produção Mensal */
+        .resumo-producao {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px 28px;
+            margin-top: 12px;
+            font-size: 1.05rem;
+            color: #38464D;
+        }
+        .resumo-producao b { color: #00A1A2; }
+        /* Gráficos empilhados: legenda própria em lista ao lado do gráfico,
+           com todos os itens (cresce em altura, sem barra de rolagem) */
+        .grafico-com-legenda {
+            display: flex;
+            align-items: flex-start;
+            gap: 16px;
+        }
+        .grafico-com-legenda .grafico-area { flex: 1 1 auto; min-width: 0; }
+        .legenda-grafico {
+            flex: 0 0 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            padding-top: 20px;
+        }
+        .legenda-item {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            width: 100%;
+            background: none;
+            border: none;
+            border-bottom: 1px solid #f0f4f5;
+            padding: 3px 2px;
+            font: inherit;
+            font-size: 0.82rem;
+            color: #38464D;
+            cursor: pointer;
+            text-align: left;
+        }
+        /* exames: muitos itens, então a lista rola dentro da altura do gráfico */
+        #legenda-exames {
+            max-height: 450px;
+            overflow-y: auto;
+            padding-top: 0;
+            margin-top: 20px;
+            padding-right: 6px;
+        }
+        /* a linha Total fica sempre visível no rodapé da lista que rola */
+        #legenda-exames .legenda-item.total {
+            position: sticky;
+            bottom: 0;
+            background: #fff;
+            border-top: 1px solid #dde4e6;
+        }
+        .legenda-item:hover { background: #E0F3F3; }
+        .legenda-item.total { font-weight: 700; border-bottom: none; margin-top: 4px; }
+        .legenda-item.oculto { opacity: 0.35; }
+        .legenda-item.oculto .legenda-nome { text-decoration: line-through; }
+        .legenda-cor { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+        .legenda-cor.linha { height: 3px; border-radius: 0; }
+        .legenda-nome { flex: 1; overflow-wrap: anywhere; }
+        .legenda-valor { font-variant-numeric: tabular-nums; white-space: nowrap; font-weight: 600; color: #007C6B; }
+        @media (max-width: 900px) {
+            .grafico-com-legenda { flex-direction: column; }
+            .legenda-grafico { flex-basis: auto; width: 100%; padding-top: 0; }
+        }
+        /* Botões de relatório (PDF / XLSX) */
+        .acoes-relatorio { display: flex; gap: 8px; margin-right: 10px; }
+        .btn-relatorio {
+            font-family: 'Syne', sans-serif;
+            font-size: 0.75rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            background: #fff;
+            color: #007C6B;
+            border: 2px solid #00A1A2;
+            border-radius: 6px;
+            padding: 8px 14px;
+            cursor: pointer;
+            white-space: nowrap;
+            transition: background 0.2s, color 0.2s;
+        }
+        .btn-relatorio:hover { background: #00A1A2; color: #fff; }
+        .btn-relatorio:disabled { opacity: 0.6; cursor: wait; }
         .page-content {
             padding: 0 28px;
         }
@@ -112,7 +197,7 @@
             white-space: nowrap;
         }
         .filter-actions .btn-apply {
-            background: #19b8b0;
+            background: #00A1A2;
             color: #fff;
         }
         .filter-actions .btn-apply:hover {
@@ -153,7 +238,7 @@
             outline: none;
         }
         select:focus, input[type="date"]:focus {
-            border-color: #19b8b0;
+            border-color: #00A1A2;
         }
         ul.checkbox-list {
             list-style: none;
@@ -183,9 +268,9 @@
             text-align: center;
             color: #fff;
         }
-        .kpi-box:nth-child(1) { background: #19b8b0; }
-        .kpi-box:nth-child(2) { background: #1a7a6e; }
-        .kpi-box:nth-child(3) { background: #e07b39; }
+        .kpi-box:nth-child(1) { background: #00A1A2; }
+        .kpi-box:nth-child(2) { background: #007C6B; }
+        .kpi-box:nth-child(3) { background: #EB600A; }
         .kpi-box h5 {
             font-family: 'DM Sans', sans-serif;
             font-size: 0.85rem;
@@ -292,7 +377,7 @@
         }
         th {
             background: #f0f4f5;
-            color: #19b8b0;
+            color: #00A1A2;
             font-family: 'Syne', sans-serif;
             font-weight: 700;
             letter-spacing: 0.03em;
@@ -304,19 +389,64 @@
             border-bottom: 1px solid #dde4e6;
         }
         tr.servico-row td:first-child, tr.exame-row td:first-child {
-            color: #19b8b0;
+            color: #00A1A2;
             font-weight: bold;
+        }
+        /* Matriz de exames: o nome do exame/procedimento quebra em várias
+           linhas e a tabela ocupa só a largura disponível (sem rolagem). */
+        #matriz-exames {
+            display: table;
+            table-layout: auto;
+            width: 100%;
+            overflow-x: visible;
+        }
+        #matriz-exames th,
+        #matriz-exames td {
+            white-space: normal;
+            padding: 6px 5px;
+            font-size: 0.85rem;
+        }
+        /* coluna do nome: por classe, e não :first-child — na 2ª linha do
+           cabeçalho o primeiro filho é o primeiro mês (o nome ocupa 2 linhas) */
+        #matriz-exames .col-rotulo {
+            text-align: left;
+            min-width: 160px;
+            max-width: 260px;
+            overflow-wrap: anywhere;
+            word-break: break-word;
+            hyphens: auto;
+        }
+        #matriz-exames td:not(:first-child) {
+            font-variant-numeric: tabular-nums;
+        }
+        /* Cabeçalho das matrizes: ano em cima, meses e total do ano embaixo */
+        #matriz-servicos th.th-ano,
+        #matriz-exames th.th-ano {
+            background: #00A1A2;
+            color: #fff;
+            text-align: center;
+        }
+        #matriz-servicos th.th-total-ano,
+        #matriz-exames th.th-total-ano {
+            background: #E0F3F3;
+            color: #007C6B;
+        }
+        #matriz-servicos td.td-media,
+        #matriz-exames td.td-media {
+            color: #2E758C;
+            font-style: italic;
+            font-variant-numeric: tabular-nums;
         }
         /* Barra de rolagem customizada para tabelas */
         table::-webkit-scrollbar {
             height: 8px;
         }
         table::-webkit-scrollbar-thumb {
-            background: #b2dfdb;
+            background: #CCEBEB;
             border-radius: 4px;
         }
         table::-webkit-scrollbar-track {
-            background: #e0f2f1;
+            background: #E0F3F3;
         }
         /* Corrige sobreposição em telas pequenas */
         @media (max-width: 900px) {
@@ -370,7 +500,7 @@
         }
         .loader-ring svg circle {
             fill: none;
-            stroke: #19b8b0;
+            stroke: #00A1A2;
             stroke-width: 4;
             stroke-linecap: round;
             stroke-dasharray: 200;
@@ -399,6 +529,10 @@
             <div class="header-left">
                 <h2>Produção Hospitalar Consolidada</h2>
                 <p>Painel de acompanhamento da produção hospitalar consolidada</p>
+            </div>
+            <div class="acoes-relatorio">
+                <button type="button" id="btn-relatorio-pdf" class="btn-relatorio">📄 Relatório PDF</button>
+                <button type="button" id="btn-relatorio-xlsx" class="btn-relatorio">📊 Planilha (XLSX)</button>
             </div>
             <button id="back-button" class="back-btn">Voltar ao Início</button>
             <div class="header-logos">
@@ -527,14 +661,24 @@
             <div class="chart-container">
                 <h4>Produção Mensal</h4>
                 <div id="line-chart"></div>
+                <div class="resumo-producao">
+                    <span>Total de exames: <b id="producao-total">0</b></span>
+                    <span>Média mensal: <b id="producao-media">0</b></span>
+                    <span>Mediana mensal: <b id="producao-mediana">0</b></span>
+                </div>
             </div>
         </div>
         <div class="content">
             <div class="chart-container">
                 <h4>Quantitativo por Serviço Mês a Mês</h4>
-                <div id="stacked-bar-servico-chart"></div>
-                <div style="margin-top: 12px; font-weight: bold; color: #19b8b0; font-size: 1.1rem;">
-                    Total no período: <span id="total-servicos-periodo">0</span>
+                <div class="grafico-com-legenda">
+                    <div id="stacked-bar-servico-chart" class="grafico-area"></div>
+                    <div class="legenda-grafico" id="legenda-servicos"></div>
+                </div>
+                <div class="resumo-producao">
+                    <span>Total no período: <b id="total-servicos-periodo">0</b></span>
+                    <span>Média mensal: <b id="media-servicos-periodo">0</b></span>
+                    <span>Mediana mensal: <b id="mediana-servicos-periodo">0</b></span>
                 </div>
             </div>
         </div>
@@ -555,9 +699,14 @@
         <div class="content">
             <div class="chart-container">
                 <h4>Quantitativo por Exame Mês a Mês</h4>
-                <div id="stacked-bar-chart"></div>
-                <div style="margin-top: 12px; font-weight: bold; color: #19b8b0; font-size: 1.1rem;">
-                    Total no período: <span id="total-exames-periodo">0</span>
+                <div class="grafico-com-legenda">
+                    <div id="stacked-bar-chart" class="grafico-area"></div>
+                    <div class="legenda-grafico" id="legenda-exames"></div>
+                </div>
+                <div class="resumo-producao">
+                    <span>Total no período: <b id="total-exames-periodo">0</b></span>
+                    <span>Média mensal: <b id="media-exames-periodo">0</b></span>
+                    <span>Mediana mensal: <b id="mediana-exames-periodo">0</b></span>
                 </div>
             </div>
         </div>
@@ -587,6 +736,11 @@
     </div>
 
     <script>
+        // Paleta da instituição: cores principais e, depois, as variações.
+        // Usada como sequência de cores (colorway) em todos os gráficos.
+        const PALETA = ['#00A1A2', '#EB600A', '#00B2C9', '#007C6B', '#F3A133',
+                        '#3BB5A3', '#2E758C', '#F7975B', '#0F9688', '#53B7D9'];
+
         const dadosMensais = JSON.parse('{{ dados_json|tojson|safe }}') || [];
 
         // Funções utilitárias
@@ -693,19 +847,56 @@
                 const chave = formatarDataMesAno(item['Mês Referência']);
                 agrupamento[chave] = (agrupamento[chave] || 0) + item['Quantidade'];
             });
-            const datasOrdenadas = Object.keys(agrupamento).sort((a, b) => new Date(a) - new Date(b));
+            // ordena por ano e mês ("MM/AAAA" não é um formato de data confiável no new Date)
+            const chaveOrdem = k => { const [m, a] = k.split('/').map(Number); return a * 12 + m; };
+            const datasOrdenadas = Object.keys(agrupamento).sort((a, b) => chaveOrdem(a) - chaveOrdem(b));
             const quantidades = datasOrdenadas.map(k => agrupamento[k]);
+
+            // total, média e mediana mensais dos meses exibidos
+            const total = quantidades.reduce((s, v) => s + v, 0);
+            const media = quantidades.length ? total / quantidades.length : 0;
+            const ordenadas = [...quantidades].sort((a, b) => a - b);
+            const meio = Math.floor(ordenadas.length / 2);
+            const mediana = !ordenadas.length ? 0
+                : ordenadas.length % 2 ? ordenadas[meio] : (ordenadas[meio - 1] + ordenadas[meio]) / 2;
+            const fmt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+            const linhaHorizontal = (valor, nome, cor, traco) => ({
+                x: datasOrdenadas, y: datasOrdenadas.map(() => valor),
+                name: `${nome}: ${fmt(valor)}`, type: 'scatter', mode: 'lines',
+                line: { color: cor, width: 2, dash: traco },
+                hovertemplate: `${nome}: ${fmt(valor)}<extra></extra>`,
+            });
+
             Plotly.react('line-chart', [{
                 x: datasOrdenadas,
                 y: quantidades,
+                name: 'Produção',
                 type: 'scatter',
-                mode: 'lines+markers',
-                line: { shape: 'linear', color: '#19b8b0' }
-            }], {
+                mode: 'lines+markers+text',
+                text: quantidades.map(fmt),
+                textposition: 'top center',
+                textfont: { size: 11, color: '#38464D' },
+                line: { shape: 'linear', color: '#00A1A2', width: 3 },
+                marker: { color: '#00A1A2', size: 7 },
+                hovertemplate: '%{x}: %{y:,}<extra></extra>',
+            },
+                linhaHorizontal(media, 'Média', '#EB600A', 'dash'),
+                linhaHorizontal(mediana, 'Mediana', '#2E758C', 'dot'),
+            ], {
                 title: 'Produção Mensal',
+                colorway: PALETA,
+                separators: ',.',
+                // folga no topo para os valores escritos sobre os pontos
+                yaxis: { range: [0, Math.max(1, ...quantidades) * 1.15], gridcolor: '#e0e0e0', tickformat: ',d' },
+                legend: { orientation: 'h', y: -0.2, x: 0.5, xanchor: 'center' },
+                hovermode: 'x unified',
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             });
+
+            document.getElementById('producao-total').textContent = fmt(total);
+            document.getElementById('producao-media').textContent = fmt(media);
+            document.getElementById('producao-mediana').textContent = fmt(mediana);
         }
 
         function atualizarGraficoPizza() {
@@ -721,6 +912,7 @@
                 hole: 0.4
             }], {
                 title: 'Distribuição por Serviço',
+                piecolorway: PALETA,
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             });
@@ -738,404 +930,141 @@
                 type: 'bar'
             }], {
                 title: 'Quantidade por Tipo de Procedimento',
+                colorway: PALETA,
                 plot_bgcolor: 'rgba(0,0,0,0)',
                 paper_bgcolor: 'rgba(0,0,0,0)'
             });
         }
 
-        function atualizarGraficoBarrasEmpilhadas() {
+        // Barras empilhadas por mês (uma série por exame ou por serviço) com a
+        // linha de total. Mostra os valores nas barras, total/média/mediana
+        // mensais abaixo do gráfico e uma legenda própria, que quebra em várias
+        // linhas em vez de rolar como a do Plotly.
+        function desenharGraficoEmpilhado(graficoId, prefixo, campoGrupo) {
             const dadosFiltrados = filtrarDados();
-
-            // Agrupamento por exame e mês
             const agrupamento = {};
             const totalPorMes = {};
-            let totalPeriodo = 0;
             dadosFiltrados.forEach(item => {
-                const exame = item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+                const grupo = campoGrupo(item);
                 const mesAno = formatarDataMesAno(item['Mês Referência']);
-                if (!agrupamento[mesAno]) agrupamento[mesAno] = {};
-                agrupamento[mesAno][exame] = (agrupamento[mesAno][exame] || 0) + item['Quantidade'];
+                agrupamento[mesAno] ||= {};
+                agrupamento[mesAno][grupo] = (agrupamento[mesAno][grupo] || 0) + item['Quantidade'];
                 totalPorMes[mesAno] = (totalPorMes[mesAno] || 0) + item['Quantidade'];
-                totalPeriodo += item['Quantidade'];
             });
 
-            // Eixo X: meses ordenados
-            const meses = Object.keys(agrupamento).sort((a, b) => {
-                const [ma, ya] = a.split('/').map(Number);
-                const [mb, yb] = b.split('/').map(Number);
-                return new Date(ya, ma - 1) - new Date(yb, mb - 1);
+            const chaveOrdem = k => { const [m, a] = k.split('/').map(Number); return a * 12 + m; };
+            const meses = Object.keys(agrupamento).sort((a, b) => chaveOrdem(a) - chaveOrdem(b));
+            const grupos = Array.from(new Set([].concat(...Object.values(agrupamento).map(o => Object.keys(o)))))
+                .sort((a, b) => a.localeCompare(b, 'pt-BR'));
+            const fmt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+            const cor = i => PALETA[i % PALETA.length];
+
+            // sem números nos segmentos: o total de cada item fica na legenda ao lado
+            const totalGrupo = {};
+            const data = grupos.map((grupo, i) => {
+                const y = meses.map(m => agrupamento[m]?.[grupo] || 0);
+                totalGrupo[grupo] = y.reduce((t, v) => t + v, 0);
+                return {
+                    x: meses, y, name: grupo, type: 'bar',
+                    marker: { color: cor(i), line: { width: 1, color: '#fff' } },
+                    hovertemplate: `${grupo}: %{y:,}<extra></extra>`,
+                };
             });
-
-            // Eixo Y: exames únicos ordenados
-            const exames = Array.from(
-                new Set(
-                    [].concat(...Object.values(agrupamento).map(obj => Object.keys(obj)))
-                )
-            ).sort();
-
-            // Monta as séries (cada exame é uma barra empilhada)
-            const data = exames.map(exame => ({
-                x: meses,
-                y: meses.map(m => agrupamento[m]?.[exame] || 0),
-                name: exame,
-                type: 'bar',
-                marker: {
-                    line: { width: 1, color: '#fff' }
-                }
-            }));
-
-            // Trace para total (linha)
+            const totais = meses.map(m => totalPorMes[m] || 0);
             data.push({
-                x: meses,
-                y: meses.map(m => totalPorMes[m] || 0),
-                name: 'Total',
-                type: 'scatter',
-                mode: 'lines+markers+text',
-                line: { color: '#19b8b0', width: 3 },
-                marker: { color: '#19b8b0', size: 8 },
-                text: meses.map(m => totalPorMes[m] > 0 ? totalPorMes[m] : ''),
-                textposition: 'top center',
-                hoverinfo: 'x+y+name'
+                x: meses, y: totais, name: 'Total', type: 'scatter', mode: 'lines+markers+text',
+                line: { color: '#38464D', width: 3 }, marker: { color: '#38464D', size: 8 },
+                text: totais.map(v => v ? fmt(v) : ''), textposition: 'top center',
+                textfont: { size: 12, color: '#38464D' },
+                hovertemplate: '<b>Total: %{y:,}</b><extra></extra>',
             });
 
-            document.getElementById('total-exames-periodo').textContent = totalPeriodo.toLocaleString('pt-BR');
+            // total, média e mediana mensais (dos totais de cada mês exibido)
+            const totalPeriodo = totais.reduce((t, v) => t + v, 0);
+            const media = totais.length ? totalPeriodo / totais.length : 0;
+            const ord = [...totais].sort((a, b) => a - b), meio = Math.floor(ord.length / 2);
+            const mediana = !ord.length ? 0 : ord.length % 2 ? ord[meio] : (ord[meio - 1] + ord[meio]) / 2;
+            document.getElementById(`total-${prefixo}-periodo`).textContent = fmt(totalPeriodo);
+            document.getElementById(`media-${prefixo}-periodo`).textContent = fmt(media);
+            document.getElementById(`mediana-${prefixo}-periodo`).textContent = fmt(mediana);
 
-            Plotly.react('stacked-bar-chart', data, {
+            Plotly.react(graficoId, data, {
                 title: '',
                 barmode: 'stack',
-                xaxis: {
-                    title: '',
-                    tickangle: -45,
-                    tickfont: { size: 13, color: '#666' },
-                    showgrid: false,
-                    zeroline: false
-                },
-                yaxis: {
-                    title: '',
-                    gridcolor: '#e0e0e0',
-                    zeroline: false,
-                    tickfont: { size: 13, color: '#666' }
-                },
+                colorway: PALETA,
+                separators: ',.',
+                showlegend: false,  // legenda própria (lista ao lado do gráfico)
+                xaxis: { title: '', tickangle: -45, tickfont: { size: 13, color: '#666' }, showgrid: false, zeroline: false },
+                yaxis: { title: '', gridcolor: '#e0e0e0', zeroline: false, tickfont: { size: 13, color: '#666' },
+                         tickformat: ',d', range: [0, Math.max(1, ...totais) * 1.12] },
                 plot_bgcolor: '#fff',
                 paper_bgcolor: '#fff',
-                legend: {
-                    orientation: 'v',
-                    x: 1.02,
-                    y: 1,
-                    xanchor: 'left',
-                    yanchor: 'top',
-                    font: { size: 13 }
-                },
                 hovermode: 'x unified',
-                margin: { l: 40, r: 20, t: 20, b: 60 }
-            }, {
-                responsive: true
-            });
+                margin: { l: 50, r: 20, t: 20, b: 60 }
+            }, { responsive: true });
+
+            // legenda: lista ao lado do gráfico, com todos os itens (sem rolagem) e o
+            // total de cada um no período; clique esconde/mostra a série
+            const legenda = document.getElementById(`legenda-${prefixo}`);
+            const itens = [...grupos.map((g, i) => ({ nome: g, cor: cor(i), idx: i, valor: totalGrupo[g] })),
+                           { nome: 'Total', cor: '#38464D', idx: grupos.length, valor: totalPeriodo, linha: true }];
+            legenda.innerHTML = itens.map(it => `
+                <button type="button" class="legenda-item${it.linha ? ' total' : ''}" data-idx="${it.idx}" title="Clique para mostrar/ocultar">
+                    <span class="legenda-cor${it.linha ? ' linha' : ''}" style="background:${it.cor}"></span>
+                    <span class="legenda-nome">${it.nome}</span>
+                    <span class="legenda-valor">${fmt(it.valor)}</span>
+                </button>`).join('');
+            legenda.onclick = e => {
+                const btn = e.target.closest('.legenda-item');
+                if (!btn) return;
+                const oculto = btn.classList.toggle('oculto');
+                Plotly.restyle(graficoId, { visible: oculto ? 'legendonly' : true }, [Number(btn.dataset.idx)]);
+            };
+        }
+
+        function atualizarGraficoBarrasEmpilhadas() {
+            desenharGraficoEmpilhado('stacked-bar-chart', 'exames',
+                item => item['Exame/Procedimento'] ?? item['Exame'] ?? '');
         }
 
         function atualizarGraficoBarrasEmpilhadasServico() {
-            const dadosFiltrados = filtrarDados();
-
-            // Agrupamento por serviço e mês
-            const agrupamento = {};
-            const totalPorMes = {};
-            let totalPeriodo = 0;
-            dadosFiltrados.forEach(item => {
-                const servico = item['Serviço'] ?? item['serviço'] ?? '';
-                const mesAno = formatarDataMesAno(item['Mês Referência']);
-                if (!agrupamento[mesAno]) agrupamento[mesAno] = {};
-                agrupamento[mesAno][servico] = (agrupamento[mesAno][servico] || 0) + item['Quantidade'];
-                totalPorMes[mesAno] = (totalPorMes[mesAno] || 0) + item['Quantidade'];
-                totalPeriodo += item['Quantidade'];
-            });
-
-            // Eixo X: meses ordenados
-            const meses = Object.keys(agrupamento).sort((a, b) => {
-                const [ma, ya] = a.split('/').map(Number);
-                const [mb, yb] = b.split('/').map(Number);
-                return new Date(ya, ma - 1) - new Date(yb, mb - 1);
-            });
-
-            // Eixo Y: serviços únicos ordenados
-            const servicos = Array.from(
-                new Set(
-                    [].concat(...Object.values(agrupamento).map(obj => Object.keys(obj)))
-                )
-            ).sort();
-
-            // Monta as séries (cada serviço é uma barra empilhada)
-            const data = servicos.map(servico => ({
-                x: meses,
-                y: meses.map(m => agrupamento[m]?.[servico] || 0),
-                name: servico,
-                type: 'bar',
-                marker: {
-                    line: { width: 1, color: '#fff' }
-                }
-            }));
-
-            // Trace para total (linha)
-            data.push({
-                x: meses,
-                y: meses.map(m => totalPorMes[m] || 0),
-                name: 'Total',
-                type: 'scatter',
-                mode: 'lines+markers+text',
-                line: { color: '#19b8b0', width: 3 },
-                marker: { color: '#19b8b0', size: 8 },
-                text: meses.map(m => totalPorMes[m] > 0 ? totalPorMes[m] : ''),
-                textposition: 'top center',
-                hoverinfo: 'x+y+name'
-            });
-
-            document.getElementById('total-servicos-periodo').textContent = totalPeriodo.toLocaleString('pt-BR');
-
-            Plotly.react('stacked-bar-servico-chart', data, {
-                title: '',
-                barmode: 'stack',
-                xaxis: {
-                    title: '',
-                    tickangle: -45,
-                    tickfont: { size: 13, color: '#666' },
-                    showgrid: false,
-                    zeroline: false
-                },
-                yaxis: {
-                    title: '',
-                    gridcolor: '#e0e0e0',
-                    zeroline: false,
-                    tickfont: { size: 13, color: '#666' }
-                },
-                plot_bgcolor: '#fff',
-                paper_bgcolor: '#fff',
-                legend: {
-                    orientation: 'v',
-                    x: 1.02,
-                    y: 1,
-                    xanchor: 'left',
-                    yanchor: 'top',
-                    font: { size: 13 }
-                },
-                hovermode: 'x unified',
-                margin: { l: 40, r: 20, t: 20, b: 60 }
-            }, {
-                responsive: true
-            });
+            desenharGraficoEmpilhado('stacked-bar-servico-chart', 'servicos',
+                item => item['Serviço'] ?? item['serviço'] ?? '');
         }
 
         // Matrizes
+        // Desenha uma matriz: cabeçalho em duas linhas (ano em cima; meses e o
+        // total do ano embaixo), colunas Total e Média no fim.
+        function renderizarMatriz(tabelaId, m, classeLinha) {
+            const fmt = v => Number(v).toLocaleString('pt-BR');
+            const fmtMedia = v => Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+            const linhaAnos = m.anos.map(a => `<th colspan="${a.meses.length + 2}" class="th-ano">${a.ano}</th>`).join('');
+            const linhaMeses = m.anos.map(a =>
+                a.meses.map(mm => `<th>${NOMES_MESES[parseInt(mm, 10) - 1]}</th>`).join('') +
+                `<th class="th-total-ano">Total</th><th class="th-total-ano">Média</th>`).join('');
+            document.querySelector(`#${tabelaId} thead`).innerHTML = `
+                <tr><th rowspan="2" class="col-rotulo">${m.cabecalho[0]}</th>${linhaAnos}<th rowspan="2">Total</th><th rowspan="2">Média</th></tr>
+                <tr>${linhaMeses}</tr>`;
+
+            const tbody = document.querySelector(`#${tabelaId} tbody`);
+            if (!m.linhas.length) {
+                tbody.innerHTML = `<tr><td colspan="${m.cabecalho.length}" style="text-align:center;color:#999;">Nenhum dado para os filtros selecionados.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = m.linhas.map(l => `<tr class="${classeLinha}">` + l.map((v, k) => {
+                if (k === 0) return `<td class="col-rotulo"><b>${v}</b></td>`;
+                const tipo = m.colunas[k - 1].tipo;
+                if (tipo === 'media_ano' || tipo === 'media') return `<td class="td-media">${fmtMedia(v)}</td>`;
+                return `<td>${tipo === 'mes' ? fmt(v) : `<b>${fmt(v)}</b>`}</td>`;  // totais em negrito
+            }).join('') + '</tr>').join('');
+        }
+
         function atualizarMatrizServicos() {
-            const dadosFiltrados = filtrarDados();
-
-            // Determina meses e anos do período selecionado (datas inicial/final)
-            const meses = [];
-            const anos = [];
-            const dataInicial = getDataInicial();
-            const dataFinal = getDataFinal();
-            if (dataInicial && dataFinal) {
-                let d = new Date(dataInicial.getFullYear(), dataInicial.getMonth(), 1);
-                const end = new Date(dataFinal.getFullYear(), dataFinal.getMonth(), 1);
-                let anoAtual = null;
-                while (d <= end) {
-                    const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                    meses.push(mesAno);
-                    if (anoAtual !== d.getFullYear()) {
-                        anos.push(d.getFullYear());
-                        anoAtual = d.getFullYear();
-                    }
-                    d.setMonth(d.getMonth() + 1);
-                }
-            }
-
-            // Aplica filtro de serviços selecionados
-            let servicosSelecionados = getServicosSelecionados().filter(s => !!s && s !== 'todos');
-            if (!servicosSelecionados.length) {
-                servicosSelecionados = Array.from(new Set(
-                    dadosFiltrados
-                        .map(item => (item['Serviço'] ?? item['serviço'] ?? ''))
-                        .filter(s => !!s)
-                ));
-            }
-
-            // Monta o cabeçalho da tabela
-            const headRow = document.getElementById('matriz-servicos-head');
-            while (headRow.children.length > 0) headRow.removeChild(headRow.children[0]);
-            const thServico = document.createElement('th');
-            thServico.textContent = 'Serviço';
-            headRow.appendChild(thServico);
-
-            // Adiciona colunas de cada mês e total do ano
-            let anoAnterior = null;
-            meses.forEach((mes, idx) => {
-                const [mesNum, anoNum] = mes.split('/');
-                const th = document.createElement('th');
-                th.textContent = mes;
-                headRow.appendChild(th);
-
-                // Se é o último mês do ano ou o último mês do período, adiciona coluna de total do ano
-                const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
-                if (anoNum !== proximoAno) {
-                    const thAno = document.createElement('th');
-                    thAno.textContent = `Total ${anoNum}`;
-                    headRow.appendChild(thAno);
-                }
-            });
-            // Adiciona coluna de total geral
-            const thTotal = document.createElement('th');
-            thTotal.textContent = 'Total';
-            headRow.appendChild(thTotal);
-
-            // Agrupa por serviço, mês e ano
-            const agrupamento = {};
-            dadosFiltrados.forEach(item => {
-                let servico = item['Serviço'];
-                if (servico === undefined || servico === null || servico === '') servico = item['serviço'] || '';
-                if (!servico) return;
-                const dataRef = item['Mês Referência'] || item['Mês Referncia'];
-                const d = dataRef ? new Date(dataRef) : null;
-                if (!d || isNaN(d)) return;
-                const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                const ano = d.getFullYear();
-                if (!agrupamento[servico]) agrupamento[servico] = { meses: {}, anos: {}, total: 0 };
-                agrupamento[servico].meses[mesAno] = (agrupamento[servico].meses[mesAno] ?? 0) + (item['Quantidade'] ?? 0);
-                agrupamento[servico].anos[ano] = (agrupamento[servico].anos[ano] ?? 0) + (item['Quantidade'] ?? 0);
-                agrupamento[servico].total += (item['Quantidade'] ?? 0);
-            });
-
-            // Monta o corpo da tabela
-            const tbody = document.querySelector('#matriz-servicos tbody');
-            tbody.innerHTML = '';
-            servicosSelecionados.forEach(servico => {
-                const valores = agrupamento[servico];
-                if (!valores || valores.total === 0) return;
-                let linha = `<td><b>${servico}</b></td>`;
-                let anoAcumulado = 0;
-                let anoAtual = null;
-                meses.forEach((mes, idx) => {
-                    const [mesNum, anoNum] = mes.split('/');
-                    const qtd = valores.meses[mes] ? valores.meses[mes] : 0;
-                    linha += `<td>${qtd.toLocaleString()}</td>`;
-                    if (anoAtual === null) anoAtual = anoNum;
-                    anoAcumulado += qtd;
-                    const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
-                    if (anoNum !== proximoAno) {
-                        linha += `<td><b>${valores.anos[parseInt(anoNum)] ? valores.anos[parseInt(anoNum)].toLocaleString() : '0'}</b></td>`;
-                        anoAcumulado = 0;
-                        anoAtual = proximoAno;
-                    }
-                });
-                linha += `<td><b>${valores.total ? valores.total.toLocaleString() : '0'}</b></td>`;
-                const tr = document.createElement('tr');
-                tr.classList.add('servico-row');
-                tr.innerHTML = linha;
-                tbody.appendChild(tr);
-            });
+            renderizarMatriz('matriz-servicos', montarMatriz(filtrarDados(), campoServico, 'Serviço'), 'servico-row');
         }
 
         function atualizarMatrizExames() {
-            const dadosFiltrados = filtrarDados();
-
-            // Determina meses e anos do período selecionado (datas inicial/final)
-            const meses = [];
-            const anos = [];
-            const dataInicial = getDataInicial();
-            const dataFinal = getDataFinal();
-            if (dataInicial && dataFinal) {
-                let d = new Date(dataInicial.getFullYear(), dataInicial.getMonth(), 1);
-                const end = new Date(dataFinal.getFullYear(), dataFinal.getMonth(), 1);
-                let anoAtual = null;
-                while (d <= end) {
-                    const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                    meses.push(mesAno);
-                    if (anoAtual !== d.getFullYear()) {
-                        anos.push(d.getFullYear());
-                        anoAtual = d.getFullYear();
-                    }
-                    d.setMonth(d.getMonth() + 1);
-                }
-            }
-
-            // Aplica filtro de exames selecionados
-            let examesSelecionados = getExamesSelecionados().filter(e => !!e && e !== 'todos');
-            if (!examesSelecionados.length) {
-                examesSelecionados = Array.from(new Set(
-                    dadosFiltrados
-                        .map(item => (item['Exame/Procedimento'] ?? item['Exame'] ?? ''))
-                        .filter(e => !!e)
-                ));
-            }
-
-            // Monta o cabeçalho da tabela
-            const headRow = document.getElementById('matriz-exames-head');
-            while (headRow.children.length > 0) headRow.removeChild(headRow.children[0]);
-            const thExame = document.createElement('th');
-            thExame.textContent = 'Exame / Procedimento';
-            headRow.appendChild(thExame);
-
-            // Adiciona colunas de cada mês e total do ano
-            meses.forEach((mes, idx) => {
-                const [mesNum, anoNum] = mes.split('/');
-                const th = document.createElement('th');
-                th.textContent = mes;
-                headRow.appendChild(th);
-
-                const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
-                if (anoNum !== proximoAno) {
-                    const thAno = document.createElement('th');
-                    thAno.textContent = `Total ${anoNum}`;
-                    headRow.appendChild(thAno);
-                }
-            });
-            // Adiciona coluna de total geral
-            const thTotal = document.createElement('th');
-            thTotal.textContent = 'Total';
-            headRow.appendChild(thTotal);
-
-            // Agrupa por exame, mês e ano
-            const agrupamento = {};
-            dadosFiltrados.forEach(item => {
-                let exame = item['Exame/Procedimento'];
-                if (exame === undefined || exame === null || exame === '') exame = item['Exame'] || '';
-                if (!exame) return;
-                const dataRef = item['Mês Referência'] || item['Mês Referncia'];
-                const d = dataRef ? new Date(dataRef) : null;
-                if (!d || isNaN(d)) return;
-                const mesAno = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
-                const ano = d.getFullYear();
-                if (!agrupamento[exame]) agrupamento[exame] = { meses: {}, anos: {}, total: 0 };
-                agrupamento[exame].meses[mesAno] = (agrupamento[exame].meses[mesAno] ?? 0) + (item['Quantidade'] ?? 0);
-                agrupamento[exame].anos[ano] = (agrupamento[exame].anos[ano] ?? 0) + (item['Quantidade'] ?? 0);
-                agrupamento[exame].total += (item['Quantidade'] ?? 0);
-            });
-
-            // Monta o corpo da tabela
-            const tbody = document.querySelector('#matriz-exames tbody');
-            tbody.innerHTML = '';
-            examesSelecionados.forEach(exame => {
-                const valores = agrupamento[exame];
-                if (!valores || valores.total === 0) return;
-                let linha = `<td><b>${exame}</b></td>`;
-                let anoAcumulado = 0;
-                let anoAtual = null;
-                meses.forEach((mes, idx) => {
-                    const [mesNum, anoNum] = mes.split('/');
-                    const qtd = valores.meses[mes] ? valores.meses[mes] : 0;
-                    linha += `<td>${qtd.toLocaleString()}</td>`;
-                    if (anoAtual === null) anoAtual = anoNum;
-                    anoAcumulado += qtd;
-                    const proximoAno = meses[idx + 1] ? meses[idx + 1].split('/')[1] : null;
-                    if (anoNum !== proximoAno) {
-                        linha += `<td><b>${valores.anos[parseInt(anoNum)] ? valores.anos[parseInt(anoNum)].toLocaleString() : '0'}</b></td>`;
-                        anoAcumulado = 0;
-                        anoAtual = proximoAno;
-                    }
-                });
-                linha += `<td><b>${valores.total ? valores.total.toLocaleString() : '0'}</b></td>`;
-                const tr = document.createElement('tr');
-                tr.classList.add('exame-row');
-                tr.innerHTML = linha;
-                tbody.appendChild(tr);
-            });
+            renderizarMatriz('matriz-exames', montarMatriz(filtrarDados(), campoExame, 'Exame / Procedimento'), 'exame-row');
         }
 
         // Atualiza os KPIs conforme os filtros
@@ -1387,6 +1316,303 @@
             });
         }
 
+        // ===================== RELATÓRIOS (PDF e XLSX) =====================
+        // Gerados no navegador, a partir dos dados já carregados e com os
+        // filtros aplicados na tela. As bibliotecas só são baixadas no clique.
+        const LIBS_RELATORIO = {
+            xlsx: ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'],
+            pdf: ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'],
+        };
+        const _scriptsCarregados = {};
+        function carregarScript(url) {
+            return _scriptsCarregados[url] ||= new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = url;
+                s.onload = resolve;
+                s.onerror = () => { delete _scriptsCarregados[url]; reject(new Error('Falha ao carregar ' + url)); };
+                document.head.appendChild(s);
+            });
+        }
+        async function carregarLibs(tipo) {
+            for (const url of LIBS_RELATORIO[tipo]) await carregarScript(url);  // em ordem (autotable depende do jsPDF)
+        }
+
+        const campoExame = item => item['Exame/Procedimento'] ?? item['Exame'] ?? '';
+        const campoServico = item => item['Serviço'] ?? item['serviço'] ?? '';
+        const campoTipo = item => item['Tipo Procedimento'] ?? item['tipo procedimento'] ?? '';
+
+        // Meses do período selecionado (MM/AAAA), como nas matrizes da tela.
+        function mesesDoPeriodo() {
+            const meses = [];
+            const ini = getDataInicial(), fim = getDataFinal();
+            if (!ini || !fim) return meses;
+            const d = new Date(ini.getFullYear(), ini.getMonth(), 1);
+            const end = new Date(fim.getFullYear(), fim.getMonth(), 1);
+            while (d <= end) {
+                meses.push(`${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`);
+                d.setMonth(d.getMonth() + 1);
+            }
+            return meses;
+        }
+
+        // Matriz (linhas = exame ou serviço) com os meses, total de cada ano,
+        // total geral e média mensal. Usada pelas matrizes da página e pelos
+        // relatórios PDF/XLSX, para todos mostrarem os mesmos números.
+        //   anos:      [{ ano, meses: ['01', ...] }] — grupos do cabeçalho
+        //   cabecalho: versão em uma linha (MM/AAAA, Total AAAA, Total, Média)
+        //   linhas / totais: valores numéricos na ordem do cabeçalho
+        const NOMES_MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+        function montarMatriz(dados, campoLinha, rotulo) {
+            const meses = mesesDoPeriodo();
+            // colunas na ordem da tabela, cada uma com o seu tipo:
+            //   mes | ano (total do ano) | media_ano | total | media
+            const colunas = [];
+            const anos = [];
+            meses.forEach((m, i) => {
+                const [mm, ano] = m.split('/');
+                if (!anos.length || anos[anos.length - 1].ano !== ano) anos.push({ ano, meses: [] });
+                anos[anos.length - 1].meses.push(mm);
+                colunas.push({ tipo: 'mes', chave: m });
+                const prox = meses[i + 1] ? meses[i + 1].split('/')[1] : null;
+                if (ano !== prox) {
+                    const nMesesAno = anos[anos.length - 1].meses.length;  // meses do ano dentro do período
+                    colunas.push({ tipo: 'ano', chave: ano });
+                    colunas.push({ tipo: 'media_ano', chave: ano, divisor: nMesesAno });
+                }
+            });
+            const nMeses = Math.max(1, meses.length);
+            colunas.push({ tipo: 'total' });
+            colunas.push({ tipo: 'media', divisor: nMeses });
+
+            const acc = {};
+            dados.forEach(item => {
+                const nome = campoLinha(item);
+                const dataRef = item['Mês Referência'] || item['Mês Referncia'];
+                const d = dataRef ? new Date(dataRef) : null;
+                if (!nome || !d || isNaN(d)) return;
+                const m = `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+                const q = item['Quantidade'] ?? 0;
+                const a = acc[nome] ||= { meses: {}, anos: {}, total: 0 };
+                a.meses[m] = (a.meses[m] || 0) + q;
+                a.anos[d.getFullYear()] = (a.anos[d.getFullYear()] || 0) + q;
+                a.total += q;
+            });
+
+            const media = (soma, divisor) => Math.round(soma / Math.max(1, divisor) * 10) / 10;
+            // valor de uma coluna a partir das somas (por mês, por ano e total)
+            const valor = (c, somaMes, somaAno, somaTotal) => ({
+                mes: () => somaMes(c.chave),
+                ano: () => somaAno(c.chave),
+                media_ano: () => media(somaAno(c.chave), c.divisor),
+                total: () => somaTotal(),
+                media: () => media(somaTotal(), c.divisor),
+            })[c.tipo]();
+            const rotuloColuna = c => ({ mes: c.chave, ano: `Total ${c.chave}`, media_ano: `Média ${c.chave}`,
+                                         total: 'Total', media: 'Média' })[c.tipo];
+
+            const cabecalho = [rotulo, ...colunas.map(rotuloColuna)];
+            const nomes = Object.keys(acc).sort((x, y) => x.localeCompare(y, 'pt-BR')).filter(n => acc[n].total > 0);
+            const linhas = nomes.map(n => [n, ...colunas.map(c => valor(c,
+                k => acc[n].meses[k] || 0, k => acc[n].anos[k] || 0, () => acc[n].total))]);
+            // linha TOTAL: soma as quantidades e recalcula as médias a partir dessas somas
+            const somar = f => nomes.reduce((t, n) => t + f(acc[n]), 0);
+            const totais = ['TOTAL', ...colunas.map(c => valor(c,
+                k => somar(a => a.meses[k] || 0), k => somar(a => a.anos[k] || 0), () => somar(a => a.total)))];
+            return { anos, colunas, cabecalho, linhas, totais, nMeses };
+        }
+
+        // Resumo: filtros aplicados e totais do recorte.
+        // Data selecionada (AAAA-MM-DD) formatada a partir do texto: converter
+        // para Date interpretaria como UTC e, no fuso de Brasília, mostraria o
+        // dia anterior.
+        function dataSelecionadaBR(id) {
+            const v = document.getElementById(id).value || '';
+            const [a, m, d] = v.split('-');
+            return a && m && d ? `${d}/${m}/${a}` : '-';
+        }
+
+        function resumoRelatorio(dados) {
+            const somaPor = campo => dados.reduce((acc, it) => {
+                const k = campo(it); acc[k] = (acc[k] || 0) + (it['Quantidade'] || 0); return acc;
+            }, {});
+            const maior = obj => Object.entries(obj).sort((a, b) => b[1] - a[1])[0] || ['-', 0];
+            const descreverSelecao = (classe, idTodos) => {
+                const todos = document.querySelectorAll(`.${classe}:not(#${idTodos})`);
+                const marcados = Array.from(todos).filter(cb => cb.checked).map(cb => cb.value);
+                return (marcados.length === 0 || marcados.length === todos.length) ? 'Todos' : marcados.join(', ');
+            };
+            const [servicoTop, servicoTopQtd] = maior(somaPor(campoServico));
+            const [exameTop, exameTopQtd] = maior(somaPor(campoExame));
+            return [
+                ['Período', `${dataSelecionadaBR('data-inicial')} a ${dataSelecionadaBR('data-final')}`],
+                ['Tipo', getTipoSelecionado() === 'todos' ? 'Todos' : getTipoSelecionado()],
+                ['Serviços', descreverSelecao('servico-checkbox', 'todos-servicos')],
+                ['Exames / Procedimentos', descreverSelecao('exame-checkbox', 'todos-exames')],
+                ['Total de procedimentos', dados.reduce((s, it) => s + (it['Quantidade'] || 0), 0)],
+                ['Serviço mais ativo', `${servicoTop} (${servicoTopQtd.toLocaleString('pt-BR')})`],
+                ['Exame mais realizado', `${exameTop} (${exameTopQtd.toLocaleString('pt-BR')})`],
+                ['Gerado em', new Date().toLocaleString('pt-BR')],
+            ];
+        }
+
+        function nomeArquivo(ext) {
+            const anoMes = id => (document.getElementById(id).value || 'periodo').slice(0, 7);
+            return `producao_hospitalar_${anoMes('data-inicial')}_a_${anoMes('data-final')}.${ext}`;
+        }
+
+        async function gerarXLSX() {
+            await carregarLibs('xlsx');
+            const dados = filtrarDados();
+            const wb = XLSX.utils.book_new();
+
+            const wsResumo = XLSX.utils.aoa_to_sheet([['Produção Hospitalar Consolidada'], [], ...resumoRelatorio(dados)]);
+            wsResumo['!cols'] = [{ wch: 26 }, { wch: 70 }];
+            XLSX.utils.book_append_sheet(wb, wsResumo, 'Resumo');
+
+            [['Matriz Exames', campoExame, 'Exame / Procedimento'], ['Matriz Serviços', campoServico, 'Serviço']]
+                .forEach(([aba, campo, rotulo]) => {
+                    const m = montarMatriz(dados, campo, rotulo);
+                    // cabeçalho em duas linhas: ano (mesclado) em cima; meses e total do ano embaixo
+                    const linhaAnos = [rotulo], linhaMeses = [''], merges = [];
+                    m.anos.forEach(a => {
+                        const col = linhaAnos.length;
+                        linhaAnos.push(Number(a.ano), ...Array(a.meses.length + 1).fill(''));
+                        linhaMeses.push(...a.meses.map(mm => NOMES_MESES[parseInt(mm, 10) - 1]), 'Total', 'Média');
+                        merges.push({ s: { r: 0, c: col }, e: { r: 0, c: col + a.meses.length + 1 } });
+                    });
+                    const nCols = linhaAnos.length;
+                    linhaAnos.push('Total', 'Média');
+                    linhaMeses.push('', '');
+                    [0, nCols, nCols + 1].forEach(c => merges.push({ s: { r: 0, c }, e: { r: 1, c } }));
+                    const ws = XLSX.utils.aoa_to_sheet([linhaAnos, linhaMeses, ...m.linhas, m.totais]);
+                    ws['!merges'] = merges;
+                    ws['!cols'] = [{ wch: 45 }, ...m.cabecalho.slice(1).map(() => ({ wch: 10 }))];
+                    XLSX.utils.book_append_sheet(wb, ws, aba);
+                });
+
+            const linhas = dados.map(it => ({
+                'Mês Referência': formatarDataMesAno(it['Mês Referência'] || it['Mês Referncia']),
+                'Serviço': campoServico(it),
+                'Tipo Procedimento': campoTipo(it),
+                'Exame / Procedimento': campoExame(it),
+                'Quantidade': it['Quantidade'] ?? 0,
+            }));
+            const wsDados = XLSX.utils.json_to_sheet(linhas);
+            wsDados['!cols'] = [{ wch: 14 }, { wch: 30 }, { wch: 22 }, { wch: 45 }, { wch: 12 }];
+            XLSX.utils.book_append_sheet(wb, wsDados, 'Dados');
+
+            XLSX.writeFile(wb, nomeArquivo('xlsx'));
+        }
+
+        async function gerarPDF() {
+            await carregarLibs('pdf');
+            const { jsPDF } = window.jspdf;
+            // o AutoTable costuma se registrar sozinho; garante o registro se não ocorrer
+            if (typeof jsPDF.prototype.autoTable !== 'function' && window.jspdf_autotable?.applyPlugin) {
+                window.jspdf_autotable.applyPlugin(jsPDF);
+            }
+            const doc = new jsPDF({ orientation: 'landscape', unit: 'mm', format: 'a4' });
+            const larg = doc.internal.pageSize.getWidth(), alt = doc.internal.pageSize.getHeight();
+            const dados = filtrarDados();
+            const COR = [0, 161, 162];  // #00A1A2
+
+            doc.setFontSize(16); doc.setTextColor(56, 70, 77);
+            doc.text('Produção Hospitalar Consolidada', 14, 16);
+            doc.autoTable({
+                startY: 22, theme: 'grid', styles: { fontSize: 9, cellPadding: 1.8 },
+                columnStyles: { 0: { fontStyle: 'bold', cellWidth: 55, textColor: [0, 124, 107] } },
+                body: resumoRelatorio(dados).map(([k, v]) => [k, typeof v === 'number' ? v.toLocaleString('pt-BR') : v]),
+            });
+
+            // Gráficos da página como imagem, dois por página
+            const graficos = [['line-chart', 'Produção Mensal'], ['pie-chart', 'Distribuição por Serviço'],
+                              ['bar-chart', 'Tipos de Procedimento'], ['stacked-bar-servico-chart', 'Quantitativo por Serviço Mês a Mês'],
+                              ['stacked-bar-chart', 'Quantitativo por Exame Mês a Mês']];
+            let pos = 0;
+            for (const [id, titulo] of graficos) {
+                const el = document.getElementById(id);
+                if (!el || !el.data) continue;  // gráfico ainda não desenhado
+                const IMG_L = 1200, IMG_A = 520;
+                // os empilhados usam legenda própria em HTML; na imagem do PDF liga a do Plotly
+                const empilhado = ['stacked-bar-chart', 'stacked-bar-servico-chart'].includes(id);
+                const figura = empilhado
+                    ? { data: el.data, layout: { ...el.layout, showlegend: true,
+                                                 legend: { orientation: 'h', y: -0.3, font: { size: 10 } },
+                                                 margin: { l: 50, r: 20, t: 20, b: 140 } } }
+                    : el;
+                const img = await Plotly.toImage(figura, { format: 'png', width: IMG_L, height: IMG_A });
+                if (pos % 2 === 0) doc.addPage();
+                const y = pos % 2 === 0 ? 14 : alt / 2 + 4;
+                doc.setFontSize(11); doc.setTextColor(56, 70, 77);
+                doc.text(titulo, 14, y);
+                // cabe na metade da página mantendo a proporção da imagem
+                const h = Math.min(alt / 2 - 22, (larg - 28) * IMG_A / IMG_L);
+                const w = h * IMG_L / IMG_A;
+                doc.addImage(img, 'PNG', (larg - w) / 2, y + 3, w, h);
+                pos++;
+            }
+
+            // Matrizes em tabela (números no formato brasileiro)
+            [['Matriz de Exames e Somatórios Anuais', campoExame, 'Exame / Procedimento'],
+             ['Matriz de Serviços e Somatórios Anuais', campoServico, 'Serviço']].forEach(([titulo, campo, rotulo]) => {
+                const m = montarMatriz(dados, campo, rotulo);
+                // colunas de média (do ano e geral) com uma casa decimal
+                const ehMedia = j => j > 0 && ['media_ano', 'media'].includes(m.colunas[j - 1].tipo);
+                const fmt = l => l.map((v, j) => j === 0 ? v : ehMedia(j)
+                    ? Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })
+                    : Number(v).toLocaleString('pt-BR'));
+                doc.addPage();
+                doc.setFontSize(12); doc.setTextColor(56, 70, 77);
+                doc.text(titulo, 14, 14);
+                doc.autoTable({
+                    startY: 18, theme: 'grid',
+                    head: [
+                        [{ content: m.cabecalho[0], rowSpan: 2 },
+                         ...m.anos.map(a => ({ content: a.ano, colSpan: a.meses.length + 2 })),
+                         { content: 'Total', rowSpan: 2 }, { content: 'Média', rowSpan: 2 }],
+                        m.anos.flatMap(a => [...a.meses.map(mm => NOMES_MESES[parseInt(mm, 10) - 1]), 'Total', 'Média']),
+                    ],
+                    body: m.linhas.map(fmt), foot: [fmt(m.totais)],
+                    styles: { fontSize: 6.5, cellPadding: 1, halign: 'right', overflow: 'linebreak' },
+                    headStyles: { fillColor: COR, textColor: 255, halign: 'center' },
+                    footStyles: { fillColor: [224, 243, 243], textColor: [0, 124, 107], fontStyle: 'bold' },
+                    columnStyles: { 0: { halign: 'left', cellWidth: 55 } },
+                    margin: { left: 8, right: 8 },
+                });
+            });
+
+            // Rodapé com numeração de páginas
+            const total = doc.internal.getNumberOfPages();
+            for (let p = 1; p <= total; p++) {
+                doc.setPage(p);
+                doc.setFontSize(8); doc.setTextColor(107, 127, 134);
+                doc.text(`Página ${p} de ${total}`, larg - 14, alt - 6, { align: 'right' });
+            }
+            doc.save(nomeArquivo('pdf'));
+        }
+
+        function configurarBotoesRelatorio() {
+            [['btn-relatorio-pdf', gerarPDF], ['btn-relatorio-xlsx', gerarXLSX]].forEach(([id, gerar]) => {
+                const btn = document.getElementById(id);
+                if (!btn) return;
+                btn.addEventListener('click', async () => {
+                    const texto = btn.textContent;
+                    btn.disabled = true;
+                    btn.textContent = 'Gerando…';
+                    try {
+                        await gerar();
+                    } catch (err) {
+                        console.error('Erro ao gerar relatório:', err);
+                        alert('Não foi possível gerar o relatório. Verifique a conexão com a internet e tente novamente.');
+                    } finally {
+                        btn.disabled = false;
+                        btn.textContent = texto;
+                    }
+                });
+            });
+        }
+
         // Inicialização
         document.addEventListener('DOMContentLoaded', () => {
             configurarEventos();
@@ -1395,6 +1621,7 @@
             atualizarListaServicosPorExame();
             capturarFiltrosPadrao();
             atualizarTodosGraficos();
+            configurarBotoesRelatorio();
             // Esconde fadeout ao restaurar do bfcache
             window.addEventListener('pageshow', function (e) {
                 const fade = document.getElementById('fadeout-animation');
