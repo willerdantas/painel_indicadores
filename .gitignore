@@ -7,3 +7,9 @@ config_banco.enc.tmp
 .secret_key
 painel_usuarios.db
 painel_dados.db
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/

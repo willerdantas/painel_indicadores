@@ -82,6 +82,7 @@
         <div class="header-acoes">
             {% if usuario_atual %}<span class="usuario-logado">{{ usuario_atual.nome }}</span>{% endif %}
             <a href="{{ url_for('admin_menu') }}" class="btn-header secundario">Administração</a>
+            <a href="{{ url_for('admin_senha') }}" class="btn-header secundario">Trocar senha</a>
             <a href="{{ url_for('logout') }}" class="btn-header">Sair</a>
         </div>
     </header>

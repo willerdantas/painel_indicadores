@@ -1,0 +1,28 @@
+{% extends 'admin_base.html' %}
+{% block titulo %}Trocar senha{% endblock %}
+{% block cabecalho %}Trocar senha{% endblock %}
+{% block conteudo %}
+<div class="grade">
+    <form class="painel" method="post" action="{{ url_for('admin_senha') }}" autocomplete="off">
+        <h2>Nova senha</h2>
+        {% if obrigatoria %}
+        <div class="dica">Sua senha é provisória. Defina uma senha nova para continuar.</div>
+        {% endif %}
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+
+        <label class="campo" for="atual">Senha atual</label>
+        <input type="password" id="atual" name="atual" autocomplete="current-password" required>
+
+        <label class="campo" for="nova">Nova senha</label>
+        <input type="password" id="nova" name="nova" autocomplete="new-password" minlength="8" required>
+        <div class="dica">Mínimo de 8 caracteres.</div>
+
+        <label class="campo" for="confirmacao">Confirme a nova senha</label>
+        <input type="password" id="confirmacao" name="confirmacao" autocomplete="new-password" minlength="8" required>
+
+        <div class="acoes">
+            <button type="submit" class="btn">Salvar</button>
+        </div>
+    </form>
+</div>
+{% endblock %}

@@ -34,6 +34,7 @@ import json
 import os
 import re
 import threading
+import time
 
 import psycopg2
 from cryptography.fernet import Fernet, InvalidToken
@@ -79,7 +80,10 @@ _SCHEMA_VALIDO = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
 _lock = threading.Lock()
 # arquivo decifrado em memória, refeito quando o arquivo muda (mtime)
-_cache = {'mtime': None, 'dados': {}}
+# o arquivo é conferido no máximo a cada _RELEITURA segundos: carregar() roda
+# várias vezes por requisição (o schema entra em cada SQL)
+_RELEITURA = 2
+_cache = {'mtime': None, 'dados': {}, 'lido_em': None}
 _estado = {'erro': None}
 
 
@@ -118,6 +122,7 @@ def _gravar(dados):
     except OSError:
         pass
     os.replace(tmp, ARQUIVO_CONFIG)
+    _cache['lido_em'] = None  # a próxima leitura já vê o arquivo novo
 
 
 def _converter_legado():
@@ -138,6 +143,9 @@ def _converter_legado():
 
 def _ler_arquivo():
     with _lock:
+        if _cache['lido_em'] is not None and time.monotonic() - _cache['lido_em'] < _RELEITURA:
+            return dict(_cache['dados'])
+        _cache['lido_em'] = time.monotonic()
         if os.path.exists(ARQUIVO_LEGADO):
             _converter_legado()
         try:
@@ -148,8 +156,8 @@ def _ler_arquivo():
             return {}
         if mtime == _cache['mtime']:
             return dict(_cache['dados'])
-        fernet = _fernet()
         try:
+            fernet = _fernet()  # chave malformada levanta ValueError: tratada abaixo, não derruba as páginas
             if fernet is None:
                 raise InvalidToken
             with open(ARQUIVO_CONFIG, 'rb') as f:

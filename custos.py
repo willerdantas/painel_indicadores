@@ -5,9 +5,12 @@ Dados da página pública "Custos". Os valores ficam na tabela painel.custos
 (banco_painel.py) e são lançados pela tela "Lançar Dados de Custos".
 """
 
+import re
 import statistics
 
 import banco_painel
+
+_MES = re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
 
 
 def _somar(linhas, campo):
@@ -28,7 +31,11 @@ def _meses_entre(mes_ini, mes_fim):
 
 
 def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None):
-    todos = [r for r in banco_painel.CUSTOS.dados() if r.get('valor') is not None]
+    """Meses no formato AAAA-MM; um mês fora do formato levanta ValueError."""
+    for nome, mes in (('mes_ini', mes_ini), ('mes_fim', mes_fim)):
+        if mes and not _MES.match(mes):
+            raise ValueError(f'{nome} deve estar no formato AAAA-MM.')
+    todos =[r for r in banco_painel.CUSTOS.dados() if r.get('valor') is not None]
     if not todos:
         return {'vazio': True}
 

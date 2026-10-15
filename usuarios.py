@@ -12,11 +12,14 @@ Os painéis são públicos; o login é só para a área restrita.
 - Demais perfis: só as áreas restritas marcadas no perfil.
 
 Na primeira execução é criado o perfil "Administrador" e um usuário com o
-login/senha de ADMIN_USER / ADMIN_PASS (padrão admin / admin).
+login ADMIN_USER (padrão admin) e a senha ADMIN_PASS; sem ADMIN_PASS a senha
+é gerada e mostrada no console. Senha inicial, senha definida por outra
+pessoa e a antiga senha padrão "admin" obrigam a troca no próximo acesso.
 """
 
 import json
 import os
+import secrets
 import sqlite3
 import threading
 from datetime import datetime
@@ -70,6 +73,9 @@ def iniciar():
                 criado_em  TEXT NOT NULL
             );
         """)
+        colunas = [c['name'] for c in conn.execute('PRAGMA table_info(usuarios)')]
+        if 'trocar_senha' not in colunas:
+            conn.execute('ALTER TABLE usuarios ADD COLUMN trocar_senha INTEGER NOT NULL DEFAULT 0')
         if conn.execute('SELECT COUNT(*) FROM usuarios').fetchone()[0] == 0:
             perfil = conn.execute("SELECT id FROM perfis WHERE admin = 1 ORDER BY id LIMIT 1").fetchone()
             if perfil is None:
@@ -78,11 +84,21 @@ def iniciar():
                 perfil_id = cur.lastrowid
             else:
                 perfil_id = perfil['id']
+            login = os.environ.get('ADMIN_USER', 'admin')
+            senha = os.environ.get('ADMIN_PASS')
+            if not senha:
+                senha = secrets.token_urlsafe(9)
+                print(f'[painel] Administrador inicial criado: login "{login}", senha "{senha}" '
+                      '(troque no primeiro acesso).', flush=True)
             conn.execute(
-                "INSERT INTO usuarios (login, nome, senha_hash, perfil_id, ativo, criado_em) VALUES (?, ?, ?, ?, 1, ?)",
-                [os.environ.get('ADMIN_USER', 'admin'), 'Administrador',
-                 generate_password_hash(os.environ.get('ADMIN_PASS', 'admin')),
+                'INSERT INTO usuarios (login, nome, senha_hash, perfil_id, ativo, criado_em, trocar_senha) '
+                'VALUES (?, ?, ?, ?, 1, ?, 1)',
+                [login, 'Administrador', generate_password_hash(senha),
                  perfil_id, datetime.now().isoformat(timespec='seconds')])
+        # instalações antigas: quem ainda usa a senha padrão "admin" tem de trocar
+        for r in conn.execute('SELECT id, senha_hash FROM usuarios WHERE trocar_senha = 0').fetchall():
+            if check_password_hash(r['senha_hash'], 'admin'):
+                conn.execute('UPDATE usuarios SET trocar_senha = 1 WHERE id = ?', [r['id']])
 
 
 # ------------------------------------------------------------------ perfis
@@ -151,7 +167,7 @@ def _ultimo_admin(conn, perfil_id=None, usuario_id=None):
 
 def _usuario_dict(r):
     return {'id': r['id'], 'login': r['login'], 'nome': r['nome'], 'perfil_id': r['perfil_id'],
-            'ativo': bool(r['ativo']), 'criado_em': r['criado_em']}
+            'ativo': bool(r['ativo']), 'criado_em': r['criado_em'], 'trocar_senha': bool(r['trocar_senha'])}
 
 
 def listar_usuarios():
@@ -184,8 +200,9 @@ def autenticar(login, senha):
     return obter_usuario(r['id'])
 
 
-def salvar_usuario(usuario_id, login, nome, senha, perfil_id, ativo):
-    """Cria (usuario_id None) ou atualiza. Senha em branco na edição mantém a atual."""
+def salvar_usuario(usuario_id, login, nome, senha, perfil_id, ativo, trocar_senha=True):
+    """Cria (usuario_id None) ou atualiza. Senha em branco na edição mantém a atual.
+    trocar_senha: a senha informada é provisória (definida por outra pessoa)."""
     login, nome = (login or '').strip(), (nome or '').strip()
     if not login or not nome:
         return 'Informe login e nome.'
@@ -203,15 +220,33 @@ def salvar_usuario(usuario_id, login, nome, senha, perfil_id, ativo):
             return 'Este é o único administrador ativo; ele não pode ser desativado nem perder o perfil de administrador.'
         if usuario_id is None:
             conn.execute(
-                'INSERT INTO usuarios (login, nome, senha_hash, perfil_id, ativo, criado_em) VALUES (?, ?, ?, ?, ?, ?)',
+                'INSERT INTO usuarios (login, nome, senha_hash, perfil_id, ativo, criado_em, trocar_senha) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?)',
                 [login, nome, generate_password_hash(senha), perfil_id, int(bool(ativo)),
-                 datetime.now().isoformat(timespec='seconds')])
+                 datetime.now().isoformat(timespec='seconds'), int(bool(trocar_senha))])
         else:
             conn.execute('UPDATE usuarios SET login = ?, nome = ?, perfil_id = ?, ativo = ? WHERE id = ?',
                          [login, nome, perfil_id, int(bool(ativo)), usuario_id])
             if senha:
-                conn.execute('UPDATE usuarios SET senha_hash = ? WHERE id = ?',
-                             [generate_password_hash(senha), usuario_id])
+                conn.execute('UPDATE usuarios SET senha_hash = ?, trocar_senha = ? WHERE id = ?',
+                             [generate_password_hash(senha), int(bool(trocar_senha)), usuario_id])
+    return None
+
+
+def trocar_senha(usuario_id, atual, nova, confirmacao):
+    """Troca a própria senha. Retorna mensagem de erro ou None."""
+    if not nova or len(nova) < 8:
+        return 'A nova senha deve ter pelo menos 8 caracteres.'
+    if nova != confirmacao:
+        return 'A confirmação não confere com a nova senha.'
+    if nova == atual or nova.lower() == 'admin':
+        return 'Escolha uma senha diferente da atual.'
+    with _lock, _conectar() as conn:
+        r = conn.execute('SELECT senha_hash FROM usuarios WHERE id = ?', [usuario_id]).fetchone()
+        if r is None or not check_password_hash(r['senha_hash'], atual or ''):
+            return 'Senha atual incorreta.'
+        conn.execute('UPDATE usuarios SET senha_hash = ?, trocar_senha = 0 WHERE id = ?',
+                     [generate_password_hash(nova), usuario_id])
     return None
 
 

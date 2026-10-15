@@ -109,14 +109,12 @@ class Coluna:
         self.do_item, self.padrao, self.calculada, self.descricao = do_item, padrao, calculada, descricao
 
     @property
-    def editavel(self):
-        """Digitada na tela de lançamento (as do item são mantidas em Cadastros)."""
+    def do_lancamento(self):
+        """Gravada na tabela mensal e digitada na tela de lançamento (as do
+        item são mantidas em Cadastros; as calculadas só são lidas)."""
         return not self.calculada and not self.do_item
 
-    @property
-    def do_lancamento(self):
-        """Gravada na tabela mensal."""
-        return not self.calculada and not self.do_item
+    editavel = do_lancamento  # nome usado na tela de lançamento
 
     @property
     def tipo_sql(self):
@@ -161,21 +159,15 @@ class TabelaMensal:
         """Sem nenhum valor do mês (herdadas, do item e calculadas não contam)."""
         return all(linha.get(c.nome) is None for c in self.colunas_lancamento if not c.herda)
 
-    def ddl(self):
-        campos = ['id SERIAL PRIMARY KEY', 'mes DATE NOT NULL']
-        campos += [f'{c} TEXT NOT NULL' for c in self.campos_chave]
-        campos += [f'{c.nome} {c.tipo_sql}' for c in self.colunas_lancamento]
-        campos += ['atualizado_em TIMESTAMP NOT NULL DEFAULT now()',
-                   'atualizado_por TEXT NOT NULL',
-                   f"UNIQUE (mes, {', '.join(self.campos_chave)})"]
-        return f'CREATE TABLE IF NOT EXISTS {self.tabela} (\n    ' + ',\n    '.join(campos) + '\n)'
+    # Criação, consulta e escrita dependem de como os itens são guardados:
+    # implementadas em TabelaNormalizada (itens em tabelas de cadastro).
 
     def criar(self, cur):
-        cur.execute(self.ddl())
+        raise NotImplementedError
 
     def _select(self):
         """Consulta das linhas (alias c), no formato usado pelo resto do painel."""
-        return f'SELECT * FROM {self.tabela} c'
+        raise NotImplementedError
 
     @staticmethod
     def _linha(r):
@@ -197,14 +189,13 @@ class TabelaMensal:
         """Linhas para os painéis: do banco; enquanto o schema não existir, da planilha."""
         if pronto():
             return self.todos()
-        return self.ler_planilha(os.path.join(PASTA_DADOS, self.planilha))
+        caminho = os.path.join(PASTA_DADOS, self.planilha)
+        return self.ler_planilha(caminho) if os.path.exists(caminho) else []
 
     def itens(self):
-        """Último lançamento de cada item (para montar a grade e herdar valores)."""
-        chaves = ', '.join(self.campos_chave)
-        with _cursor() as cur:
-            cur.execute(f'SELECT DISTINCT ON ({chaves}) * FROM {self.tabela} ORDER BY {chaves}, mes DESC')
-            return [self._linha(r) for r in cur.fetchall()]
+        """Todo item ativo ou já lançado, com o último lançamento (para montar
+        a grade e herdar valores) e o campo 'ativo'."""
+        raise NotImplementedError
 
     def do_mes(self, mes):
         with _cursor() as cur:
@@ -229,29 +220,14 @@ class TabelaMensal:
     # ---------------------------------------------------------------- escrita
 
     def salvar(self, linhas, usuario, criar_cadastros=False):
-        """Grava [{mes: 'AAAA-MM', chaves..., colunas...}], substituindo o que já existir."""
-        campos = self.campos_chave + [c.nome for c in self.colunas_lancamento]
-        sql = f"""
-            INSERT INTO {self.tabela} (mes, {', '.join(campos)}, atualizado_em, atualizado_por)
-            VALUES (%s, {', '.join(['%s'] * len(campos))}, now(), %s)
-            ON CONFLICT (mes, {', '.join(self.campos_chave)}) DO UPDATE SET
-                {', '.join(f'{c.nome} = excluded.{c.nome}' for c in self.colunas_lancamento)},
-                atualizado_em = excluded.atualizado_em,
-                atualizado_por = excluded.atualizado_por
-        """
-        params = [[f"{l['mes']}-01"] + [l.get(c) for c in campos] + [usuario] for l in linhas]
-        with _cursor() as cur:
-            execute_batch(cur, sql, params, page_size=500)
-        return len(linhas)
+        """Grava [{mes: 'AAAA-MM', chaves..., colunas...}], substituindo o que
+        já existir; criar_cadastros cria os itens que faltarem (migração).
+        Retorna quantas linhas gravou."""
+        raise NotImplementedError
 
     def excluir(self, mes, chaves):
         """Remove os itens [(chave...)] do mês."""
-        if not chaves:
-            return
-        cond = ' AND '.join(f'{c} = %s' for c in self.campos_chave)
-        with _cursor() as cur:
-            execute_batch(cur, f'DELETE FROM {self.tabela} WHERE mes = %s AND {cond}',
-                          [[f'{mes}-01', *k] for k in chaves])
+        raise NotImplementedError
 
     # ---------------------------------------------------------------- planilha
 
@@ -290,10 +266,14 @@ class TabelaMensal:
                     linha[c] = None if v is None or v != v or not str(v).strip() else str(v).strip()
                 else:
                     linha[c] = ler_numero(v, formato)
+            self._ajustar_linha_planilha(linha)
             if self.em_branco(linha):
                 continue  # como na tela de lançamento: linha sem valor = sem lançamento
             linhas[(linha['mes'], self.chave_de(linha))] = linha  # repetida: vale a última
         return list(linhas.values())
+
+    def _ajustar_linha_planilha(self, linha):
+        """Ajuste específico da tabela em cada linha lida da planilha."""
 
     def importar_planilha(self, caminho, usuario, criar_cadastros=False):
         return self.salvar(self.ler_planilha(caminho), usuario, criar_cadastros)
@@ -528,7 +508,15 @@ class TabelaSimaq(TabelaNormalizada):
     o próprio numerador.
     A meta fica no lançamento de cada mês, pois pode variar."""
 
+    def _ajustar_linha_planilha(self, linha):
+        # só o resultado preenchido (indicador de contagem): sem denominador o
+        # resultado é o próprio numerador, então ele vira o numerador
+        if linha.get('numerador') is None and linha.get('denominador') is None:
+            linha['numerador'] = linha.get('resultado')
+
     def _converter_formato_antigo(self, cur):
+        cur.execute(f'UPDATE {self.tabela} SET numerador = resultado '
+                    'WHERE numerador IS NULL AND denominador IS NULL AND resultado IS NOT NULL')
         cur.execute(f'SELECT tipo, indicador, numerador, denominador, resultado FROM {self.tabela}')
         antigas = [{k: float(v) if isinstance(v, Decimal) else v for k, v in r.items()} for r in cur.fetchall()]
         super()._converter_formato_antigo(cur)
@@ -545,8 +533,10 @@ class TabelaSimaq(TabelaNormalizada):
 
     def _aplicar_fatores(self, cur, linhas):
         """Deduz o fator de cada indicador pelos resultados da planilha: se
-        resultado ÷ (numerador ÷ denominador) for sempre uma potência de 10
-        (ex.: 1000), grava esse fator nos indicadores que ainda estão com 1."""
+        resultado ÷ (numerador ÷ denominador) for constante (até 2%), grava
+        esse fator (potência de 10 quando for o caso, ex.: 1000) nos
+        indicadores que ainda estão com 1. Indicadores cujo resultado não
+        segue a conta vão para o log, para o fator ser revisto em Cadastros."""
         razoes = {}
         for l in linhas:
             n, d, r = l.get('numerador'), l.get('denominador'), l.get('resultado')
@@ -554,17 +544,19 @@ class TabelaSimaq(TabelaNormalizada):
                 razoes.setdefault((l['tipo'], l['indicador']), []).append(r / (n / d))
         for (tipo, indicador), rs in razoes.items():
             m = statistics.median(rs)
-            if m <= 0:
+            if m <= 0 or any(abs(r / m - 1) >= 0.02 for r in rs):
+                print(f'[painel] AVISO: em "{indicador}" o resultado da planilha não é numerador ÷ denominador '
+                      f'× um fator fixo (razões de {min(rs):.4g} a {max(rs):.4g}); confira o fator em Cadastros.')
                 continue
             k = round(math.log10(m))
-            if k != 0 and abs(m / 10 ** k - 1) < 0.02:
+            fator = 10 ** k if abs(m / 10 ** k - 1) < 0.02 else float(f'{m:.4g}')
+            if fator != 1:
                 cur.execute(f"""
                     UPDATE {self._t('indicador')} it SET fator = %s
                     FROM {self._t('tipo_indicador')} p0
                     WHERE p0.id = it.tipo_indicador_id AND p0.nome = %s AND it.nome = %s AND it.fator = 1
-                """, [10 ** k, tipo, indicador])
-                print(f'[painel] fator {10 ** k} em "{indicador}"')
-
+                """, [fator, tipo, indicador])
+                print(f'[painel] fator {fator} em "{indicador}"')
 
 SIMAQ = TabelaSimaq(
     'simaq',
@@ -714,6 +706,27 @@ def _linhas_custos_legado():
     return [{'mes': m, 'tipo': t, 'item': i, 'valor': v} for m, t, i, v in rows]
 
 
+def _criar_controle_migracao(cur):
+    cur.execute(f"""
+        CREATE TABLE IF NOT EXISTS {schema()}.migracao (
+            tabela    TEXT PRIMARY KEY,
+            feita_em  TIMESTAMP NOT NULL DEFAULT now(),
+            linhas    INTEGER NOT NULL
+        )""")
+
+
+def _migracao_feita(tabela):
+    with _cursor() as cur:
+        cur.execute(f'SELECT 1 FROM {schema()}.migracao WHERE tabela = %s', [tabela.nome])
+        return cur.fetchone() is not None
+
+
+def _registrar_migracao(tabela, linhas):
+    with _cursor() as cur:
+        cur.execute(f'INSERT INTO {schema()}.migracao (tabela, linhas) VALUES (%s, %s) '
+                    'ON CONFLICT (tabela) DO NOTHING', [tabela.nome, linhas])
+
+
 def _migrar(tabela):
     if tabela is CUSTOS:
         legado = _linhas_custos_legado()
@@ -726,8 +739,10 @@ def _migrar(tabela):
 
 
 def iniciar(forcar=False):
-    """Cria as tabelas no schema painel e migra as planilhas nas tabelas vazias.
-    Retorna True se o schema está pronto para uso."""
+    """Cria as tabelas no schema painel e migra as planilhas uma única vez
+    por tabela (registrado em <schema>.migracao: esvaziar uma tabela depois
+    não traz os dados das planilhas de volta). Retorna True se o schema está
+    pronto para uso."""
     with _lock:
         if _estado['pronto']:
             return True
@@ -743,10 +758,21 @@ def iniciar(forcar=False):
                                        f'{sql_criar_schema()}')
                 for t in TABELAS:
                     t.criar(cur)
+                _criar_controle_migracao(cur)
             for t in TABELAS:
-                if t.contar() == 0:
+                if _migracao_feita(t):
+                    continue
+                existentes = t.contar()
+                if existentes > 0:  # migrada antes de existir o controle
+                    _registrar_migracao(t, existentes)
+                    continue
+                try:
                     qtd = _migrar(t)
-                    print(f'[painel] {t.tabela}: {qtd} linhas migradas')
+                except Exception as e:  # uma planilha com problema não bloqueia as telas
+                    print(f'[painel] AVISO: migração de {t.tabela} falhou (tenta de novo no próximo início): {e}')
+                    continue
+                _registrar_migracao(t, qtd)
+                print(f'[painel] {t.tabela}: {qtd} linhas migradas')
             _estado.update(pronto=True, erro=None)
         except Exception as e:
             _estado['erro'] = str(e)
@@ -761,8 +787,24 @@ def reiniciar():
     return iniciar(forcar=True)
 
 
+def iniciar_em_segundo_plano():
+    """Tenta iniciar sem segurar quem chamou (início do app e requisições):
+    a conexão pode levar até o timeout com o banco fora do ar."""
+    tentativa = _estado['tentativa']
+    if _lock.locked() or (tentativa is not None and time.monotonic() - tentativa < _INTERVALO_NOVA_TENTATIVA):
+        return
+    threading.Thread(target=iniciar, name='banco_painel.iniciar', daemon=True).start()
+
+
 def pronto():
-    return _estado['pronto'] or iniciar()
+    """True se o schema está pronto. Senão dispara uma nova tentativa em
+    segundo plano e responde na hora (os painéis caem para as planilhas)."""
+    if _estado['pronto']:
+        return True
+    iniciar_em_segundo_plano()
+    if not _estado['erro']:
+        _estado['erro'] = 'Conectando ao banco de dados dos lançamentos; recarregue a página em alguns segundos.'
+    return False
 
 
 def erro():
