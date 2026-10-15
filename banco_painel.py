@@ -663,6 +663,14 @@ CADASTROS = [
     Cadastro('tipo_indicador', 'Tipos de Indicador', 'SIMAQ', uso=('indicador', 'tipo_indicador_id', 'indicadores')),
     Cadastro('indicador', 'Indicadores', 'SIMAQ', pais=[('tipo_indicador', 'Tipo')], extras=SIMAQ.colunas_item,
              uso=('simaq', 'indicador_id', 'lançamentos')),
+    # unidades (centros de custo) da planilha do setor de custos - importacao_custos.py
+    Cadastro('grupo_unidade', 'Grupos de Unidade', 'Unidades (Centros de Custo)',
+             uso=('unidade', 'grupo_unidade_id', 'unidades')),
+    Cadastro('item_rateio', 'Itens de Rateio', 'Unidades (Centros de Custo)',
+             uso=('rateio_unidade', 'item_rateio_id', 'lançamentos')),
+    Cadastro('unidade', 'Unidades', 'Unidades (Centros de Custo)', pais=[('grupo_unidade', 'Grupo')],
+             extras=[Coluna('medida', 'Medida da produção', 'texto')],
+             uso=('custos_unidade', 'unidade_id', 'lançamentos')),
 ]
 CADASTROS_POR_TABELA = {c.tabela: c for c in CADASTROS}
 
@@ -704,6 +712,80 @@ def _linhas_custos_legado():
     finally:
         conn.close()
     return [{'mes': m, 'tipo': t, 'item': i, 'valor': v} for m, t, i, v in rows]
+
+
+def _criar_tabelas_unidade(cur):
+    """Custos por unidade (centro de custo), rateio e produção da planilha do
+    setor de custos, e a área de preparação da importação (importacao_custos.py).
+    Depende de item_custo (criada por CUSTOS.criar)."""
+    s = schema()
+    for sql in (
+        f"""CREATE TABLE IF NOT EXISTS {s}.grupo_unidade (
+                id    SERIAL PRIMARY KEY,
+                nome  TEXT NOT NULL UNIQUE,
+                ativo BOOLEAN NOT NULL DEFAULT true)""",
+        f"""CREATE TABLE IF NOT EXISTS {s}.unidade (
+                id               SERIAL PRIMARY KEY,
+                grupo_unidade_id INTEGER NOT NULL REFERENCES {s}.grupo_unidade (id),
+                nome             TEXT NOT NULL UNIQUE,
+                medida           TEXT,
+                ativo            BOOLEAN NOT NULL DEFAULT true)""",
+        f"""CREATE TABLE IF NOT EXISTS {s}.item_rateio (
+                id    SERIAL PRIMARY KEY,
+                nome  TEXT NOT NULL UNIQUE,
+                ativo BOOLEAN NOT NULL DEFAULT true)""",
+        f"""CREATE TABLE IF NOT EXISTS {s}.custos_unidade (
+                id             SERIAL PRIMARY KEY,
+                mes            DATE NOT NULL,
+                item_custo_id  INTEGER NOT NULL REFERENCES {s}.item_custo (id),
+                unidade_id     INTEGER NOT NULL REFERENCES {s}.unidade (id),
+                valor          NUMERIC NOT NULL,
+                atualizado_em  TIMESTAMP NOT NULL DEFAULT now(),
+                atualizado_por TEXT NOT NULL,
+                UNIQUE (mes, item_custo_id, unidade_id))""",
+        f"""CREATE TABLE IF NOT EXISTS {s}.rateio_unidade (
+                id             SERIAL PRIMARY KEY,
+                mes            DATE NOT NULL,
+                item_rateio_id INTEGER NOT NULL REFERENCES {s}.item_rateio (id),
+                unidade_id     INTEGER NOT NULL REFERENCES {s}.unidade (id),
+                valor          NUMERIC NOT NULL,
+                atualizado_em  TIMESTAMP NOT NULL DEFAULT now(),
+                atualizado_por TEXT NOT NULL,
+                UNIQUE (mes, item_rateio_id, unidade_id))""",
+        f"""CREATE TABLE IF NOT EXISTS {s}.producao_unidade (
+                id             SERIAL PRIMARY KEY,
+                mes            DATE NOT NULL,
+                unidade_id     INTEGER NOT NULL REFERENCES {s}.unidade (id),
+                producao       NUMERIC NOT NULL,
+                atualizado_em  TIMESTAMP NOT NULL DEFAULT now(),
+                atualizado_por TEXT NOT NULL,
+                UNIQUE (mes, unidade_id))""",
+        # preparação: a planilha fica aqui até a confirmação na pré-visualização
+        f"""CREATE TABLE IF NOT EXISTS {s}.importacao_custos_lote (
+                id           TEXT PRIMARY KEY,
+                arquivo      TEXT NOT NULL,
+                mes          DATE NOT NULL,
+                mes_planilha TEXT,
+                custo_total  NUMERIC,
+                avisos       TEXT NOT NULL DEFAULT '[]',
+                usuario      TEXT NOT NULL,
+                criado_em    TIMESTAMP NOT NULL DEFAULT now())""",
+        f"""CREATE TABLE IF NOT EXISTS {s}.importacao_custos_linha (
+                id            SERIAL PRIMARY KEY,
+                lote_id       TEXT NOT NULL REFERENCES {s}.importacao_custos_lote (id) ON DELETE CASCADE,
+                categoria     TEXT NOT NULL CHECK (categoria IN ('custo', 'rateio', 'producao')),
+                linha         INTEGER NOT NULL,
+                coluna        INTEGER,
+                tipo          TEXT,
+                item          TEXT,
+                grupo_unidade TEXT,
+                unidade       TEXT,
+                medida        TEXT,
+                valor         NUMERIC)""",
+        # colunas acrescentadas depois da primeira versão da tabela
+        f'ALTER TABLE {s}.importacao_custos_lote ADD COLUMN IF NOT EXISTS custo_total NUMERIC',
+    ):
+        cur.execute(sql)
 
 
 def _criar_controle_migracao(cur):
@@ -758,6 +840,7 @@ def iniciar(forcar=False):
                                        f'{sql_criar_schema()}')
                 for t in TABELAS:
                     t.criar(cur)
+                _criar_tabelas_unidade(cur)
                 _criar_controle_migracao(cur)
             for t in TABELAS:
                 if _migracao_feita(t):

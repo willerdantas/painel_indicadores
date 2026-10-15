@@ -1,0 +1,213 @@
+{% extends 'admin_base.html' %}
+{% from '_seletor_mes.html' import seletor_mes %}
+{% block titulo %}Lançar Dados de Custos{% endblock %}
+{% block cabecalho %}Lançar Dados de Custos{% endblock %}
+{% block conteudo %}
+<style>
+    .rolagem-x { overflow-x: auto; }
+    .tabela-lanc td.valor input { text-align: right; font-variant-numeric: tabular-nums; min-width: 130px; width: 100%; max-width: 200px; }
+    .tabela-lanc tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
+    .tabela-lanc td.quem { font-size: 12px; color: #6b7f86; min-width: 90px; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    th.num { text-align: right; }
+    .filtros { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; }
+    .filtros label.campo { margin-top: 0; }
+    .filtros select { min-width: 280px; max-width: 420px; }
+    .navegar { display: flex; gap: 6px; }
+    .total-unidade { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: #007C6B; }
+    .alerta { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin: 12px 0; }
+    .alerta.aviso { background: #fff6e8; border: 1px solid #F3C27A; color: #7a4a00; }
+    .lado { display: flex; flex-direction: column; gap: 20px; }
+    .lista a { color: #007C6B; text-decoration: none; font-weight: 500; }
+    .lista a:hover { text-decoration: underline; }
+    .lista tr.atual td { background: #E0F3F3; }
+    .rolagem-y { max-height: 460px; overflow-y: auto; }
+    .rolagem-y thead th { position: sticky; top: 0; background: #fff; }
+    .despesas tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
+    .despesas td { font-size: 13px; padding: 6px 8px; }
+    .etiqueta.so-total { background: #eef4f6; color: #6b7f86; font-weight: 500; }
+    pre.sql { background: #f0f4f5; border-radius: 8px; padding: 12px 14px; font-size: 14px; margin: 12px 0; white-space: pre-wrap; }
+</style>
+
+{% if indisponivel %}
+<div class="painel" style="position:relative; max-width:820px;">
+    <h2>Schema "painel" indisponível</h2>
+    <p>{{ indisponivel }}</p>
+    <pre class="sql">{{ sql }}</pre>
+</div>
+{% else %}
+<div class="grade" style="grid-template-columns: minmax(0, 1fr) minmax(300px, 380px);">
+    <section class="painel">
+        <form method="get" class="filtros">
+            <div>
+                <label class="campo" for="mes">Mês</label>
+                {{ seletor_mes('mes', 'mes', valor=mes, submeter=True, dica=False) }}
+            </div>
+            {% if unidades %}
+            <div>
+                <label class="campo" for="unidade">Unidade (centro de custo)</label>
+                <select id="unidade" name="unidade" onchange="this.form.submit()">
+                    {% set ns = namespace(grupo=None) %}
+                    {% for u in unidades %}
+                        {% if u.grupo != ns.grupo %}{% if ns.grupo %}</optgroup>{% endif %}<optgroup label="{{ u.grupo }}">{% set ns.grupo = u.grupo %}{% endif %}
+                        <option value="{{ u.id }}" {{ 'selected' if unidade and u.id == unidade.id }}>
+                            {{ u.nome }} — {% if u.itens %}R$ {{ u.total | moeda_br }}{% else %}sem lançamento{% endif %}{% if not u.ativo %} (inativa){% endif %}
+                        </option>
+                    {% endfor %}
+                    {% if ns.grupo %}</optgroup>{% endif %}
+                </select>
+            </div>
+            <div class="navegar">
+                {% if anterior %}<a class="btn secundario pequeno" href="{{ url_for('admin_custos', mes=mes, unidade=anterior.id) }}" title="{{ anterior.nome }}">‹ Anterior</a>{% endif %}
+                {% if proxima %}<a class="btn secundario pequeno" href="{{ url_for('admin_custos', mes=mes, unidade=proxima.id) }}" title="{{ proxima.nome }}">Próxima ›</a>{% endif %}
+            </div>
+            {% endif %}
+        </form>
+
+        {% if not unidades %}
+        <div class="alerta aviso">Nenhuma unidade cadastrada. Importe a planilha do setor de custos (ao lado), que cadastra as
+            unidades da aba GERAL, ou cadastre-as na tela Cadastros.</div>
+        {% elif situacao.so_total %}
+        <div class="alerta aviso"><b>{{ mes[5:] }}/{{ mes[:4] }} foi lançado só com o total por despesa</b>, antes do lançamento
+            por unidade; aqui ele é só consulta (o total do mês está ao lado). Para refazê-lo por unidade, importe a planilha
+            do setor de custos desse mês.</div>
+        {% else %}
+        <form method="post" action="{{ url_for('admin_custos_salvar') }}" style="margin-top:14px;">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="hidden" name="mes" value="{{ mes }}">
+            <input type="hidden" name="unidade_id" value="{{ unidade.id }}">
+            <input type="hidden" name="unidade_nome" value="{{ unidade.nome }}">
+            <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:10px;">
+                <h2 style="margin:0;">{{ unidade.nome }} <span class="dica" style="font-family:'DM Sans', sans-serif; font-weight:400;">{{ unidade.grupo }}</span></h2>
+                <div class="total-unidade">Total da unidade: <span id="total-unidade">—</span></div>
+            </div>
+            <div class="dica" style="margin:8px 0 12px;">Valor de cada despesa nesta unidade em {{ mes[5:] }}/{{ mes[:4] }}, no formato
+                brasileiro (ex.: 1.234,56). Em branco = sem valor (remove o que houver). O total do hospital por despesa é a
+                soma das unidades e é atualizado ao salvar.</div>
+            <div class="rolagem-x">
+            <table class="tabela-lanc">
+                <thead><tr><th>Despesa</th><th class="num">Valor (R$)</th><th>Última alteração</th></tr></thead>
+                <tbody>
+                {% for t in tipos %}
+                    <tr class="grupo"><td>{{ t.nome }}</td><td class="num subtotal"></td><td></td></tr>
+                    {% for i in t.itens %}
+                    <tr>
+                        <td>{{ i.item }}{% if not i.ativo %} <span class="etiqueta inativo">inativa</span>{% endif %}
+                            <input type="hidden" name="n__{{ i.id }}" value="{{ i.item }}"></td>
+                        <td class="valor"><input type="text" name="v__{{ i.id }}" class="campo-valor" inputmode="decimal"
+                                   value="{{ i.valor | num_br('moeda') }}" aria-label="{{ i.item }}"></td>
+                        <td class="quem">{% if i.atualizado_em %}{{ i.atualizado_em.strftime('%d/%m/%Y') }}<br>{{ i.atualizado_por }}{% endif %}</td>
+                    </tr>
+                    {% endfor %}
+                {% else %}
+                    <tr><td colspan="3" class="dica">Nenhuma despesa cadastrada: cadastre itens de custo na tela Cadastros.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            <div class="acoes">
+                <button type="submit" class="btn">Salvar {{ unidade.nome }}</button>
+                {% if proxima %}<button type="submit" class="btn secundario"
+                        formaction="{{ url_for('admin_custos_salvar', seguir=proxima.id) }}">Salvar e ir para {{ proxima.nome }} ›</button>{% endif %}
+                <a href="{{ url_for('custos_pagina') }}" class="btn secundario" target="_blank">Ver página Custos</a>
+                {% if pode('cadastros') %}<a href="{{ url_for('admin_cadastros', _anchor='unidade') }}" class="btn secundario">Cadastros</a>{% endif %}
+            </div>
+        </form>
+        {% endif %}
+    </section>
+
+    <div class="lado">
+        {# janela com nome (não _blank): mantém window.opener para a confirmação voltar a esta tela #}
+        <form class="painel" method="post" action="{{ url_for('admin_custos_importar_geral') }}"
+              enctype="multipart/form-data" target="importacao_custos">
+            <h2>Importar planilha do setor de custos</h2>
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <label class="campo" for="mes-importacao" style="margin-top:0;">Mês de referência da planilha</label>
+            {# vazio de propósito: o usuário informa o mês (o cabeçalho da planilha às vezes está desatualizado) #}
+            {{ seletor_mes('mes-importacao', 'mes', valor='', exemplo='06/2026') }}
+            <div style="height:10px;"></div>
+            <input type="file" name="planilha" accept=".xlsx" required style="font-size:13px; max-width:100%;">
+            <div class="dica">Planilha mensal do setor (ex.: Planilha-do-mes-de-Junho-2026.xlsx), aba GERAL: o valor de cada
+                despesa em cada unidade, rateio e produção. Abre uma pré-visualização em outra janela; nada é gravado até você
+                confirmar, e a confirmação substitui o mês.</div>
+            <div class="acoes"><button type="submit" class="btn">Pré-visualizar</button></div>
+        </form>
+
+        <div class="painel">
+            <h2>Total do mês por despesa</h2>
+            <div class="dica" style="margin:-8px 0 10px;">{{ mes[5:] }}/{{ mes[:4] }} — soma das unidades.
+                {% if despesas %}<b>R$ {{ total_mes | moeda_br }}</b>{% endif %}</div>
+            {% if despesas %}
+            <div class="rolagem-y">
+            <table class="despesas">
+                <thead><tr><th>Despesa</th><th class="num">Total</th><th class="num" title="Unidades com valor">Unid.</th></tr></thead>
+                <tbody>
+                {% set ns = namespace(tipo=None) %}
+                {% for d in despesas %}
+                    {% if d.tipo != ns.tipo %}{% set ns.tipo = d.tipo %}
+                    <tr class="grupo"><td>{{ d.tipo }}</td>
+                        <td class="num">{{ despesas | selectattr('tipo', 'equalto', d.tipo) | sum(attribute='total') | moeda_br }}</td><td></td></tr>
+                    {% endif %}
+                    <tr><td>{{ d.item }}</td><td class="num">{{ d.total | moeda_br }}</td><td class="num">{{ d.unidades }}</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+            {% else %}
+            <div class="dica">{% if situacao.so_total %}Mês antigo, sem valores por unidade.{% else %}Nada lançado neste mês.{% endif %}</div>
+            {% endif %}
+        </div>
+
+        <div class="painel lista">
+            <h2>Meses lançados</h2>
+            <div class="rolagem-y" style="max-height:360px;">
+            <table>
+                <thead><tr><th>Mês</th><th class="num">Unid.</th><th class="num">Total</th></tr></thead>
+                <tbody>
+                {% for m in meses %}
+                    <tr class="{{ 'atual' if m.mes == mes else '' }}">
+                        <td><a href="{{ url_for('admin_custos', mes=m.mes, unidade=unidade.id if unidade else None) }}">{{ m.mes[5:] }}/{{ m.mes[:4] }}</a></td>
+                        <td class="num">{% if m.unidades %}{{ m.unidades }}{% else %}<span class="etiqueta so-total" title="Lançado só com o total por despesa">só total</span>{% endif %}</td>
+                        <td class="num">{{ m.total | moeda_br }}</td>
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="dica">Nenhum mês lançado.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    // total da unidade e subtotais por tipo enquanto digita (formato brasileiro: 1.234,56)
+    function lerValor(s) {
+        s = (s || '').replace(/R\$|\s/g, '');
+        if (!s) return 0;
+        if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+        else if ((s.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+        const n = Number(s);
+        return isNaN(n) ? 0 : n;
+    }
+    const moeda = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    function atualizarTotais() {
+        let total = 0;
+        document.querySelectorAll('.tabela-lanc tr.grupo').forEach(grupo => {
+            let sub = 0, tr = grupo.nextElementSibling;
+            while (tr && !tr.classList.contains('grupo')) {
+                const campo = tr.querySelector('.campo-valor');
+                if (campo) sub += lerValor(campo.value);
+                tr = tr.nextElementSibling;
+            }
+            grupo.querySelector('.subtotal').textContent = moeda(sub);
+            total += sub;
+        });
+        const el = document.getElementById('total-unidade');
+        if (el) el.textContent = 'R$ ' + moeda(total);
+    }
+    document.querySelectorAll('.campo-valor').forEach(el => el.addEventListener('input', atualizarTotais));
+    atualizarTotais();
+</script>
+{% endif %}
+{% endblock %}

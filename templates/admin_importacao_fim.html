@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Importação de custos</title>
+    <style>
+        body { font-family: 'DM Sans', sans-serif; background: #e6e6e6; color: #38464D; margin: 0; padding: 40px 16px; }
+        .painel { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 24px 26px;
+                  box-shadow: 0 6px 24px rgba(0,0,0,0.15); }
+        a { color: #007C6B; }
+    </style>
+</head>
+<body>
+    <!-- página sem as mensagens do sistema: elas ficam para a tela de lançamento mostrar -->
+    <div class="painel">
+        <p>Voltando para o lançamento de custos…</p>
+        <p>Se esta janela não fechar sozinha, <a href="{{ destino }}">abra o lançamento de custos</a>.</p>
+    </div>
+    <script>
+        // volta para a janela que abriu a pré-visualização (tela de lançar dados),
+        // já no mês importado, e fecha esta; sem ela, abre o lançamento aqui mesmo
+        (function () {
+            const destino = {{ destino | tojson }};
+            if (window.opener && !window.opener.closed) {
+                window.opener.location.href = destino;
+                window.opener.focus();
+                window.close();
+            } else {
+                window.location.replace(destino);
+            }
+        })();
+    </script>
+</body>
+</html>

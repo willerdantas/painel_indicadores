@@ -1,0 +1,141 @@
+{#
+  Seletor de mês com calendário (grade de meses do ano) e exemplo.
+  Uso:  {% from '_seletor_mes.html' import seletor_mes %}
+        {{ seletor_mes('mes-importacao', 'mes', valor='', exemplo='06/2026') }}
+  Envia o campo `nome` no formato AAAA-MM (como o <input type="month">).
+  Aceita digitar MM/AAAA. submeter=True envia o formulário ao escolher o mês.
+#}
+{% macro seletor_mes(id, nome, valor='', obrigatorio=True, exemplo='06/2026', submeter=False, dica=True) %}
+<div class="seletor-mes" data-submeter="{{ '1' if submeter else '' }}">
+    <div class="seletor-mes-campo">
+        <input type="text" id="{{ id }}" class="seletor-mes-texto" inputmode="numeric" autocomplete="off"
+               placeholder="ex.: {{ exemplo }}" pattern="(0?[1-9]|1[0-2])/\d{4}" maxlength="7"
+               title="Mês e ano no formato MM/AAAA, ex.: {{ exemplo }}"
+               value="{{ valor[5:] ~ '/' ~ valor[:4] if valor }}" {{ 'required' if obrigatorio }}>
+        <button type="button" class="seletor-mes-botao" aria-label="Abrir calendário" title="Abrir calendário">
+            <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true"><path fill="currentColor"
+                d="M7 2h2v2h6V2h2v2h3a1 1 0 0 1 1 1v15a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1h3V2zm12 8H5v9h14v-9zM5 8h14V6H5v2zm2 4h3v3H7v-3z"/></svg>
+        </button>
+        <input type="hidden" name="{{ nome }}" class="seletor-mes-valor" value="{{ valor }}">
+    </div>
+    <div class="seletor-mes-calendario" role="dialog" aria-label="Escolher mês" hidden>
+        <div class="seletor-mes-ano">
+            <button type="button" class="seletor-mes-nav" data-passo="-1" aria-label="Ano anterior">‹</button>
+            <span class="seletor-mes-ano-texto"></span>
+            <button type="button" class="seletor-mes-nav" data-passo="1" aria-label="Próximo ano">›</button>
+        </div>
+        <div class="seletor-mes-grade"></div>
+    </div>
+    {% if dica %}<div class="dica seletor-mes-dica">Exemplo: <b>{{ exemplo }}</b> — digite mês/ano ou escolha no calendário.</div>{% endif %}
+</div>
+{{ _recursos() }}
+{% endmacro %}
+
+{% macro _recursos() %}
+<style>
+    .seletor-mes { position: relative; max-width: 240px; }
+    .seletor-mes-campo { display: flex; align-items: stretch; }
+    .seletor-mes-texto { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid #dde4e6; border-right: 0;
+                         border-radius: 8px 0 0 8px; font: inherit; color: #38464D; background: #f0f4f5; }
+    .seletor-mes-texto:focus { outline: none; border-color: #00A1A2; background: #fff; }
+    .seletor-mes-texto:invalid:not(:placeholder-shown) { border-color: #EB600A; }
+    .seletor-mes-botao { display: flex; align-items: center; padding: 0 11px; border: 1px solid #00A1A2;
+                         border-radius: 0 8px 8px 0; background: #00A1A2; color: #fff; cursor: pointer; }
+    .seletor-mes-botao:hover { background: #007C6B; border-color: #007C6B; }
+    .seletor-mes-calendario { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: 248px;
+                              background: #fff; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.2); padding: 12px; }
+    .seletor-mes-ano { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+    .seletor-mes-ano-texto { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; color: #38464D; }
+    .seletor-mes-nav { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #f0f4f5; color: #007C6B;
+                       font-size: 20px; line-height: 1; cursor: pointer; }
+    .seletor-mes-nav:hover { background: #E0F3F3; }
+    .seletor-mes-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+    .seletor-mes-grade button { padding: 9px 0; border: 1px solid #eef4f6; border-radius: 8px; background: #fff;
+                                font: inherit; font-size: 14px; color: #38464D; cursor: pointer; }
+    .seletor-mes-grade button:hover { background: #E0F3F3; border-color: #9fd8d0; }
+    .seletor-mes-grade button.atual { border-color: #00A1A2; }
+    .seletor-mes-grade button.escolhido { background: #00A1A2; border-color: #00A1A2; color: #fff; font-weight: 600; }
+    .seletor-mes-dica { margin-top: 5px; }
+</style>
+<script>
+(function () {
+    // a macro pode aparecer mais de uma vez: o código é definido uma vez e
+    // cada chamada inicializa os seletores que ainda não foram
+    if (window.__seletorMesIniciar) { window.__seletorMesIniciar(); return; }
+    const MESES = ['Jan', 'Fev', 'Mar', 'Abr', 'Mai', 'Jun', 'Jul', 'Ago', 'Set', 'Out', 'Nov', 'Dez'];
+    const hoje = new Date();
+
+    function iniciar(raiz) {
+        const texto = raiz.querySelector('.seletor-mes-texto');
+        const valor = raiz.querySelector('.seletor-mes-valor');
+        const botao = raiz.querySelector('.seletor-mes-botao');
+        const cal = raiz.querySelector('.seletor-mes-calendario');
+        const grade = raiz.querySelector('.seletor-mes-grade');
+        const anoTexto = raiz.querySelector('.seletor-mes-ano-texto');
+        let anoVisto = hoje.getFullYear();
+
+        function lerTexto() {  // 'MM/AAAA' -> 'AAAA-MM' (ou '' se inválido)
+            const m = /^\s*(\d{1,2})\s*\/\s*(\d{4})\s*$/.exec(texto.value);
+            if (!m || +m[1] < 1 || +m[1] > 12) return '';
+            return m[2] + '-' + String(m[1]).padStart(2, '0');
+        }
+        function definir(aaaaMm, enviar) {
+            valor.value = aaaaMm;
+            texto.value = aaaaMm ? aaaaMm.slice(5) + '/' + aaaaMm.slice(0, 4) : '';
+            texto.setCustomValidity('');
+            if (enviar && raiz.dataset.submeter && aaaaMm) texto.form.submit();
+        }
+        function desenhar() {
+            anoTexto.textContent = anoVisto;
+            grade.innerHTML = '';
+            MESES.forEach((nome, i) => {
+                const aaaaMm = anoVisto + '-' + String(i + 1).padStart(2, '0');
+                const b = document.createElement('button');
+                b.type = 'button';
+                b.textContent = nome;
+                b.title = nome + '/' + anoVisto;
+                if (aaaaMm === valor.value) b.classList.add('escolhido');
+                if (anoVisto === hoje.getFullYear() && i === hoje.getMonth()) b.classList.add('atual');
+                b.addEventListener('click', () => { definir(aaaaMm, true); fechar(); texto.focus(); });
+                grade.appendChild(b);
+            });
+        }
+        function abrir() {
+            anoVisto = valor.value ? +valor.value.slice(0, 4) : hoje.getFullYear();
+            desenhar();
+            cal.hidden = false;
+        }
+        function fechar() { cal.hidden = true; }
+
+        botao.addEventListener('click', () => (cal.hidden ? abrir() : fechar()));
+        raiz.querySelectorAll('.seletor-mes-nav').forEach(b => b.addEventListener('click', () => {
+            anoVisto += +b.dataset.passo;
+            desenhar();
+        }));
+        texto.addEventListener('input', () => {
+            // barra automática: '062026' -> '06/2026'
+            const d = texto.value.replace(/\D/g, '');
+            if (!texto.value.includes('/') && d.length > 2) texto.value = d.slice(0, 2) + '/' + d.slice(2, 6);
+            valor.value = lerTexto();
+            texto.setCustomValidity(texto.value && !valor.value ? 'Use o formato MM/AAAA, ex.: 06/2026' : '');
+        });
+        texto.addEventListener('change', () => { if (valor.value) definir(valor.value, true); });
+        texto.addEventListener('keydown', e => { if (e.key === 'ArrowDown') { e.preventDefault(); abrir(); } });
+        document.addEventListener('click', e => { if (!raiz.contains(e.target)) fechar(); });
+        document.addEventListener('keydown', e => { if (e.key === 'Escape') fechar(); });
+        if (texto.form) texto.form.addEventListener('submit', e => {
+            valor.value = lerTexto();
+            if (texto.required && !valor.value) {
+                e.preventDefault();
+                texto.setCustomValidity('Informe o mês no formato MM/AAAA, ex.: 06/2026');
+                texto.reportValidity();
+            }
+        });
+    }
+    window.__seletorMesIniciar = function () {
+        document.querySelectorAll('.seletor-mes:not([data-pronto])').forEach(r => { r.dataset.pronto = '1'; iniciar(r); });
+    };
+    window.__seletorMesIniciar();
+})();
+</script>
+{% endmacro %}

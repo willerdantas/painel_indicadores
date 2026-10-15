@@ -1,0 +1,204 @@
+{% extends 'admin_base.html' %}
+{% block titulo %}Pré-visualização da importação de custos{% endblock %}
+{% block cabecalho %}Importação de custos — pré-visualização{% endblock %}
+{% block conteudo %}
+<style>
+    .previa { position: relative; display: flex; flex-direction: column; gap: 20px; }
+    .resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 14px 0 4px; }
+    .card { background: #f0f4f5; border-radius: 10px; padding: 12px 14px; }
+    .card .rotulo { font-size: 11px; font-weight: 500; color: #6b7f86; text-transform: uppercase; letter-spacing: .05em; }
+    .card .valor { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; color: #007C6B; margin-top: 4px;
+                   font-variant-numeric: tabular-nums; }
+    .card .sub { font-size: 12px; color: #6b7f86; margin-top: 2px; }
+    .alerta { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-top: 10px; }
+    .alerta.aviso { background: #fff6e8; border: 1px solid #F3C27A; color: #7a4a00; }
+    .alerta.info { background: #E0F3F3; border: 1px solid #9fd8d0; color: #005b4f; }
+    .alerta ul { margin: 6px 0 0 18px; }
+    .meta { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; }
+    .meta b { font-weight: 600; }
+    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+    th.num { text-align: right; }
+    tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
+    tr.total td { font-weight: 700; border-top: 2px solid #dde4e6; }
+    .difere { color: #a12a1c; font-weight: 600; }
+    .etiqueta.novo { background: #F3A133; color: #fff; }
+    .rolagem { overflow: auto; max-height: 560px; border: 1px solid #eef4f6; border-radius: 8px; }
+    .rolagem thead th { position: sticky; top: 0; background: #fff; z-index: 2; }
+    .matriz { font-size: 12px; }
+    .matriz th, .matriz td { padding: 5px 8px; }
+    .matriz th { white-space: normal; min-width: 92px; vertical-align: bottom; }
+    .matriz td:first-child, .matriz th:first-child { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 220px; }
+    .matriz thead th:first-child { z-index: 3; }
+    .matriz tr.grupo td:first-child { background: #E0F3F3; }
+    details summary { cursor: pointer; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #38464D; }
+    .barra-acoes { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; }
+    .barra-acoes form { display: inline; }
+    input[type=month] { padding: 8px 12px; border: 1px solid #dde4e6; border-radius: 8px; font: inherit; background: #f0f4f5; }
+</style>
+
+{% if erro %}
+<div class="painel" style="position:relative; max-width:760px;">
+    <h2>Não foi possível preparar a importação</h2>
+    <p>{{ erro }}</p>
+    <div class="acoes"><button type="button" class="btn" onclick="window.close()">Fechar janela</button></div>
+</div>
+{% else %}
+<div class="previa">
+    <section class="painel">
+        <h2>Planilha {{ d.arquivo }} — aba GERAL</h2>
+        <div class="meta">
+            <span>Enviada por <b>{{ d.usuario }}</b> em {{ d.criado_em.strftime('%d/%m/%Y %H:%M') }}</span>
+            <span>Mês escrito na planilha: <b>{{ d.mes_planilha or '—' }}</b></span>
+        </div>
+
+        <form method="get" class="barra-acoes" style="margin-top:12px;">
+            <label for="mes-previa"><b>Mês de referência da planilha</b></label>
+            {% from '_seletor_mes.html' import seletor_mes %}
+            {{ seletor_mes('mes-previa', 'mes', valor=d.mes, exemplo='06/2026', submeter=True, dica=False) }}
+            <span class="dica" style="margin:0;">Os dados serão gravados neste mês.</span>
+        </form>
+        {% if d.mes_divergente %}
+        <div class="alerta aviso">O cabeçalho da planilha diz <b>{{ d.mes_planilha }}</b>, mas o mês de referência informado é
+            <b>{{ d.mes[5:] }}/{{ d.mes[:4] }}</b>. Confira o mês antes de confirmar.</div>
+        {% endif %}
+
+        <div class="resumo">
+            <div class="card"><div class="rotulo">Total de custos</div><div class="valor">R$ {{ d.total_custos | moeda_br }}</div>
+                <div class="sub">{% if d.custo_total_planilha is not none %}
+                    {% if (d.total_custos - d.custo_total_planilha) | abs > 1 %}<span class="difere">planilha: R$ {{ d.custo_total_planilha | moeda_br }}</span>
+                    {% else %}confere com o CUSTO TOTAL da planilha{% endif %}{% endif %}</div></div>
+            <div class="card"><div class="rotulo">Itens de custo</div><div class="valor">{{ d.custos | length }}</div>
+                <div class="sub">{{ d.tipos | length }} tipos{% if d.novos.itens %} · {{ d.novos.itens }} novos{% endif %}</div></div>
+            <div class="card"><div class="rotulo">Unidades</div><div class="valor">{{ d.unidades | length }}</div>
+                <div class="sub">{{ d.grupos | length }} grupos{% if d.novos.unidades %} · {{ d.novos.unidades }} novas{% endif %}</div></div>
+            <div class="card"><div class="rotulo">Itens de rateio</div><div class="valor">{{ d.rateios | length }}</div>
+                <div class="sub">{% if d.novos.rateios %}{{ d.novos.rateios }} novos{% else %}já cadastrados{% endif %}</div></div>
+            <div class="card"><div class="rotulo">Produção</div>
+                <div class="valor">{{ d.unidades | selectattr('producao') | list | length }}</div>
+                <div class="sub">unidades com produção no mês</div></div>
+        </div>
+
+        {% set existentes = d.existentes.values() | sum %}
+        {% if existentes %}
+        <div class="alerta aviso">
+            <b>{{ d.mes[5:] }}/{{ d.mes[:4] }} já tem lançamentos</b>, que serão <b>substituídos</b> pelos desta planilha:
+            {{ d.existentes.custos }} itens de custo, {{ d.existentes.custos_unidade }} valores por unidade,
+            {{ d.existentes.rateio_unidade }} de rateio e {{ d.existentes.producao_unidade }} de produção.
+        </div>
+        {% endif %}
+        {% set novos = d.novos.values() | sum %}
+        {% if novos %}
+        <div class="alerta info">
+            Serão cadastrados na confirmação (marcados como <span class="etiqueta novo">novo</span> abaixo):
+            {% set partes = [] %}
+            {% if d.novos.tipos %}{% set _ = partes.append(d.novos.tipos ~ ' tipos de custo') %}{% endif %}
+            {% if d.novos.itens %}{% set _ = partes.append(d.novos.itens ~ ' itens de custo') %}{% endif %}
+            {% if d.novos.grupos %}{% set _ = partes.append(d.novos.grupos ~ ' grupos de unidade') %}{% endif %}
+            {% if d.novos.unidades %}{% set _ = partes.append(d.novos.unidades ~ ' unidades') %}{% endif %}
+            {% if d.novos.rateios %}{% set _ = partes.append(d.novos.rateios ~ ' itens de rateio') %}{% endif %}
+            {{ partes | join(', ') }}. Depois podem ser renomeados ou inativados na tela Cadastros.
+        </div>
+        {% endif %}
+        {% if d.avisos %}
+        <div class="alerta aviso"><b>Avisos da leitura da planilha</b><ul>{% for a in d.avisos %}<li>{{ a }}</li>{% endfor %}</ul></div>
+        {% endif %}
+
+        <div class="barra-acoes">
+            <form method="post" action="{{ url_for('admin_custos_importacao_confirmar', lote=d.id) }}"
+                  onsubmit="this.querySelector('button').disabled = true; this.querySelector('button').textContent = 'Gravando…';">
+                <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                <input type="hidden" name="mes" value="{{ d.mes }}">
+                <button type="submit" class="btn">Confirmar e gravar em {{ d.mes[5:] }}/{{ d.mes[:4] }}</button>
+            </form>
+            <form method="post" action="{{ url_for('admin_custos_importacao_cancelar', lote=d.id) }}"
+                  onsubmit="return confirm('Cancelar a importação? Nada será gravado.')">
+                <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                <button type="submit" class="btn secundario">Cancelar</button>
+            </form>
+        </div>
+    </section>
+
+    <section class="painel">
+        <h2>Custos por item (total do hospital e soma das unidades)</h2>
+        <table>
+            <thead><tr><th>Item</th><th class="num">Total (coluna D)</th><th class="num">Soma das unidades</th>
+                <th class="num">Unidades com valor</th><th></th></tr></thead>
+            <tbody>
+            {% for t in d.tipos %}
+                <tr class="grupo"><td colspan="3">{{ t.nome }}{% if t.novo %} <span class="etiqueta novo">novo</span>{% endif %}</td>
+                    <td class="num" colspan="2">R$ {{ t.total | moeda_br }}</td></tr>
+                {% for i in t.itens %}
+                <tr>
+                    <td>{{ i.item }}</td>
+                    <td class="num">{{ i.total | moeda_br }}</td>
+                    <td class="num {{ 'difere' if i.total is not none and (i.total - i.soma) | abs > 0.05 }}">{{ i.soma | moeda_br }}</td>
+                    <td class="num">{{ i.valores | length }}</td>
+                    <td>{% if i.novo %}<span class="etiqueta novo">novo</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            {% endfor %}
+            <tr class="total"><td>Total</td><td class="num">R$ {{ d.total_custos | moeda_br }}</td><td colspan="3"></td></tr>
+            </tbody>
+        </table>
+    </section>
+
+    <section class="painel">
+        <h2>Unidades (centros de custo)</h2>
+        <table>
+            <thead><tr><th>Unidade</th><th>Medida da produção</th><th class="num">Produção</th>
+                <th class="num">Custos do mês</th><th></th></tr></thead>
+            <tbody>
+            {% for gr in d.grupos %}
+                <tr class="grupo"><td colspan="5">{{ gr.nome }}{% if gr.novo %} <span class="etiqueta novo">novo</span>{% endif %}</td></tr>
+                {% for u in gr.unidades %}
+                <tr>
+                    <td>{{ u.nome }}</td>
+                    <td>{{ u.medida or '' }}</td>
+                    <td class="num">{{ u.producao | num_br('decimal') }}</td>
+                    <td class="num">{{ u.custo | moeda_br }}</td>
+                    <td>{% if u.novo %}<span class="etiqueta novo">nova</span>{% endif %}</td>
+                </tr>
+                {% endfor %}
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="painel">
+        <h2>Rateio dos custos auxiliares e administrativos</h2>
+        <div class="dica" style="margin-bottom:10px;">Gravado por unidade como está na planilha; não entra no total de custos
+            (é a distribuição dos custos dos centros auxiliares entre as unidades).</div>
+        <table>
+            <thead><tr><th>Item de rateio</th><th class="num">Valor rateado (coluna D)</th><th class="num">Unidades com valor</th><th></th></tr></thead>
+            <tbody>
+            {% for i in d.rateios %}
+            <tr><td>{{ i.item }}</td><td class="num">{{ i.total | moeda_br }}</td><td class="num">{{ i.valores | length }}</td>
+                <td>{% if i.novo %}<span class="etiqueta novo">novo</span>{% endif %}</td></tr>
+            {% else %}
+            <tr><td colspan="4" class="dica">Sem rateio na planilha.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    <section class="painel">
+        <details>
+            <summary>Valores por unidade ({{ d.custos | length }} itens × {{ d.unidades | length }} unidades)</summary>
+            <div class="rolagem" style="margin-top:12px;">
+            <table class="matriz">
+                <thead><tr><th>Item</th>{% for u in d.unidades %}<th class="num">{{ u.nome }}</th>{% endfor %}</tr></thead>
+                <tbody>
+                {% for t in d.tipos %}
+                    <tr class="grupo"><td>{{ t.nome }}</td><td colspan="{{ d.unidades | length }}"></td></tr>
+                    {% for i in t.itens %}
+                    <tr><td>{{ i.item }}</td>{% for u in d.unidades %}<td class="num">{{ i.valores.get(u.nome) | moeda_br }}</td>{% endfor %}</tr>
+                    {% endfor %}
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </details>
+    </section>
+</div>
+{% endif %}
+{% endblock %}

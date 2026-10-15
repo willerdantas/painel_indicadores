@@ -77,7 +77,8 @@
             {% endfor %}
             <input type="text" name="nome" placeholder="Nome" required aria-label="Nome">
             {% for c in cad.extras %}
-            <input type="text" name="{{ c.nome }}" class="curto" inputmode="decimal" placeholder="{{ c.rotulo }} (1)" aria-label="{{ c.rotulo }}">
+            <input type="text" name="{{ c.nome }}" class="curto" {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
+                   placeholder="{{ c.rotulo }}{% if c.padrao is not none %} ({{ c.padrao }}){% endif %}" aria-label="{{ c.rotulo }}">
             {% endfor %}
             <button type="submit" class="btn pequeno">Incluir</button>
         </form>
@@ -108,7 +109,8 @@
                     {% endfor %}
                     <td><input type="text" name="nome" value="{{ r.nome }}" form="{{ fid }}" required aria-label="Nome"></td>
                     {% for c in cad.extras %}
-                    <td><input type="text" name="{{ c.nome }}" class="curto" inputmode="decimal" value="{{ r[c.nome] | num_br(c.formato) }}" form="{{ fid }}" aria-label="{{ c.rotulo }}"></td>
+                    <td><input type="text" name="{{ c.nome }}" class="curto" {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
+                               value="{{ r[c.nome] | num_br(c.formato) if r[c.nome] is not none }}" form="{{ fid }}" aria-label="{{ c.rotulo }}"></td>
                     {% endfor %}
                     {% if cad.uso %}<td class="uso">{{ r.uso }}</td>{% endif %}
                     <td class="acoes-linha">

@@ -23,6 +23,8 @@ from flask import flash, g, jsonify, redirect, render_template, request, session
 
 import banco_painel
 import config_banco
+import importacao_custos
+import lancamento_custos
 import usuarios
 
 # Rotas e ganchos ficam registrados aqui e entram no app em registrar(), com
@@ -360,13 +362,12 @@ def admin_banco_salvar():
     return jsonify({'ok': True, 'schema_painel_pronto': pronto, 'erro_schema_painel': banco_painel.erro()})
 
 
-# ---- lançamento de dados (área restrita): custos, produção hospitalar e SIMAQ ----
+# ---- lançamento de dados (área restrita): produção hospitalar e SIMAQ ----
 # Uma tela por tabela de banco_painel, todas com a mesma estrutura: grade do
 # mês com os itens já conhecidos, linha para item novo e importação de xlsx.
+# Custos têm tela própria, por unidade (mais abaixo).
 
 LANCAMENTOS = {
-    'custos': {'tabela': banco_painel.CUSTOS, 'titulo': 'Lançar Dados de Custos',
-               'grupo': 'tipo', 'pagina': 'custos_pagina', 'nome_pagina': 'Custos', 'cadastro': 'item_custo'},
     'producao': {'tabela': banco_painel.PRODUCAO, 'titulo': 'Lançar Dados de Produção',
                  'grupo': 'servico', 'pagina': 'producao_hospitalar', 'nome_pagina': 'Produção Hospitalar',
                  'cadastro': 'procedimento'},
@@ -389,6 +390,14 @@ def num_br(valor, formato='decimal'):
     d = Decimal(str(valor)).normalize()
     casas = max({'moeda': 2}.get(formato, 0), -min(d.as_tuple().exponent, 0))
     return f'{d:,.{casas}f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+
+
+@_gancho('template_filter', 'moeda_br')
+def moeda_br(valor):
+    """Valor para exibir (não para campo de formulário): 2 casas, formato brasileiro."""
+    if valor is None or valor == '':
+        return ''
+    return f'{float(valor):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
 def _mes_valido(mes):
@@ -506,6 +515,160 @@ def admin_lancamento_importar(chave):
             return redirect(url_for(f'admin_{chave}'))
     flash(f'Planilha importada: {qtd} lançamentos gravados.', 'ok')
     return redirect(url_for(f'admin_{chave}'))
+
+
+# ---- lançamento de custos por unidade (lancamento_custos.py) ----
+# O valor de cada despesa é lançado por unidade (centro de custo); o total do
+# hospital por despesa (página Custos) é a soma das unidades.
+
+def _texto_mes(mes):
+    return f'{mes[5:]}/{mes[:4]}'
+
+
+@_rota('/admin/custos')
+def admin_custos():
+    if not banco_painel.pronto():
+        return render_template('admin_lancamento_custos.html',
+                               indisponivel=banco_painel.erro() or 'Banco de dados dos lançamentos indisponível.',
+                               sql=banco_painel.sql_criar_schema())
+    mes = request.args.get('mes')
+    if not _mes_valido(mes):
+        mes = lancamento_custos.ultimo_mes() or datetime.now().strftime('%Y-%m')
+    unidades = lancamento_custos.unidades(mes)
+    unidade_id = request.args.get('unidade', type=int)
+    unidade = next((u for u in unidades if u['id'] == unidade_id), unidades[0] if unidades else None)
+    indice = unidades.index(unidade) if unidade else 0
+    itens = lancamento_custos.itens(mes, unidade['id']) if unidade else []
+    tipos = []
+    for i in itens:
+        if not tipos or tipos[-1]['nome'] != i['tipo']:
+            tipos.append({'nome': i['tipo'], 'itens': [], 'total': 0})
+        tipos[-1]['itens'].append(i)
+        tipos[-1]['total'] += i['valor'] or 0
+    despesas = lancamento_custos.despesas_do_mes(mes)
+    return render_template(
+        'admin_lancamento_custos.html', mes=mes, unidades=unidades, unidade=unidade, tipos=tipos,
+        anterior=unidades[indice - 1] if unidade and indice > 0 else None,
+        proxima=unidades[indice + 1] if unidade and indice + 1 < len(unidades) else None,
+        situacao=lancamento_custos.situacao(mes), despesas=despesas,
+        total_mes=sum(d['total'] for d in despesas), meses=lancamento_custos.meses())
+
+
+@_rota('/admin/custos/salvar', methods=['POST'])
+def admin_custos_salvar():
+    mes = request.form.get('mes') or ''
+    unidade_id = request.form.get('unidade_id', type=int)
+    if not _mes_valido(mes) or not unidade_id:
+        flash('Informe o mês e a unidade.', 'erro')
+        return redirect(url_for('admin_custos'))
+    voltar = redirect(url_for('admin_custos', mes=mes, unidade=unidade_id))
+    if not banco_painel.pronto():
+        flash(banco_painel.erro() or 'Banco indisponível.', 'erro')
+        return voltar
+    valores, invalidos = {}, []
+    for chave, texto in request.form.items():
+        if chave.startswith('v__'):
+            try:
+                valores[int(chave[3:])] = banco_painel.ler_numero(texto, 'moeda')
+            except ValueError:
+                invalidos.append(request.form.get(f'n__{chave[3:]}') or chave[3:])
+    if invalidos:
+        flash('Valor inválido em: ' + '; '.join(invalidos) + '. Nada foi salvo.', 'erro')
+        return voltar
+    try:
+        gravados, removidos = lancamento_custos.salvar(mes, unidade_id, valores, g.usuario['login'])
+    except lancamento_custos.MesSoTotal as e:
+        flash(str(e), 'erro')
+        return voltar
+    nome = request.form.get('unidade_nome') or 'unidade'
+    flash(f'{nome} — {_texto_mes(mes)}: {gravados} despesas com valor'
+          + (f', {removidos} removidas' if removidos else '') + '. Total por despesa do mês atualizado.', 'ok')
+    seguir = request.args.get('seguir', type=int)  # "Salvar e ir para a próxima unidade"
+    return redirect(url_for('admin_custos', mes=mes, unidade=seguir)) if seguir else voltar
+
+
+# ---- importação da planilha do setor de custos (aba GERAL), com pré-visualização ----
+# A tela de lançamento envia a planilha para uma janela nova (target=_blank);
+# ela fica num lote de preparação até a confirmação, que grava o mês, fecha a
+# janela e recarrega a tela de lançamento (importacao_custos.py).
+
+def _fechar_janela(mes=None):
+    """Página que volta para a tela de lançamento de custos (janela que abriu a
+    pré-visualização) e fecha esta; sem a janela de origem, só redireciona."""
+    return render_template('admin_importacao_fim.html',
+                           destino=url_for('admin_custos', mes=mes) if mes else url_for('admin_custos'))
+
+
+def _lote_do_usuario(lote):
+    dados = importacao_custos.carregar(lote, request.values.get('mes') if _mes_valido(request.values.get('mes')) else None)
+    if dados is None:
+        return None, 'Esta importação não existe mais: já foi confirmada, cancelada ou expirou.'
+    if dados['usuario'] != g.usuario['login'] and not usuarios.eh_admin(g.usuario):
+        return None, 'Esta importação foi enviada por outro usuário.'
+    return dados, None
+
+
+@_rota('/admin/custos/importar-geral', methods=['POST'])
+def admin_custos_importar_geral():
+    arquivo = request.files.get('planilha')
+    mes = request.form.get('mes') or ''
+    erro = None
+    if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
+        erro = 'Escolha a planilha do setor de custos (.xlsx).'
+    elif not _mes_valido(mes):
+        erro = 'Informe o mês de referência da planilha.'
+    elif not banco_painel.pronto():
+        erro = banco_painel.erro() or 'Banco indisponível.'
+    if erro is None:
+        import tempfile
+        with tempfile.TemporaryDirectory() as pasta:
+            caminho = os.path.join(pasta, 'planilha.xlsx')
+            arquivo.save(caminho)
+            try:
+                lote = importacao_custos.preparar(caminho, arquivo.filename, mes, g.usuario['login'])
+            except importacao_custos.ErroPlanilha as e:
+                erro = f'Planilha fora do padrão: {e}'
+            except Exception as e:
+                erro = f'Não foi possível ler a planilha: {e}'
+    if erro:
+        return render_template('admin_importacao_custos.html', erro=erro), 400
+    return redirect(url_for('admin_custos_importacao', lote=lote))
+
+
+@_rota('/admin/custos/importacao/<lote>')
+def admin_custos_importacao(lote):
+    dados, erro = _lote_do_usuario(lote)
+    if erro:
+        return render_template('admin_importacao_custos.html', erro=erro), 404
+    return render_template('admin_importacao_custos.html', d=dados)
+
+
+@_rota('/admin/custos/importacao/<lote>/confirmar', methods=['POST'])
+def admin_custos_importacao_confirmar(lote):
+    dados, erro = _lote_do_usuario(lote)
+    mes = request.form.get('mes') or ''
+    if erro is None and not _mes_valido(mes):
+        erro = 'Informe o mês de referência da planilha.'
+    if erro:
+        return render_template('admin_importacao_custos.html', erro=erro), 400
+    try:
+        r = importacao_custos.confirmar(lote, mes, g.usuario['login'])
+    except Exception as e:
+        flash(f'A importação não foi gravada (nada mudou no banco): {e}', 'erro')
+        return redirect(url_for('admin_custos_importacao', lote=lote, mes=mes))
+    flash(f'Planilha {dados["arquivo"]} importada em {mes[5:]}/{mes[:4]}: {r["itens"]} itens de custo, '
+          f'{r["valores_unidade"]} valores por unidade, {r["rateio"]} valores de rateio e a produção de '
+          f'{r["unidades_com_producao"]} unidades.', 'ok')
+    return _fechar_janela(mes)
+
+
+@_rota('/admin/custos/importacao/<lote>/cancelar', methods=['POST'])
+def admin_custos_importacao_cancelar(lote):
+    dados, erro = _lote_do_usuario(lote)
+    if erro is None:
+        importacao_custos.cancelar(lote)
+        flash('Importação cancelada; nada foi gravado.', 'ok')
+    return _fechar_janela()
 
 
 # ---- cadastros (área restrita): tipos, itens, serviços, procedimentos e indicadores ----
