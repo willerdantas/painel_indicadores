@@ -1,0 +1,16 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Painel (local, com debug)",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${workspaceFolder}/painel.py",
+            "cwd": "${workspaceFolder}",
+            "python": "${workspaceFolder}\\.venv-win\\Scripts\\python.exe",
+            "env": { "PAINEL_DEBUG": "1" },
+            "console": "integratedTerminal",
+            "justMyCode": true
+        }
+    ]
+}

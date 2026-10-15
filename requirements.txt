@@ -4,3 +4,4 @@ openpyxl>=3.1
 plotly>=5.20
 pypdf>=5.0
 psycopg2-binary>=2.9
+cryptography>=42
