@@ -1,0 +1,70 @@
+{% extends 'admin_base.html' %}
+{% block titulo %}Usuários{% endblock %}
+{% block cabecalho %}Usuários{% endblock %}
+{% block conteudo %}
+<div class="grade">
+    <form class="painel" method="post" action="{{ url_for('admin_usuarios_salvar') }}" autocomplete="off">
+        <h2>{{ 'Editar usuário' if editando else 'Novo usuário' }}</h2>
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        {% if editando %}<input type="hidden" name="id" value="{{ editando.id }}">{% endif %}
+
+        <label class="campo" for="nome">Nome</label>
+        <input type="text" id="nome" name="nome" value="{{ editando.nome if editando else '' }}" required>
+
+        <label class="campo" for="login">Login</label>
+        <input type="text" id="login" name="login" value="{{ editando.login if editando else '' }}" autocomplete="off" required>
+
+        <label class="campo" for="senha">Senha</label>
+        <input type="password" id="senha" name="senha" autocomplete="new-password" minlength="6"
+               {% if not editando %}required{% endif %}>
+        <div class="dica">{{ 'Em branco mantém a senha atual.' if editando else 'Mínimo de 6 caracteres.' }}</div>
+
+        <label class="campo" for="perfil_id">Perfil de acesso</label>
+        <select id="perfil_id" name="perfil_id" required>
+            {% for p in perfis if eh_admin or not p.admin %}
+            <option value="{{ p.id }}" {% if editando and editando.perfil_id == p.id %}selected{% endif %}>
+                {{ p.nome }}{% if p.admin %} (administrador){% endif %}
+            </option>
+            {% endfor %}
+        </select>
+        <div class="dica"><a href="{{ url_for('admin_perfis') }}">Gerenciar perfis de acesso</a></div>
+
+        <label class="check" style="margin-top:14px;">
+            <input type="checkbox" name="ativo" value="1" {% if not editando or editando.ativo %}checked{% endif %}>
+            Usuário ativo (pode entrar no painel)
+        </label>
+
+        <div class="acoes">
+            <button type="submit" class="btn">Salvar</button>
+            {% if editando %}<a href="{{ url_for('admin_usuarios') }}" class="btn secundario">Cancelar</a>{% endif %}
+        </div>
+    </form>
+
+    <div class="painel">
+        <h2>Usuários cadastrados ({{ usuarios|length }})</h2>
+        <table>
+            <thead><tr><th>Nome</th><th>Login</th><th>Perfil</th><th>Situação</th><th></th></tr></thead>
+            <tbody>
+            {% for u in usuarios %}
+                <tr>
+                    <td>{{ u.nome }}</td>
+                    <td>{{ u.login }}</td>
+                    <td>{{ u.perfil_nome }} {% if u.perfil_admin %}<span class="etiqueta admin">admin</span>{% endif %}</td>
+                    <td>{% if u.ativo %}Ativo{% else %}<span class="etiqueta inativo">inativo</span>{% endif %}</td>
+                    <td class="acoes-linha">
+                        <a href="{{ url_for('admin_usuarios', editar=u.id) }}" class="btn pequeno secundario">Editar</a>
+                        {% if u.id != usuario_atual.id %}
+                        <form method="post" action="{{ url_for('admin_usuarios_excluir', usuario_id=u.id) }}"
+                              onsubmit="return confirm('Excluir o usuário {{ u.login }}?');">
+                            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                            <button type="submit" class="btn pequeno perigo">Excluir</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

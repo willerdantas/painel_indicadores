@@ -1,37 +1,59 @@
 """
 config_banco.py
 
-Configuração única de acesso ao PostgreSQL, usada por painel.py e
-indicadores_hcasg.py.
+Configuração única de acesso ao PostgreSQL, usada por painel.py,
+indicadores_hcasg.py e banco_painel.py. Os dados são informados na página
+/admin/banco (só administrador) e ficam criptografados em config_banco.enc.
 
-Ordem de prioridade de cada campo:
-  1. config_banco.json (salvo pela página /admin/banco)
-  2. variáveis de ambiente DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS
-     (ou DB_PASSWORD) e DB_SCHEMA
-  3. padrões abaixo
+Campos:
+  host, port, dbname, user, password  conexão
+  schema         schema do sistema hospitalar (t_internacao, t_exame...),
+                 usado como search_path das consultas
+  schema_painel  schema onde o painel guarda os dados lançados
+                 (custos, produção, SIMAQ) - ver banco_painel.py
 
-A configuração é lida a cada nova conexão, então o que for salvo na página
-vale na hora, sem reiniciar o servidor.
+Criptografia: Fernet (AES-128-CBC + HMAC-SHA256, biblioteca cryptography).
+A chave vem da variável de ambiente PAINEL_CHAVE_CONFIG ou, se ela não
+existir, do arquivo .chave_config, gerado no primeiro salvamento. Os dois
+arquivos ficam fora do git. Para proteger melhor, guarde a chave na variável
+de ambiente do servidor e apague o .chave_config: sem a chave, o
+config_banco.enc não pode ser lido.
+
+Um config_banco.json antigo (texto puro) é convertido na primeira leitura e
+apagado.
+
+Ordem de prioridade de cada campo: config_banco.enc > variáveis de ambiente
+DB_HOST, DB_PORT, DB_NAME, DB_USER, DB_PASS (ou DB_PASSWORD), DB_SCHEMA e
+DB_SCHEMA_PAINEL > padrões (só porta e schemas; servidor, banco, usuário e
+senha não têm padrão).
+
+A configuração vale na hora em que é salva, sem reiniciar o servidor.
 """
 
 import json
 import os
 import re
+import threading
 
 import psycopg2
+from cryptography.fernet import Fernet, InvalidToken
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ARQUIVO_CONFIG = os.path.join(BASE_DIR, 'config_banco.json')
+ARQUIVO_CONFIG = os.path.join(BASE_DIR, 'config_banco.enc')
+ARQUIVO_LEGADO = os.path.join(BASE_DIR, 'config_banco.json')
+ARQUIVO_CHAVE = os.path.join(BASE_DIR, '.chave_config')
+VARIAVEL_CHAVE = 'PAINEL_CHAVE_CONFIG'
 
-CAMPOS = ('host', 'port', 'dbname', 'user', 'password', 'schema')
+CAMPOS = ('host', 'port', 'dbname', 'user', 'password', 'schema', 'schema_painel')
 
 _PADROES = {
-    'host': '10.10.29.90',
+    'host': '',
     'port': '5432',
-    'dbname': 'postgres',
-    'user': 'painel',
-    'password': '123456',
+    'dbname': '',
+    'user': '',
+    'password': '',
     'schema': 'public',
+    'schema_painel': 'painel',
 }
 
 _ENV = {
@@ -41,6 +63,7 @@ _ENV = {
     'user': ('DB_USER',),
     'password': ('DB_PASS', 'DB_PASSWORD'),
     'schema': ('DB_SCHEMA',),
+    'schema_painel': ('DB_SCHEMA_PAINEL',),
 }
 
 # Tabelas que o painel consulta; o teste de conexão confere se existem no schema.
@@ -54,15 +77,102 @@ TABELAS_USADAS = (
 
 _SCHEMA_VALIDO = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
+_lock = threading.Lock()
+# arquivo decifrado em memória, refeito quando o arquivo muda (mtime)
+_cache = {'mtime': None, 'dados': {}}
+_estado = {'erro': None}
+
+
+class ConfiguracaoAusente(RuntimeError):
+    pass
+
+
+# ------------------------------------------------------------------ chave e arquivo
+
+def _fernet(criar=False):
+    chave = os.environ.get(VARIAVEL_CHAVE)
+    if not chave:
+        try:
+            with open(ARQUIVO_CHAVE, 'rb') as f:
+                chave = f.read().strip()
+        except OSError:
+            if not criar:
+                return None
+            chave = Fernet.generate_key()
+            with open(ARQUIVO_CHAVE, 'wb') as f:
+                f.write(chave)
+            try:
+                os.chmod(ARQUIVO_CHAVE, 0o600)
+            except OSError:
+                pass
+    return Fernet(chave)
+
+
+def _gravar(dados):
+    token = _fernet(criar=True).encrypt(json.dumps(dados, ensure_ascii=False).encode('utf-8'))
+    tmp = ARQUIVO_CONFIG + '.tmp'
+    with open(tmp, 'wb') as f:
+        f.write(token)
+    try:
+        os.chmod(tmp, 0o600)
+    except OSError:
+        pass
+    os.replace(tmp, ARQUIVO_CONFIG)
+
+
+def _converter_legado():
+    """config_banco.json em texto puro -> config_banco.enc."""
+    try:
+        with open(ARQUIVO_LEGADO, encoding='utf-8') as f:
+            dados = json.load(f)
+    except (OSError, ValueError):
+        return
+    if not os.path.exists(ARQUIVO_CONFIG):
+        _gravar({k: str(v) for k, v in dados.items() if k in CAMPOS and v not in (None, '')})
+    for arq in (ARQUIVO_LEGADO, ARQUIVO_LEGADO + '.tmp'):
+        try:
+            os.remove(arq)
+        except OSError:
+            pass
+
 
 def _ler_arquivo():
-    try:
-        with open(ARQUIVO_CONFIG, encoding='utf-8') as f:
-            dados = json.load(f)
-        return {k: str(v) for k, v in dados.items() if k in CAMPOS and v not in (None, '')}
-    except (OSError, ValueError):
-        return {}
+    with _lock:
+        if os.path.exists(ARQUIVO_LEGADO):
+            _converter_legado()
+        try:
+            mtime = os.path.getmtime(ARQUIVO_CONFIG)
+        except OSError:
+            _cache.update(mtime=None, dados={})
+            _estado['erro'] = None
+            return {}
+        if mtime == _cache['mtime']:
+            return dict(_cache['dados'])
+        fernet = _fernet()
+        try:
+            if fernet is None:
+                raise InvalidToken
+            with open(ARQUIVO_CONFIG, 'rb') as f:
+                dados = json.loads(fernet.decrypt(f.read()).decode('utf-8'))
+        except (InvalidToken, ValueError, OSError):
+            _estado['erro'] = ('Não foi possível decifrar config_banco.enc: a chave de criptografia '
+                               f'({VARIAVEL_CHAVE} ou .chave_config) não é a que foi usada para salvar. '
+                               'Informe a configuração de novo na página de configuração do banco.')
+            _cache.update(mtime=None, dados={})
+            return {}
+        _estado['erro'] = None
+        dados = {k: str(v) for k, v in dados.items() if k in CAMPOS and v not in (None, '')}
+        _cache.update(mtime=mtime, dados=dados)
+        return dict(dados)
 
+
+def erro_arquivo():
+    """Mensagem se o arquivo existe mas não pôde ser decifrado."""
+    _ler_arquivo()
+    return _estado['erro']
+
+
+# ------------------------------------------------------------------ configuração
 
 def carregar():
     """Configuração efetiva (arquivo > ambiente > padrão)."""
@@ -76,33 +186,43 @@ def carregar():
     return cfg
 
 
+def configurado(cfg=None):
+    cfg = cfg or carregar()
+    return all(cfg.get(c) for c in ('host', 'port', 'dbname', 'user'))
+
+
+def schema_valido(nome):
+    return bool(_SCHEMA_VALIDO.match(nome or ''))
+
+
 def validar(cfg):
     """Retorna uma lista de mensagens de erro (vazia se estiver tudo certo)."""
     erros = []
     for campo, nome in (('host', 'Servidor'), ('port', 'Porta'), ('dbname', 'Banco'),
-                        ('user', 'Usuário'), ('schema', 'Schema')):
+                        ('user', 'Usuário'), ('schema', 'Schema do sistema hospitalar'),
+                        ('schema_painel', 'Schema dos dados do painel')):
         if not str(cfg.get(campo) or '').strip():
             erros.append(f'{nome} é obrigatório.')
     porta = str(cfg.get('port') or '').strip()
     if porta and (not porta.isdigit() or not 1 <= int(porta) <= 65535):
         erros.append('Porta deve ser um número entre 1 e 65535.')
-    schema = str(cfg.get('schema') or '').strip()
-    if schema and not _SCHEMA_VALIDO.match(schema):
-        erros.append('Schema deve ter só letras, números e "_" (sem começar com número).')
+    for campo, nome in (('schema', 'Schema do sistema hospitalar'), ('schema_painel', 'Schema dos dados do painel')):
+        valor = str(cfg.get(campo) or '').strip()
+        if valor and not schema_valido(valor):
+            erros.append(f'{nome} deve ter só letras, números e "_" (sem começar com número).')
     return erros
 
 
 def salvar(cfg):
-    dados = {campo: str(cfg.get(campo) or '').strip() for campo in CAMPOS}
-    tmp = ARQUIVO_CONFIG + '.tmp'
-    with open(tmp, 'w', encoding='utf-8') as f:
-        json.dump(dados, f, ensure_ascii=False, indent=2)
-    os.replace(tmp, ARQUIVO_CONFIG)
+    _gravar({campo: str(cfg.get(campo) or '').strip() for campo in CAMPOS})
 
 
 def parametros_conexao(cfg=None, **extras):
     """Argumentos para psycopg2.connect a partir da configuração."""
     cfg = cfg or carregar()
+    if not configurado(cfg):
+        raise ConfiguracaoAusente(erro_arquivo() or 'O banco de dados ainda não foi configurado. '
+                                  'Um administrador deve informar os dados em Administração > Configuração do Banco.')
     params = {
         'host': cfg['host'],
         'port': cfg['port'],
@@ -121,7 +241,7 @@ def conectar(**extras):
 
 
 def testar(cfg):
-    """Tenta conectar com a configuração informada e confere schema e tabelas."""
+    """Tenta conectar com a configuração informada e confere os dois schemas."""
     try:
         conn = psycopg2.connect(**parametros_conexao(cfg, connect_timeout=5))
     except UnicodeDecodeError:
@@ -145,6 +265,19 @@ def testar(cfg):
                   AND c.relname = ANY(%s)
             """, [cfg['schema'], list(TABELAS_USADAS)])
             encontradas = {r[0] for r in cur.fetchall()}
+            # schema dos dados do painel: existe? o usuário pode criar tabelas nele
+            # (ou criar o schema, se ainda não existir)?
+            cur.execute("""
+                SELECT has_schema_privilege(current_user, n.oid, 'CREATE')
+                FROM pg_namespace n WHERE n.nspname = %s
+            """, [cfg['schema_painel']])
+            r = cur.fetchone()
+            painel_existe = r is not None
+            if painel_existe:
+                painel_pode = bool(r[0])
+            else:
+                cur.execute("SELECT has_database_privilege(current_user, current_database(), 'CREATE')")
+                painel_pode = bool(cur.fetchone()[0])
     except psycopg2.Error as e:
         return {'ok': False, 'erro': _mensagem_erro(e)}
     finally:
@@ -156,6 +289,9 @@ def testar(cfg):
         'schema_existe': schema_existe,
         'tabelas_faltando': [t for t in TABELAS_USADAS if t not in encontradas],
         'total_tabelas': len(TABELAS_USADAS),
+        'schema_painel_existe': painel_existe,
+        'schema_painel_pode_criar': painel_pode,
+        'sql_schema_painel': f'CREATE SCHEMA IF NOT EXISTS {cfg["schema_painel"]} AUTHORIZATION {usuario};',
     }
 
 

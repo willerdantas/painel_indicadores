@@ -1,0 +1,88 @@
+{% extends 'admin_base.html' %}
+{% block titulo %}Perfis de Acesso{% endblock %}
+{% block cabecalho %}Perfis de Acesso{% endblock %}
+{% block conteudo %}
+<div class="grade">
+    <form class="painel" method="post" action="{{ url_for('admin_perfis_salvar') }}">
+        <h2>{{ 'Editar perfil' if editando else 'Novo perfil' }}</h2>
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        {% if editando %}<input type="hidden" name="id" value="{{ editando.id }}">{% endif %}
+
+        <label class="campo" for="nome">Nome do perfil</label>
+        <input type="text" id="nome" name="nome" value="{{ editando.nome if editando else '' }}" required>
+
+        {% if eh_admin %}
+        <label class="check" style="margin-top:16px;">
+            <input type="checkbox" id="admin" name="admin" value="1" {% if editando and editando.admin %}checked{% endif %}>
+            <b>Administrador</b>
+        </label>
+        <div class="dica">Acessa toda a área restrita, inclusive a configuração do banco (exclusiva do administrador).</div>
+        {% endif %}
+
+        <fieldset id="lista-paginas" style="border:none; margin-top:14px;">
+            <label class="campo">Áreas restritas liberadas</label>
+            {% for chave, nome, _ in paginas %}
+            <label class="check">
+                <input type="checkbox" name="paginas" value="{{ chave }}"
+                       {% if editando and chave in editando.paginas %}checked{% endif %}>
+                {{ nome }}
+            </label>
+            {% endfor %}
+            <div class="dica">Os painéis são públicos. Marque o que os usuários deste perfil podem fazer na área restrita.</div>
+        </fieldset>
+
+        <div class="acoes">
+            <button type="submit" class="btn">Salvar</button>
+            {% if editando %}<a href="{{ url_for('admin_perfis') }}" class="btn secundario">Cancelar</a>{% endif %}
+        </div>
+    </form>
+
+    <div class="painel">
+        <h2>Perfis cadastrados ({{ perfis|length }})</h2>
+        <table>
+            <thead><tr><th>Perfil</th><th>Acesso</th><th>Usuários</th><th></th></tr></thead>
+            <tbody>
+            {% for p in perfis %}
+                <tr>
+                    <td><b>{{ p.nome }}</b></td>
+                    <td>
+                        {% if p.admin %}
+                            <span class="etiqueta admin">administrador — acesso total</span>
+                        {% elif p.paginas %}
+                            {% for chave in p.paginas %}<span class="etiqueta pagina">{{ nomes_paginas[chave] }}</span>{% endfor %}
+                        {% else %}
+                            <span class="dica">nenhuma área liberada</span>
+                        {% endif %}
+                    </td>
+                    <td>{{ p.qtd_usuarios }}</td>
+                    <td class="acoes-linha">
+                        <a href="{{ url_for('admin_perfis', editar=p.id) }}" class="btn pequeno secundario">Editar</a>
+                        {% if p.qtd_usuarios == 0 %}
+                        <form method="post" action="{{ url_for('admin_perfis_excluir', perfil_id=p.id) }}"
+                              onsubmit="return confirm('Excluir o perfil {{ p.nome }}?');">
+                            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                            <button type="submit" class="btn pequeno perigo">Excluir</button>
+                        </form>
+                        {% endif %}
+                    </td>
+                </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // administrador acessa tudo: a lista de áreas fica desativada
+    const caixaAdmin = document.getElementById('admin');
+    const lista = document.getElementById('lista-paginas');
+    function atualizarLista() {
+        lista.disabled = caixaAdmin.checked;
+        lista.style.opacity = caixaAdmin.checked ? 0.45 : 1;
+    }
+    if (caixaAdmin) {  // só existe para o administrador
+        caixaAdmin.addEventListener('change', atualizarLista);
+        atualizarLista();
+    }
+</script>
+{% endblock %}

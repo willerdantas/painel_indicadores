@@ -1,0 +1,155 @@
+{% extends 'admin_base.html' %}
+{% block titulo %}{{ cfg.titulo }}{% endblock %}
+{% block cabecalho %}{{ cfg.titulo }}{% endblock %}
+{% block conteudo %}
+<style>
+    .rolagem { overflow-x: auto; }
+    .tabela-lanc td.valor input { text-align: right; font-variant-numeric: tabular-nums; min-width: 110px; max-width: 170px; }
+    .tabela-lanc td.texto input { min-width: 130px; max-width: 170px; }
+    .tabela-lanc tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
+    .tabela-lanc td.quem { font-size: 12px; color: #6b7f86; white-space: nowrap; }
+    .tabela-lanc th.num { text-align: right; }
+    .tabela-lanc td.calculada { text-align: right; font-variant-numeric: tabular-nums; color: #007C6B; font-weight: 600; }
+    .total-mes { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: #007C6B; }
+    .lista-meses a { color: #007C6B; text-decoration: none; font-weight: 500; }
+    .lista-meses a:hover { text-decoration: underline; }
+    .lista-meses tr.atual td { background: #E0F3F3; }
+    pre.sql { background: #f0f4f5; border-radius: 8px; padding: 12px 14px; font-size: 14px; margin: 12px 0; white-space: pre-wrap; }
+</style>
+
+{% if indisponivel %}
+<div class="painel" style="position:relative; max-width:820px;">
+    <h2>Schema "painel" indisponível</h2>
+    <p>{{ indisponivel }}</p>
+    <p style="margin-top:12px;">O usuário do painel não tem permissão para criar schemas. Peça a um administrador do PostgreSQL
+        para executar, uma única vez (também está em <code>sql/painel_schema.sql</code>):</p>
+    <pre class="sql">{{ sql }}</pre>
+    <p class="dica">Depois disso o painel cria as tabelas e migra as planilhas sozinho (em até 1 minuto, ou ao reiniciar o servidor).
+        Enquanto isso, a página {{ cfg.nome_pagina }} continua mostrando os dados da planilha.</p>
+</div>
+{% else %}
+<div class="grade" style="grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);">
+    <form class="painel" method="post" action="{{ url_for('admin_' ~ chave ~ '_salvar') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; justify-content:space-between;">
+            <div>
+                <label class="campo" for="mes" style="margin-top:0;">Mês do lançamento</label>
+                <input type="month" id="mes" name="mes" value="{{ mes }}" required
+                       style="padding:9px 12px; border:1px solid #dde4e6; border-radius:8px; font:inherit; background:#f0f4f5;"
+                       onchange="if (this.value) window.location.href='{{ url_for('admin_' ~ chave) }}?mes=' + this.value">
+            </div>
+            {% if coluna_total %}<div class="total-mes">Total do mês: <span id="total-mes">—</span></div>{% endif %}
+        </div>
+        <div class="dica" style="margin:8px 0 14px;">
+            Números no formato brasileiro (ex.: 1.234.567,89). Linha em branco = sem lançamento no mês (remove o que houver).
+            {% set herdadas = t.colunas | selectattr('herda') | map(attribute='rotulo') | map('lower') | list %}
+            {% if herdadas %}Em mês ainda não lançado, {{ herdadas | join(' e ') }} vêm do último lançamento de cada item.{% endif %}
+            Os itens da grade vêm das tabelas de cadastro; para incluir ou renomear, use a tela Cadastros.
+            {% for c in t.colunas if c.do_item %}{{ c.rotulo }} é do cadastro do item (tela Cadastros).{% endfor %}
+            {% for c in t.colunas if c.calculada %}<br>{{ c.rotulo }} é calculado: {{ c.descricao }}.{% endfor %}
+        </div>
+
+        <div class="rolagem">
+        <table class="tabela-lanc">
+            <thead><tr>
+                <th>{{ t.chaves | rejectattr(0, 'equalto', cfg.grupo) | map(attribute=1) | join(' · ') or t.chaves[0][1] }}</th>
+                {% for c in t.colunas %}<th class="{{ '' if c.formato == 'texto' else 'num' }}">{{ c.rotulo }}</th>{% endfor %}
+                <th>Última alteração</th>
+            </tr></thead>
+            <tbody>
+            {% set ns = namespace(grupo=None) %}
+            {% for l in linhas %}
+                {% if l.grupo != ns.grupo %}
+                    {% set ns.grupo = l.grupo %}
+                    <tr class="grupo"><td colspan="{{ t.colunas | length + 2 }}">{{ l.grupo }}</td></tr>
+                {% endif %}
+                {% set n = loop.index %}
+                <tr>
+                    <td>
+                        {{ l.rotulo }}{% if l.inativo %} <span class="etiqueta inativo">inativo</span>{% endif %}
+                        {% for c in t.campos_chave %}<input type="hidden" name="k__{{ c }}__{{ n }}" value="{{ l.chaves[c] }}">{% endfor %}
+                    </td>
+                    {% for c in t.colunas %}
+                    {% if not c.editavel %}
+                    <td class="calculada">{{ l.valores[c.nome] | num_br(c.formato) }}</td>
+                    {% else %}
+                    <td class="{{ 'texto' if c.formato == 'texto' else 'valor' }}">
+                        <input type="text" name="v__{{ c.nome }}__{{ n }}" value="{{ l.valores[c.nome] | num_br(c.formato) }}"
+                               {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
+                               {% if c.total %}class="campo-total"{% endif %}>
+                    </td>
+                    {% endif %}
+                    {% endfor %}
+                    <td class="quem">{% if l.atualizado_em %}{{ l.atualizado_em.strftime('%d/%m/%Y') }} — {{ l.atualizado_por }}{% endif %}</td>
+                </tr>
+            {% else %}
+                <tr><td colspan="{{ t.colunas | length + 2 }}" class="dica">Nenhum item cadastrado ainda: cadastre na tela de Cadastros.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        </div>
+
+        <div class="acoes">
+            <button type="submit" class="btn">Salvar mês</button>
+            <a href="{{ url_for(cfg.pagina) }}" class="btn secundario" target="_blank">Ver página {{ cfg.nome_pagina }}</a>
+            {% if pode('cadastros') %}<a href="{{ url_for('admin_cadastros', _anchor=cfg.cadastro) }}" class="btn secundario">Cadastrar itens</a>{% endif %}
+        </div>
+    </form>
+
+    <div style="display:flex; flex-direction:column; gap:20px;">
+        <form class="painel" method="post" action="{{ url_for('admin_' ~ chave ~ '_importar') }}" enctype="multipart/form-data">
+            <h2>Importar planilha</h2>
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="file" name="planilha" accept=".xlsx" required style="font-size:13px; max-width:100%;">
+            <div class="dica">Primeira aba, com cabeçalho e as colunas nesta ordem:
+                {% for c in t.colunas_planilha %}{{ t.rotulo_campo(c) }}{{ ', ' if not loop.last }}{% endfor %}
+                (mesmo formato da planilha {{ t.planilha }}). Lançamentos do mesmo mês e item são substituídos; todos os itens precisam estar cadastrados.</div>
+            <div class="acoes"><button type="submit" class="btn secundario">Importar</button></div>
+        </form>
+
+        <div class="painel lista-meses">
+            <h2>Meses lançados</h2>
+            <div style="max-height:520px; overflow-y:auto;">
+            <table>
+                <thead><tr><th>Mês</th><th>Itens</th>{% if coluna_total %}<th style="text-align:right;">Total</th>{% endif %}</tr></thead>
+                <tbody>
+                {% for m in meses %}
+                    <tr class="{{ 'atual' if m.mes == mes else '' }}">
+                        <td><a href="{{ url_for('admin_' ~ chave, mes=m.mes) }}">{{ m.mes[5:] }}/{{ m.mes[:4] }}</a></td>
+                        <td>{{ m.itens }}</td>
+                        {% if coluna_total %}<td style="text-align:right; font-variant-numeric:tabular-nums;">{{ m.total | num_br(coluna_total.formato) }}</td>{% endif %}
+                    </tr>
+                {% else %}
+                    <tr><td colspan="3" class="dica">Nenhum mês lançado.</td></tr>
+                {% endfor %}
+                </tbody>
+            </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if coluna_total %}
+<script>
+    // total do mês enquanto digita (formato brasileiro: 1.234,56)
+    function lerValor(s) {
+        s = (s || '').replace(/R\$|\s/g, '');
+        if (!s) return 0;
+        if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.');
+        else if ((s.match(/\./g) || []).length > 1 || /\.\d{3}$/.test(s)) s = s.replace(/\./g, '');
+        const n = Number(s);
+        return isNaN(n) ? 0 : n;
+    }
+    const FORMATO_TOTAL = '{{ coluna_total.formato }}';
+    function atualizarTotal() {
+        const total = [...document.querySelectorAll('.campo-total')].reduce((t, el) => t + lerValor(el.value), 0);
+        document.getElementById('total-mes').textContent = FORMATO_TOTAL === 'moeda'
+            ? total.toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' })
+            : total.toLocaleString('pt-BR');
+    }
+    document.querySelectorAll('.campo-total').forEach(el => el.addEventListener('input', atualizarTotal));
+    atualizarTotal();
+</script>
+{% endif %}
+{% endif %}
+{% endblock %}

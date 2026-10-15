@@ -56,6 +56,8 @@
         .btn-header:hover { background: #128f89; border-color: #128f89; }
         .btn-header.secundario { background: transparent; color: #128f89; }
         .btn-header.secundario:hover { background: #128f89; color: #fff; }
+        .usuario-logado { align-self: center; font-size: 14px; color: #38464D; font-weight: 500; }
+        .aviso-login { color: #fff; font-size: 17px; position: relative; }
         @media (max-width: 700px) {
             .site-header { flex-direction: column; gap: 12px; padding: 16px; }
             .header-acoes { position: static; transform: none; }
@@ -205,8 +207,9 @@
     <header class="site-header">
         <img src="/static/LOGO HM E SESA - NOVA (1).png" alt="Logo" id="logo-principal">
         <div class="header-acoes">
-            {% if session.get('usuario') %}
-            <a href="{{ url_for('admin_menu') }}" class="btn-header">Administração</a>
+            {% if usuario_atual %}
+            <span class="usuario-logado">{{ usuario_atual.nome }}</span>
+            <a href="{{ url_for('admin_menu') }}" class="btn-header">Área Restrita</a>
             <a href="{{ url_for('logout') }}" class="btn-header secundario">Sair</a>
             {% else %}
             <a href="{{ url_for('login') }}" class="btn-header">Login</a>
@@ -220,6 +223,7 @@
 
         <h1 class="section-title">Dashboards</h1>
 
+        {# painéis públicos: visíveis sem login #}
         <div class="cards-row">
             <a href="{{ url_for('producao_hospitalar') }}" class="card">Produção Hospitalar</a>
             <a href="{{ url_for('indicadores') }}" class="card">Indicadores SIMAQ</a>
@@ -228,6 +232,7 @@
             <a href="{{ url_for('hcasg_hospitalares') }}" class="card">Indicadores Hospitalares</a>
             <a href="{{ url_for('hcasg_emergencia') }}" class="card">Indicadores da Emergência</a>
             <a href="{{ url_for('ambulatorio_pagina') }}" class="card">Ambulatório</a>
+            <a href="{{ url_for('custos_pagina') }}" class="card">Custos</a>
         </div>
 
         <div class="site-footer">Painel de indicadores 2.0 - Desenvolvido por NUTIC - Ano 2025</div>

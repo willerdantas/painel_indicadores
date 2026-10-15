@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>{% block titulo %}Administração{% endblock %}</title>
+    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        body { display: flex; flex-direction: column; min-height: 100vh; font-family: 'DM Sans', sans-serif;
+               background: #e6e6e6; color: #38464D; }
+        .site-header { position: relative; background: #e6e6e6; display: flex; justify-content: center;
+                       align-items: center; padding: 18px 40px; }
+        .site-header img { height: 72px; cursor: pointer; }
+        .header-acoes { position: absolute; right: 40px; top: 50%; transform: translateY(-50%); display: flex; gap: 10px; align-items: center; }
+        .usuario-logado { font-size: 14px; font-weight: 500; }
+        .btn-header { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .08em;
+                      text-transform: uppercase; text-decoration: none; color: #fff; background: #00A1A2;
+                      border: 2px solid #00A1A2; border-radius: 8px; padding: 9px 20px; white-space: nowrap; }
+        .btn-header:hover { background: #007C6B; border-color: #007C6B; }
+        .btn-header.secundario { background: transparent; color: #007C6B; }
+        .btn-header.secundario:hover { background: #007C6B; color: #fff; }
+
+        .main-content { flex: 1; position: relative; overflow: hidden;
+                        background: linear-gradient(135deg, #00A1A2 0%, #3BB5A3 100%); padding: 40px 52px 72px; }
+        .deco { position: absolute; border-radius: 50%; pointer-events: none; }
+        .deco-1 { width: 380px; height: 380px; top: -140px; right: -120px; background: rgba(255,255,255,0.09); }
+        .deco-2 { width: 240px; height: 240px; top: -30px; right: 60px; background: rgba(255,255,255,0.08); }
+        .section-title { position: relative; color: #fff; font-family: 'Syne', sans-serif; font-size: 20px;
+                         font-weight: 700; letter-spacing: 3px; text-transform: uppercase; margin-bottom: 24px; }
+
+        .grade { position: relative; display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 20px; align-items: start; }
+        .painel { background: #fff; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.15); padding: 24px 26px; }
+        .painel h2 { font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; margin-bottom: 16px; color: #38464D; }
+        label.campo { display: block; font-size: 12px; font-weight: 500; color: #6b7f86; text-transform: uppercase;
+                      letter-spacing: .06em; margin: 14px 0 6px; }
+        input[type=text], input[type=password], select {
+            width: 100%; padding: 10px 12px; border: 1px solid #dde4e6; border-radius: 8px;
+            font-family: inherit; font-size: 15px; color: #38464D; background: #f0f4f5; }
+        input:focus, select:focus { outline: none; border-color: #00A1A2; background: #fff; }
+        .dica { font-size: 12px; color: #6b7f86; margin-top: 5px; }
+        .check { display: flex; align-items: center; gap: 8px; font-size: 14px; margin: 6px 0; cursor: pointer; }
+        .check input { accent-color: #00A1A2; width: 16px; height: 16px; }
+        .acoes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+        .btn { font-family: 'Syne', sans-serif; font-size: 12px; font-weight: 700; letter-spacing: .06em;
+               text-transform: uppercase; color: #fff; background: #00A1A2; border: 2px solid #00A1A2;
+               border-radius: 8px; padding: 9px 18px; cursor: pointer; text-decoration: none; display: inline-block; }
+        .btn:hover { background: #007C6B; border-color: #007C6B; }
+        .btn.secundario { background: transparent; color: #007C6B; }
+        .btn.secundario:hover { background: #007C6B; color: #fff; }
+        .btn.perigo { background: transparent; color: #EB600A; border-color: #EB600A; }
+        .btn.perigo:hover { background: #EB600A; color: #fff; }
+        .btn.pequeno { padding: 5px 10px; font-size: 11px; }
+
+        table { width: 100%; border-collapse: collapse; font-size: 14px; }
+        th { text-align: left; font-size: 12px; font-weight: 500; color: #6b7f86; text-transform: uppercase;
+             letter-spacing: .05em; padding: 8px 10px; border-bottom: 2px solid #dde4e6; }
+        td { padding: 9px 10px; border-bottom: 1px solid #eef4f6; vertical-align: middle; }
+        td.acoes-linha { white-space: nowrap; text-align: right; }
+        td.acoes-linha form { display: inline; }
+        .etiqueta { display: inline-block; font-size: 11px; font-weight: 700; border-radius: 999px; padding: 2px 9px; }
+        .etiqueta.admin { background: #00A1A2; color: #fff; }
+        .etiqueta.inativo { background: #F7975B; color: #fff; }
+        .etiqueta.pagina { background: #E0F3F3; color: #007C6B; font-weight: 500; margin: 2px 2px 2px 0; }
+
+        .mensagem { position: relative; border-radius: 10px; padding: 12px 16px; font-size: 14px; margin-bottom: 18px; }
+        .mensagem.ok { background: #e7f6ef; border: 1px solid #9fd8bd; color: #1f5f43; }
+        .mensagem.erro { background: #fdecea; border: 1px solid #f5b5ae; color: #a12a1c; }
+
+        .site-footer { position: absolute; bottom: 18px; right: 40px; color: rgba(255,255,255,0.7); font-size: 12px; }
+        @media (max-width: 900px) {
+            .grade { grid-template-columns: 1fr; }
+            .main-content { padding: 28px 16px 72px; }
+            .site-header { flex-direction: column; gap: 12px; padding: 16px; }
+            .header-acoes { position: static; transform: none; }
+        }
+    </style>
+</head>
+<body>
+    <header class="site-header">
+        <img src="/static/LOGO HM E SESA - NOVA (1).png" alt="Logo" onclick="window.location.href='/'">
+        <div class="header-acoes">
+            {% if usuario_atual %}<span class="usuario-logado">{{ usuario_atual.nome }}</span>{% endif %}
+            <a href="{{ url_for('admin_menu') }}" class="btn-header secundario">Administração</a>
+            <a href="{{ url_for('logout') }}" class="btn-header">Sair</a>
+        </div>
+    </header>
+
+    <main class="main-content">
+        <div class="deco deco-1"></div>
+        <div class="deco deco-2"></div>
+        <h1 class="section-title">{% block cabecalho %}{% endblock %}</h1>
+
+        {% with mensagens = get_flashed_messages(with_categories=true) %}
+            {% for categoria, texto in mensagens %}
+            <div class="mensagem {{ 'erro' if categoria == 'erro' else 'ok' }}" role="status">{{ texto }}</div>
+            {% endfor %}
+        {% endwith %}
+
+        {% block conteudo %}{% endblock %}
+
+        <div class="site-footer">Painel de indicadores 2.0 - Desenvolvido por NUTIC - Ano 2025</div>
+    </main>
+</body>
+</html>

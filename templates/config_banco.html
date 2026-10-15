@@ -193,19 +193,30 @@
                     <input id="dbname" name="dbname" value="{{ cfg.dbname }}" required>
                 </div>
                 <div>
-                    <label for="schema">Schema</label>
+                    <label for="schema">Schema do sistema hospitalar</label>
                     <input id="schema" name="schema" value="{{ cfg.schema }}" required>
+                    <div class="dica">Onde estão t_internacao, t_exame etc. (só leitura).</div>
                 </div>
                 <div>
                     <label for="user">Usuário</label>
                     <input id="user" name="user" value="{{ cfg.user }}" autocomplete="off" required>
                 </div>
                 <div>
+                    <label for="schema_painel">Schema dos dados do painel</label>
+                    <input id="schema_painel" name="schema_painel" value="{{ cfg.schema_painel }}" required>
+                    <div class="dica">Onde ficam os lançamentos de custos, produção e SIMAQ.</div>
+                </div>
+                <div>
                     <label for="password">Senha</label>
-                    <input id="password" name="password" type="password" autocomplete="new-password" placeholder="••••••••">
-                    <div class="dica">Em branco mantém a senha atual.</div>
+                    <input id="password" name="password" type="password" autocomplete="new-password"
+                           placeholder="{{ '••••••••' if tem_senha else 'informe a senha' }}">
+                    <div class="dica">{{ 'Em branco mantém a senha atual.' if tem_senha else 'Nenhuma senha salva.' }}</div>
                 </div>
             </div>
+            <div class="dica" style="margin-top:14px;">
+                Os dados de acesso ficam salvos criptografados no servidor (config_banco.enc); a senha nunca é mostrada.
+            </div>
+            {% if erro_config %}<div class="resultado erro">{{ erro_config }}</div>{% endif %}
 
             <div class="acoes">
                 <button type="button" class="btn secundario" id="btn-testar">Testar conexão</button>
@@ -219,7 +230,7 @@
     </main>
 
     <script>
-        const CAMPOS = ['host', 'port', 'dbname', 'schema', 'user', 'password'];
+        const CAMPOS = ['host', 'port', 'dbname', 'schema', 'user', 'schema_painel', 'password'];
         const res = document.getElementById('resultado');
         const btnTestar = document.getElementById('btn-testar');
         const btnSalvar = document.getElementById('btn-salvar');
@@ -259,21 +270,38 @@
                 return;
             }
             const schema = escapeHtml(document.getElementById('schema').value);
-            const html = '<strong>Conexão bem-sucedida.</strong><br>' +
+            const schemaPainel = '<code>' + escapeHtml(document.getElementById('schema_painel').value) + '</code>';
+            let tipo = 'ok';
+            let html = '<strong>Conexão bem-sucedida.</strong><br>' +
                 escapeHtml(r.versao) + ' — usuário <code>' + escapeHtml(r.usuario) + '</code>';
-            if (!r.schema_existe) {
-                mostrar('aviso', html + '<br><br><strong>O schema <code>' + schema + '</code> não existe neste banco.</strong>');
-                return;
-            }
             const faltando = r.tabelas_faltando || [];
-            if (faltando.length === 0) {
-                mostrar('ok', html + '<br>Todas as ' + r.total_tabelas + ' tabelas usadas pelo painel estão em <code>' + schema + '</code>.');
+            if (!r.schema_existe) {
+                tipo = 'aviso';
+                html += '<br><br><strong>O schema <code>' + schema + '</code> não existe neste banco.</strong>';
+            } else if (faltando.length === 0) {
+                html += '<br>Todas as ' + r.total_tabelas + ' tabelas usadas pelo painel estão em <code>' + schema + '</code>.';
             } else {
-                mostrar('aviso', html + '<br><br><strong>' + faltando.length + ' de ' + r.total_tabelas +
+                tipo = 'aviso';
+                html += '<br><br><strong>' + faltando.length + ' de ' + r.total_tabelas +
                     ' tabelas usadas pelo painel não estão em <code>' + schema + '</code>:</strong>' +
                     '<ul>' + faltando.map(t => '<li><code>' + escapeHtml(t) + '</code></li>').join('') + '</ul>' +
-                    'As páginas que usam essas tabelas vão mostrar erro.');
+                    'As páginas que usam essas tabelas vão mostrar erro.';
             }
+            // schema dos dados lançados (custos, produção, SIMAQ)
+            if (r.schema_painel_existe && r.schema_painel_pode_criar) {
+                html += '<br>Dados do painel: schema ' + schemaPainel + ' pronto.';
+            } else if (r.schema_painel_existe) {
+                tipo = 'aviso';
+                html += '<br><br><strong>O usuário não pode criar tabelas no schema ' + schemaPainel + '.</strong>' +
+                    ' Os lançamentos de dados não vão funcionar.';
+            } else if (r.schema_painel_pode_criar) {
+                html += '<br>Dados do painel: o schema ' + schemaPainel + ' ainda não existe; será criado ao salvar.';
+            } else {
+                tipo = 'aviso';
+                html += '<br><br><strong>O schema ' + schemaPainel + ' não existe e este usuário não pode criá-lo.</strong>' +
+                    ' Peça a um administrador do PostgreSQL para executar:<br><code>' + escapeHtml(r.sql_schema_painel) + '</code>';
+            }
+            mostrar(tipo, html);
         }
 
         btnTestar.addEventListener('click', async () => {
@@ -296,7 +324,13 @@
                 const r = await enviar('{{ url_for("admin_banco_salvar") }}');
                 if (r.ok) {
                     document.getElementById('password').value = '';
-                    mostrar('ok', '<strong>Configuração salva.</strong> O painel já está usando este banco.');
+                    if (r.schema_painel_pronto) {
+                        mostrar('ok', '<strong>Configuração salva.</strong> O painel já está usando este banco, ' +
+                            'e as tabelas dos dados do painel estão prontas.');
+                    } else {
+                        mostrar('aviso', '<strong>Configuração salva.</strong> O painel já está usando este banco, ' +
+                            'mas os dados do painel ainda não estão disponíveis:<br>' + escapeHtml(r.erro_schema_painel || ''));
+                    }
                 } else {
                     mostrar('erro', '<strong>Não foi salvo.</strong><br>' + escapeHtml(r.erro));
                 }

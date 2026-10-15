@@ -1,4 +1,9 @@
 # credenciais locais (geradas pela página /admin/banco e pelo login)
 config_banco.json
 config_banco.json.tmp
+config_banco.enc
+config_banco.enc.tmp
+.chave_config
 .secret_key
+painel_usuarios.db
+painel_dados.db

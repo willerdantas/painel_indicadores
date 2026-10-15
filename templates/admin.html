@@ -216,8 +216,18 @@
 
         <h1 class="section-title">Administração</h1>
 
+        {# só as áreas liberadas no perfil; a configuração do banco é exclusiva do administrador #}
         <div class="cards-row">
-            <a href="{{ url_for('admin_banco') }}" class="card">Configuração do Banco</a>
+            {% if pode('usuarios') %}<a href="{{ url_for('admin_usuarios') }}" class="card">Usuários</a>{% endif %}
+            {% if pode('perfis') %}<a href="{{ url_for('admin_perfis') }}" class="card">Perfis de Acesso</a>{% endif %}
+            {% if pode('custos') %}<a href="{{ url_for('admin_custos') }}" class="card">Lançar Dados de Custos</a>{% endif %}
+            {% if pode('producao') %}<a href="{{ url_for('admin_producao') }}" class="card">Lançar Dados de Produção</a>{% endif %}
+            {% if pode('simaq') %}<a href="{{ url_for('admin_simaq') }}" class="card">Lançar Dados do SIMAQ</a>{% endif %}
+            {% if pode('cadastros') %}<a href="{{ url_for('admin_cadastros') }}" class="card">Cadastros</a>{% endif %}
+            {% if eh_admin %}<a href="{{ url_for('admin_banco') }}" class="card">Configuração do Banco</a>{% endif %}
+            {% if not pode('usuarios') and not pode('perfis') and not pode('custos') and not pode('producao') and not pode('simaq') and not pode('cadastros') and not eh_admin %}
+            <p style="color:#fff;font-size:17px;position:relative;">Seu perfil ainda não tem áreas liberadas. Fale com o administrador.</p>
+            {% endif %}
         </div>
 
         <div class="site-footer">Painel de indicadores 2.0 - Desenvolvido por NUTIC - Ano 2025</div>
