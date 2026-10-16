@@ -458,7 +458,7 @@ header span {
       <div class="kpi c3">
         <div class="label">Média Diária</div>
         <div class="value" id="k_media">—</div>
-        <div class="unit">atendimentos / dia</div>
+        <div class="unit" id="k_media_dias" title="Dias sem nenhum atendimento (sábados, domingos e feriados) não entram na média nem na mediana">por dia com atendimento</div>
         <div class="icon">📅</div>
       </div>
       <div class="kpi c4">
@@ -569,6 +569,10 @@ function render(d) {
   const k = d.kpis;
   document.getElementById('k_total').textContent = fmt(k.total);
   document.getElementById('k_media').textContent = fmt(k.media_diaria);
+  // dias sem atendimento (sábados, domingos e feriados) ficam fora da média e da mediana
+  document.getElementById('k_media_dias').textContent =
+    `por dia com atendimento (${fmt(k.dias_com_atendimento)} dias` +
+    (k.dias_sem_atendimento ? `; ${fmt(k.dias_sem_atendimento)} sem atendimento fora da conta)` : ')');
   document.getElementById('k_concluidos').textContent = fmt(k.concluidos);
   document.getElementById('k_faltas').textContent = fmt(k.faltas);
   document.getElementById('k_absenteismo').textContent =
@@ -586,11 +590,11 @@ function render(d) {
         borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
         tension: 0.25, fill: true, order: 2
       }, {
-        label: `Média: ${fmt(media)}`, data: media !== null ? Array(d.dias.length).fill(media) : [],
+        label: `Média (dias com atendimento): ${fmt(media)}`, data: media !== null ? Array(d.dias.length).fill(media) : [],
         borderColor: '#f97316', backgroundColor: 'transparent', borderWidth: 2,
         borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
       }, {
-        label: `Mediana: ${fmt(d.mediana_diaria)}`,
+        label: `Mediana (dias com atendimento): ${fmt(d.mediana_diaria)}`,
         data: d.mediana_diaria !== null ? Array(d.dias.length).fill(d.mediana_diaria) : [],
         borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2,
         borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1

@@ -124,11 +124,22 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
         if r["hora"] is not None:
             por_hora[r["hora"]] += r["qtd"]
 
+    # dias sem nenhum atendimento no ambulatório (sábados, domingos e feriados)
+    # ficam fora da média e da mediana; o critério é o total do ambulatório,
+    # sem os filtros, para uma especialidade que não atendeu num dia útil
+    # continuar contando aquele dia
+    atendeu = [False] * len(dias)
+    for r in resumo:
+        if r["qtd"]:
+            atendeu[idx_dia[r["dia"]]] = True
+    por_dia_util = [qtd for qtd, aberto in zip(por_dia, atendeu) if aberto]
+
     totais_semana = [0] * 7
     ocorrencias_semana = [0] * 7
-    for d, qtd in zip(dias, por_dia):
+    for d, qtd, aberto in zip(dias, por_dia, atendeu):
         totais_semana[d.weekday()] += qtd
-        ocorrencias_semana[d.weekday()] += 1
+        if aberto:
+            ocorrencias_semana[d.weekday()] += 1
 
     por_status = _contar(linhas, "status")
     total = sum(por_dia)
@@ -140,7 +151,9 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
         "opcoes": opcoes,
         "kpis": {
             "total": total,
-            "media_diaria": round(total / len(dias), 1) if dias else None,
+            "media_diaria": round(total / len(por_dia_util), 1) if por_dia_util else None,
+            "dias_com_atendimento": len(por_dia_util),
+            "dias_sem_atendimento": len(dias) - len(por_dia_util),
             "concluidos": concluidos,
             "faltas": faltas,
             "taxa_absenteismo": round(faltas / total * 100, 1) if total else None,
@@ -148,7 +161,7 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
         },
         "dias": [d.strftime("%d/%m/%Y") for d in dias],
         "por_dia": por_dia,
-        "mediana_diaria": round(statistics.median(por_dia), 1) if por_dia else None,
+        "mediana_diaria": round(statistics.median(por_dia_util), 1) if por_dia_util else None,
         "dias_semana": _DIAS_SEMANA,
         "por_dia_semana": totais_semana,
         "media_dia_semana": [
