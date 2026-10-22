@@ -1,3 +1,4 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
 <!doctype html>
 <html lang="pt-BR" data-critters-container>
     <head>
@@ -8,172 +9,12 @@
         <title>Indicadores SIMAQ</title>
         <base href="./">
         <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
-        <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
         <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-        <style type="text/css">
-            *, *::before, *::after { box-sizing: border-box; }
-            body, html {
-                height: 100%;
-                font-family: 'DM Sans', sans-serif;
-                margin: 0;
-                background-color: #f0f4f5;
-                color: #38464D;
-            }
-            .header {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 20px;
-                background: #fff;
-                border-bottom: 3px solid #19b8b0;
-                box-shadow: 0 2px 8px rgba(0,0,0,.07);
-                padding: 14px 28px;
-                gap: 20px;
-            }
-            .header-left { flex: 1; }
-            .header-left h2 {
-                font-family: 'Syne', sans-serif;
-                font-size: 1.5rem;
-                font-weight: 800;
-                color: #38464D;
-                margin: 0 0 2px 0;
-                letter-spacing: -0.01em;
-            }
-            .header-left p {
-                font-family: 'DM Sans', sans-serif;
-                font-size: 0.9rem;
-                color: #6b7f86;
-                margin: 0;
-                font-weight: 300;
-            }
-            .header-logos { display: flex; align-items: center; gap: 16px; }
-            .logo {
-                height: 58px;
-            }
-            .content {
-                display: flex;
-                margin-top: 20px;
-                gap: 20px;
-                flex-wrap: wrap;
-            }
-            .chart-container {
-                flex: 1;
-                min-width: 400px;
-                border: 1px solid #dde4e6;
-                padding: 24px 20px;
-                background-color: white;
-                border-radius: 10px;
-            }
-            .chart-container h4 {
-                font-family: 'DM Sans', sans-serif;
-                font-size: 0.95rem;
-                font-weight: 500;
-                color: #555;
-                margin: 0 0 14px 0;
-            }
-            .kpi-container {
-                display: flex;
-                gap: 16px;
-                margin-bottom: 20px;
-                flex-wrap: wrap;
-            }
-            .kpi-box {
-                flex: 1;
-                min-width: 200px;
-                padding: 20px 16px;
-                border-radius: 12px;
-                text-align: center;
-                color: #fff;
-            }
-            .kpi-box:nth-child(1) { background: #19b8b0; }
-            .kpi-box:nth-child(2) { background: #1a7a6e; }
-            .kpi-box h5 {
-                font-family: 'DM Sans', sans-serif;
-                font-size: 0.85rem;
-                font-weight: 400;
-                letter-spacing: 0.04em;
-                text-transform: uppercase;
-                margin: 0 0 8px 0;
-                opacity: 0.9;
-                color: #fff;
-            }
-            .kpi-box p {
-                font-family: 'Syne', sans-serif;
-                font-size: 2rem;
-                font-weight: 800;
-                color: #fff;
-                margin-bottom: 0;
-            }
-            .kpi-box .kpi-label {
-                font-family: 'DM Sans', sans-serif;
-                font-size: 12px;
-                opacity: 0.8;
-            }
-            /* loading screen (lean style) */
-            #loading-screen {
-                display: none;
-                position: fixed;
-                inset: 0;
-                z-index: 9999;
-                background: rgba(38,50,56,.45);
-                backdrop-filter: blur(2px);
-                align-items: center;
-                justify-content: center;
-            }
-            #loading-screen.active { display: flex; }
-            .loader-ring {
-                position: relative;
-                width: 180px;
-                height: 180px;
-            }
-            .loader-ring svg {
-                position: absolute;
-                inset: 0;
-                width: 100%;
-                height: 100%;
-                animation: spin 1.1s linear infinite;
-            }
-            .loader-ring svg circle {
-                fill: none;
-                stroke: #19b8b0;
-                stroke-width: 4;
-                stroke-linecap: round;
-                stroke-dasharray: 200;
-                stroke-dashoffset: 50;
-            }
-            .loader-ring img {
-                position: absolute;
-                inset: 0;
-                margin: auto;
-                width: 140px;
-                height: 140px;
-                object-fit: contain;
-                border-radius: 50%;
-                background: #fff;
-                padding: 10px;
-            }
-            @keyframes spin {
-                0% { transform: rotate(0deg); }
-                100% { transform: rotate(360deg); }
-            }
-        </style>
-    </head>
-        <body style="width: 100%; padding: 0; background-color: #f0f4f5;">
-        <div class="header">
-            <div class="header-left">
-                <h2>Indicadores SIMAQ</h2>
-                <p>Painel de monitoramento de indicadores hospitalares</p>
-            </div>
-            <div style="display:flex; align-items:center; gap:16px;">
-                <button id="back-button" style="font-family:'Syne',sans-serif; font-size:0.75rem; font-weight:700; letter-spacing:0.08em; text-transform:uppercase; background:#19b8b0; color:#fff; border:none; border-radius:6px; padding:10px 20px; cursor:pointer; transition:background 0.2s; white-space:nowrap;" onmouseover="this.style.background='#007C6B'" onmouseout="this.style.background='#19b8b0'">
-                    Voltar ao Início
-                </button>
-                <div class="header-logos">
-                    <img src="/static/LOGO HM E SESA - NOVA (1).png" class="logo" alt="Logo">
-                </div>
-            </div>
-        </div>
-        <div style="padding: 0 28px 28px;">
+        {{ recursos() }}
+</head>
+        <body class="pg-indicadores">
+        {{ cabecalho('Indicadores SIMAQ', 'Painel de monitoramento de indicadores hospitalares', id_voltar='back-button') }}
+        <div class="page-content">
 
         <!-- Filtros -->
         <div class="filters" style="display: flex; justify-content: space-between; align-items: center; gap: 20px; margin-top: 0; margin-bottom: 20px; background-color: white; padding: 16px 20px; border-radius: 10px; border: 1px solid #dde4e6; flex-wrap: wrap;">
@@ -203,7 +44,7 @@
             </div>
             <div class="chart-container" style="min-width: 100px; text-align: center; padding: 10px;">
                 <h4 style="margin: 0; font-size: 16px;">Média do Indicador</h4>
-                <div id="media-indicador" style="font-size: 20px; font-weight: bold; color: #19b8b0;">
+                <div id="media-indicador" style="font-size: 20px; font-weight: bold; color: #00A1A2;">
                     {{ "{:,.2f}".format(media_periodo) }}
                 </div>
             </div>
@@ -349,7 +190,7 @@
                     y: resultados,
                     type: 'bar',
                     name: 'Resultado',
-                    marker: { color: '#19b8b0' },
+                    marker: { color: '#00A1A2' },
                     text: resultados.map(fmt),
                     textposition: 'inside',
                     insidetextanchor: 'middle',
@@ -370,14 +211,14 @@
                         type: 'scatter',
                         mode: 'lines+markers+text',
                         name: 'Meta',
-                        line: { color: '#FF5733', width: 2 },
+                        line: { color: '#EB600A', width: 2 },
                         text: metasVisiveis.map((m, i) => {
                             if (m === null) return '';
                             const anterior = metasVisiveis.slice(0, i).reverse().find(v => v !== null);
                             return anterior === undefined || anterior !== m ? `Meta: ${fmt(m)}` : '';
                         }),
                         textposition: 'top center',
-                        textfont: { color: '#FF5733', size: 12 },
+                        textfont: { color: '#EB600A', size: 12 },
                         customdata: metasVisiveis.map(m => m === null ? '' : fmt(m)),
                         hovertemplate: 'Meta: %{customdata}<extra></extra>',
                     });
@@ -390,10 +231,10 @@
                     type: 'scatter',
                     mode: 'lines+text',
                     name: `Média: ${fmt(media)}`,
-                    line: { color: '#1E90FF', dash: 'dot', width: 2 },
+                    line: { color: '#53B7D9', dash: 'dot', width: 2 },
                     text: linhaMedia.map((_, i) => i === linhaMedia.length - 1 ? `Média: ${fmt(media)}` : ''),
                     textposition: 'top left',
-                    textfont: { color: '#1E90FF', size: 12 },
+                    textfont: { color: '#53B7D9', size: 12 },
                     hovertemplate: `Média: ${fmt(media)}<extra></extra>`
                 });
 
@@ -438,5 +279,6 @@
                 criarGraficoBarraLinha(indicadorInicial);
             });
         </script>
-    </body>
+        {{ rodape() }}
+</body>
 </html>

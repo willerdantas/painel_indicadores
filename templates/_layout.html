@@ -1,0 +1,43 @@
+{#
+  Layout padrão de todas as páginas (estilos em static/css/painel.css).
+
+  {% from '_layout.html' import recursos, cabecalho, rodape %}
+  <head> ... {{ recursos() }} </head>
+  <body class="pg-<pagina>">
+    {{ cabecalho('Título', 'Subtítulo', links=[('/rota', 'Texto')]) }}
+    ...
+    {{ rodape() }}
+
+  cabecalho(): logo (leva ao início), título/subtítulo, links da página e o
+  botão "Voltar ao início" (id_voltar: o id que o JavaScript da página usa).
+  Ações extras (ex.: botões de relatório) entram com {% call cabecalho(...) %}.
+#}
+
+{% macro recursos() %}
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{{ url_for('static', filename='css/painel.css') }}">
+{% endmacro %}
+
+{% macro cabecalho(titulo='', subtitulo='', links=(), voltar=True, id_voltar='btn-voltar-inicio', texto_voltar='Voltar ao início') %}
+<header class="cabecalho">
+    <a class="cabecalho-marca" href="{{ url_for('index') }}" title="Início">
+        <img class="cabecalho-logo" src="/static/LOGO HM E SESA - NOVA (1).png" alt="Hospital de Messejana e Secretaria da Saúde do Ceará">
+    </a>
+    {% if titulo %}
+    <div class="cabecalho-titulo">
+        <h1>{{ titulo }}</h1>
+        {% if subtitulo %}<span>{{ subtitulo }}</span>{% endif %}
+    </div>
+    {% endif %}
+    <nav class="cabecalho-acoes">
+        {% for href, texto in links %}<a class="cabecalho-link" href="{{ href }}">{{ texto }}</a>{% endfor %}
+        {% if caller is defined %}{{ caller() }}{% endif %}
+        {% if voltar %}<button type="button" id="{{ id_voltar }}" class="btn-voltar">{{ texto_voltar }}</button>{% endif %}
+    </nav>
+</header>
+{% endmacro %}
+
+{% macro rodape() %}
+<footer class="rodape">Painel de Indicadores 3.0 · Desenvolvido por NUTIC · 2025</footer>
+{% endmacro %}

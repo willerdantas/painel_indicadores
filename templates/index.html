@@ -1,3 +1,4 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -5,234 +6,9 @@
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Dashboards</title>
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
-        body {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            font-family: 'DM Sans', sans-serif;
-        }
-
-        /* ── Header ── */
-        .site-header {
-            background-color: #e6e6e6;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 18px 40px;
-        }
-        .site-header {
-            position: relative;
-        }
-        .site-header img {
-            height: 72px;
-        }
-        .header-acoes {
-            position: absolute;
-            right: 40px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            gap: 10px;
-        }
-        .btn-header {
-            font-family: 'Syne', sans-serif;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            text-decoration: none;
-            color: #fff;
-            background: #19b8b0;
-            border: 2px solid #19b8b0;
-            border-radius: 8px;
-            padding: 9px 20px;
-            transition: background .15s, color .15s;
-            white-space: nowrap;
-        }
-        .btn-header:hover { background: #128f89; border-color: #128f89; }
-        .btn-header.secundario { background: transparent; color: #128f89; }
-        .btn-header.secundario:hover { background: #128f89; color: #fff; }
-        .usuario-logado { align-self: center; font-size: 14px; color: #38464D; font-weight: 500; }
-        .aviso-login { color: #fff; font-size: 17px; position: relative; }
-        @media (max-width: 700px) {
-            .site-header { flex-direction: column; gap: 12px; padding: 16px; }
-            .header-acoes { position: static; transform: none; }
-        }
-
-        /* ── Main ── */
-        .main-content {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-            background: linear-gradient(135deg, #19b8b0 0%, #1cb88a 100%);
-            padding: 52px 52px 72px;
-        }
-
-        /* Decorative circles top-right */
-        .deco {
-            position: absolute;
-            border-radius: 50%;
-            pointer-events: none;
-        }
-        .deco-1 {
-            width: 380px;
-            height: 380px;
-            top: -140px;
-            right: -120px;
-            background: rgba(255,255,255,0.09);
-        }
-        .deco-2 {
-            width: 240px;
-            height: 240px;
-            top: -30px;
-            right: 60px;
-            background: rgba(255,255,255,0.08);
-        }
-
-        /* ── Section title ── */
-        .section-title {
-            color: #fff;
-            font-family: 'Syne', sans-serif;
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-            margin-bottom: 36px;
-            text-align: center;
-            position: relative;
-        }
-
-        /* ── Cards: no máximo 4 por linha (largura de 4 cartões + 3 espaços),
-              centralizados, inclusive a última linha incompleta ── */
-        .cards-row {
-            position: relative;
-            display: flex;
-            flex-wrap: wrap;
-            justify-content: center;
-            gap: 26px;
-            max-width: calc(4 * 240px + 3 * 26px);
-            margin: 0 auto;
-        }
-        .cards-row .card { flex: 0 0 240px; }
-        @media (max-width: 560px)  {
-            .main-content { padding: 36px 16px 72px; }
-            .cards-row .card { flex: 1 1 100%; max-width: 340px; }
-        }
-
-        .card {
-            position: relative;
-            overflow: hidden;
-            background: #fff;
-            border: 2px solid rgba(255,255,255,0.85);
-            outline: 1px solid rgba(25,184,176,0.25);
-            outline-offset: -6px;
-            border-radius: 16px;
-            height: 150px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            text-align: center;
-            text-decoration: none;
-            color: #38464D;
-            font-family: 'Syne', sans-serif;
-            font-size: 22px;
-            font-weight: 700;
-            letter-spacing: 0.02em;
-            line-height: 1.3;
-            padding: 20px 22px;
-            box-shadow: 0 2px 4px rgba(0,0,0,0.06), 0 8px 20px rgba(0,60,58,0.18), 0 18px 36px -12px rgba(0,60,58,0.25);
-            transition: box-shadow 0.2s, transform 0.2s, color 0.2s, outline-color 0.2s;
-        }
-        .card span { position: relative; z-index: 1; }
-        /* ícone como marca d'água, no canto inferior direito */
-        .card svg.marca {
-            position: absolute;
-            right: -14px;
-            bottom: -16px;
-            width: 112px;
-            height: 112px;
-            stroke: #19b8b0;
-            stroke-width: 1.6;
-            fill: none;
-            stroke-linecap: round;
-            stroke-linejoin: round;
-            opacity: 0.13;
-            transform: rotate(-8deg);
-            transition: opacity 0.2s, transform 0.2s;
-            pointer-events: none;
-        }
-        .card:hover {
-            box-shadow: 0 4px 8px rgba(0,0,0,0.08), 0 14px 32px rgba(0,60,58,0.24), 0 26px 48px -14px rgba(0,60,58,0.32);
-            transform: translateY(-4px);
-            color: #128f89;
-            outline-color: rgba(25,184,176,0.55);
-        }
-        .card:hover svg.marca { opacity: 0.22; transform: rotate(-4deg) scale(1.06); }
-        .card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
-
-        /* ── Footer ── */
-        .site-footer {
-            position: absolute;
-            bottom: 18px;
-            right: 40px;
-            color: rgba(255,255,255,0.65);
-            font-family: 'DM Sans', sans-serif;
-            font-size: 12px;
-            font-weight: 300;
-            letter-spacing: 0.5px;
-        }
-
-        /* ── Loading screen (lean style) ── */
-        #loading-screen {
-            display: none;
-            position: fixed;
-            inset: 0;
-            z-index: 9999;
-            background: rgba(38,50,56,.45);
-            backdrop-filter: blur(2px);
-            align-items: center;
-            justify-content: center;
-        }
-        #loading-screen.active { display: flex; }
-        .loader-ring {
-            position: relative;
-            width: 180px;
-            height: 180px;
-        }
-        .loader-ring svg {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            animation: spin 1.1s linear infinite;
-        }
-        .loader-ring svg circle {
-            fill: none;
-            stroke: #19b8b0;
-            stroke-width: 4;
-            stroke-linecap: round;
-            stroke-dasharray: 200;
-            stroke-dashoffset: 50;
-        }
-        .loader-ring img {
-            position: absolute;
-            inset: 0;
-            margin: auto;
-            width: 140px;
-            height: 140px;
-            object-fit: contain;
-            border-radius: 50%;
-            background: #fff;
-            padding: 10px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
+    {{ recursos() }}
 </head>
-<body>
+<body class="pg-index">
 
     <div id="loading-screen">
         <div class="loader-ring">
@@ -241,9 +17,7 @@
         </div>
     </div>
 
-    <header class="site-header">
-        <img src="/static/LOGO HM E SESA - NOVA (1).png" alt="Logo" id="logo-principal">
-        <div class="header-acoes">
+    {% call cabecalho('Painel de Indicadores', 'Hospital de Messejana', voltar=False) %}
             {% if usuario_atual %}
             <span class="usuario-logado">{{ usuario_atual.nome }}</span>
             <a href="{{ url_for('admin_menu') }}" class="btn-header">Área Restrita</a>
@@ -251,8 +25,7 @@
             {% else %}
             <a href="{{ url_for('login') }}" class="btn-header">Login</a>
             {% endif %}
-        </div>
-    </header>
+        {% endcall %}
 
     <main class="main-content">
         <div class="deco deco-1"></div>
@@ -291,7 +64,6 @@
             {% endfor %}
         </div>
 
-        <div class="site-footer">Painel de indicadores 3.0 - Desenvolvido por NUTIC - Ano 2025</div>
     </main>
 
     <script>
@@ -317,5 +89,6 @@
             window.location.href = '/';
         });
     </script>
+    {{ rodape() }}
 </body>
 </html>

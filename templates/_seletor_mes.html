@@ -32,31 +32,6 @@
 {% endmacro %}
 
 {% macro _recursos() %}
-<style>
-    .seletor-mes { position: relative; max-width: 240px; }
-    .seletor-mes-campo { display: flex; align-items: stretch; }
-    .seletor-mes-texto { flex: 1; min-width: 0; padding: 9px 12px; border: 1px solid #dde4e6; border-right: 0;
-                         border-radius: 8px 0 0 8px; font: inherit; color: #38464D; background: #f0f4f5; }
-    .seletor-mes-texto:focus { outline: none; border-color: #00A1A2; background: #fff; }
-    .seletor-mes-texto:invalid:not(:placeholder-shown) { border-color: #EB600A; }
-    .seletor-mes-botao { display: flex; align-items: center; padding: 0 11px; border: 1px solid #00A1A2;
-                         border-radius: 0 8px 8px 0; background: #00A1A2; color: #fff; cursor: pointer; }
-    .seletor-mes-botao:hover { background: #007C6B; border-color: #007C6B; }
-    .seletor-mes-calendario { position: absolute; z-index: 20; top: calc(100% + 6px); left: 0; width: 248px;
-                              background: #fff; border-radius: 12px; box-shadow: 0 8px 28px rgba(0,0,0,.2); padding: 12px; }
-    .seletor-mes-ano { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-    .seletor-mes-ano-texto { font-family: 'Syne', sans-serif; font-weight: 700; font-size: 16px; color: #38464D; }
-    .seletor-mes-nav { width: 32px; height: 32px; border: 0; border-radius: 8px; background: #f0f4f5; color: #007C6B;
-                       font-size: 20px; line-height: 1; cursor: pointer; }
-    .seletor-mes-nav:hover { background: #E0F3F3; }
-    .seletor-mes-grade { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
-    .seletor-mes-grade button { padding: 9px 0; border: 1px solid #eef4f6; border-radius: 8px; background: #fff;
-                                font: inherit; font-size: 14px; color: #38464D; cursor: pointer; }
-    .seletor-mes-grade button:hover { background: #E0F3F3; border-color: #9fd8d0; }
-    .seletor-mes-grade button.atual { border-color: #00A1A2; }
-    .seletor-mes-grade button.escolhido { background: #00A1A2; border-color: #00A1A2; color: #fff; font-weight: 600; }
-    .seletor-mes-dica { margin-top: 5px; }
-</style>
 <script>
 (function () {
     // a macro pode aparecer mais de uma vez: o código é definido uma vez e

@@ -1,229 +1,21 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
 <!doctype html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Faturamento</title>
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
     <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-    <style>
-        *, *::before, *::after { box-sizing: border-box; }
-        body, html {
-            height: 100%;
-            font-family: 'DM Sans', sans-serif;
-            margin: 0;
-            background-color: #f0f4f5;
-            color: #38464D;
-        }
-        .site-header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            background: #fff;
-            border-bottom: 3px solid #19b8b0;
-            box-shadow: 0 2px 8px rgba(0,0,0,.07);
-            padding: 14px 28px;
-            gap: 20px;
-        }
-        .header-brand {
-            display: flex;
-            align-items: center;
-            gap: .85rem;
-        }
-        .header-logo {
-            height: 64px;
-            object-fit: contain;
-        }
-        .header-brand h1 {
-            font-family: 'Syne', sans-serif;
-            font-size: 1.2rem;
-            font-weight: 800;
-            color: #38464D;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            margin: 0 0 2px 0;
-        }
-        .header-brand span {
-            font-size: .75rem;
-            color: #6b7f86;
-            font-weight: 400;
-            letter-spacing: .06em;
-            text-transform: uppercase;
-        }
-        .btn-back {
-            font-family: 'Syne', sans-serif;
-            font-size: .75rem;
-            font-weight: 700;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            background: #19b8b0;
-            color: #fff;
-            border: none;
-            border-radius: 6px;
-            padding: 10px 20px;
-            cursor: pointer;
-            transition: background .2s;
-            white-space: nowrap;
-            text-decoration: none;
-            display: inline-block;
-        }
-        .btn-back:hover { background: #007C6B; }
-        .page-content { padding: 24px 28px 32px; }
-        .filters {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 20px;
-            background: #fff;
-            border: 1px solid #dde4e6;
-            border-radius: 10px;
-            padding: 18px 24px 14px;
-            margin-bottom: 22px;
-        }
-        .filter-group {
-            display: flex;
-            flex-direction: column;
-            min-width: 200px;
-        }
-        label {
-            font-family: 'DM Sans', sans-serif;
-            font-size: .72rem;
-            font-weight: 500;
-            color: #6b7f86;
-            text-transform: uppercase;
-            letter-spacing: .06em;
-            margin-bottom: .35rem;
-        }
-        input[type="date"], select {
-            padding: .5rem .75rem;
-            font-family: 'DM Sans', sans-serif;
-            font-size: .875rem;
-            border: 1px solid #dde4e6;
-            border-radius: 6px;
-            width: 100%;
-            background: #f0f4f5;
-            color: #38464D;
-            outline: none;
-        }
-        input[type="date"]:focus, select:focus { border-color: #19b8b0; }
-        .kpi-container {
-            display: flex;
-            gap: 16px;
-            margin-bottom: 22px;
-            flex-wrap: wrap;
-        }
-        .kpi-box {
-            flex: 1;
-            min-width: 200px;
-            padding: 20px 16px;
-            border-radius: 10px;
-            text-align: center;
-            color: #fff;
-        }
-        .kpi-box:nth-child(1) { background: #19b8b0; }
-        .kpi-box:nth-child(2) { background: #1a7a6e; }
-        .kpi-box:nth-child(3) { background: #e07b39; }
-        .kpi-box h5 {
-            font-family: 'DM Sans', sans-serif;
-            font-size: .85rem;
-            font-weight: 400;
-            letter-spacing: .04em;
-            text-transform: uppercase;
-            margin: 0 0 8px;
-            opacity: .9;
-        }
-        .kpi-box p {
-            font-family: 'Syne', sans-serif;
-            font-size: 1.6rem;
-            font-weight: 800;
-            margin: 0 0 4px;
-            line-height: 1.1;
-            color: #fff;
-        }
-        .kpi-box p.description {
-            font-family: 'DM Sans', sans-serif;
-            font-size: .78rem;
-            opacity: .8;
-            margin-top: 4px;
-        }
-        .chart-container {
-            margin-bottom: 22px;
-            background: #fff;
-            border: 1px solid #dde4e6;
-            border-radius: 10px;
-            padding: 24px 20px;
-        }
-        .chart-container h4 {
-            font-family: 'DM Sans', sans-serif;
-            font-size: .95rem;
-            font-weight: 500;
-            color: #6b7f86;
-            margin: 0 0 14px;
-            text-transform: uppercase;
-            letter-spacing: .05em;
-        }
-        /* Lean loader */
-        #loader-overlay {
-            display: none;
-            position: fixed;
-            inset: 0;
-            z-index: 9999;
-            background: rgba(38,50,56,.45);
-            backdrop-filter: blur(2px);
-            align-items: center;
-            justify-content: center;
-        }
-        #loader-overlay.active { display: flex; }
-        .loader-ring {
-            position: relative;
-            width: 180px;
-            height: 180px;
-        }
-        .loader-ring svg {
-            position: absolute;
-            inset: 0;
-            width: 100%;
-            height: 100%;
-            animation: spin 1.1s linear infinite;
-        }
-        .loader-ring svg circle {
-            fill: none;
-            stroke: #19b8b0;
-            stroke-width: 4;
-            stroke-linecap: round;
-            stroke-dasharray: 200;
-            stroke-dashoffset: 50;
-        }
-        .loader-ring img {
-            position: absolute;
-            inset: 0;
-            margin: auto;
-            width: 140px;
-            height: 140px;
-            object-fit: contain;
-            border-radius: 50%;
-            background: #fff;
-            padding: 10px;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-    </style>
+    {{ recursos() }}
 </head>
-<body>
+<body class="pg-faturamento">
     <div id="loader-overlay">
         <div class="loader-ring">
             <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
             <img src="/static/LOGO HM - NOVA (1).png" alt="Carregando...">
         </div>
     </div>
-    <div class="site-header">
-        <div class="header-brand">
-            <img src="/static/LOGO HM E SESA - NOVA (1).png" class="header-logo" alt="Logo">
-            <div>
-                <h1>Faturamento</h1>
-                <span>Painel de acompanhamento</span>
-            </div>
-        </div>
-        <button id="btn-voltar" class="btn-back">Voltar ao Início</button>
-    </div>
+    {{ cabecalho('Faturamento', 'Painel de acompanhamento', id_voltar='btn-voltar') }}
     <div class="page-content">
 
     <!-- Filters -->
@@ -316,7 +108,7 @@
                 name: 'Total',
                 type: 'scatter',
                 mode: 'lines+markers',
-                line: { color: '#FF5733', width: 2 },
+                line: { color: '#EB600A', width: 2 },
                 marker: { size: 8 },
                 hoverinfo: 'text',
                 text: total.map(value => `Total: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
@@ -393,5 +185,6 @@
         renderStackedBarChart(initialData);
     </script>
     </div><!-- /.page-content -->
+    {{ rodape() }}
 </body>
 </html>

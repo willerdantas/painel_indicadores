@@ -1,176 +1,17 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
 <!doctype html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Configuração do Banco</title>
-    <link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
-    <style>
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-        body {
-            display: flex;
-            flex-direction: column;
-            min-height: 100vh;
-            font-family: 'DM Sans', sans-serif;
-            background: #e6e6e6;
-            color: #38464D;
-        }
-        .site-header {
-            position: relative;
-            background-color: #e6e6e6;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            padding: 18px 40px;
-        }
-        .site-header img { height: 72px; cursor: pointer; }
-        .header-acoes {
-            position: absolute;
-            right: 40px;
-            top: 50%;
-            transform: translateY(-50%);
-            display: flex;
-            gap: 10px;
-        }
-        .btn-header {
-            font-family: 'Syne', sans-serif;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            text-decoration: none;
-            color: #fff;
-            background: #19b8b0;
-            border: 2px solid #19b8b0;
-            border-radius: 8px;
-            padding: 9px 20px;
-            transition: background .15s, color .15s;
-            white-space: nowrap;
-        }
-        .btn-header:hover { background: #128f89; border-color: #128f89; }
-        .btn-header.secundario { background: transparent; color: #128f89; }
-        .btn-header.secundario:hover { background: #128f89; color: #fff; }
-
-        .main-content {
-            flex: 1;
-            position: relative;
-            overflow: hidden;
-            background: linear-gradient(135deg, #19b8b0 0%, #1cb88a 100%);
-            padding: 52px 52px 72px;
-        }
-        .deco { position: absolute; border-radius: 50%; pointer-events: none; }
-        .deco-1 { width: 380px; height: 380px; top: -140px; right: -120px; background: rgba(255,255,255,0.09); }
-        .deco-2 { width: 240px; height: 240px; top: -30px; right: 60px; background: rgba(255,255,255,0.08); }
-
-        .section-title {
-            position: relative;
-            color: #fff;
-            font-family: 'Syne', sans-serif;
-            font-size: 20px;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-transform: uppercase;
-            margin-bottom: 36px;
-        }
-
-        .painel {
-            position: relative;
-            background: #fff;
-            border-radius: 14px;
-            box-shadow: 0 6px 24px rgba(0,0,0,0.15);
-            padding: 28px 32px;
-            max-width: 760px;
-        }
-        .grid {
-            display: grid;
-            grid-template-columns: 2fr 1fr;
-            gap: 16px 20px;
-        }
-        label {
-            display: block;
-            font-size: 12px;
-            font-weight: 500;
-            color: #6b7f86;
-            text-transform: uppercase;
-            letter-spacing: .06em;
-            margin-bottom: 6px;
-        }
-        input {
-            width: 100%;
-            padding: 10px 12px;
-            border: 1px solid #dde4e6;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 15px;
-            color: #38464D;
-            background: #f0f4f5;
-        }
-        input:focus { outline: none; border-color: #19b8b0; background: #fff; }
-        .dica { font-size: 12px; color: #6b7f86; margin-top: 5px; }
-
-        .acoes { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 24px; }
-        .btn {
-            font-family: 'Syne', sans-serif;
-            font-size: 13px;
-            font-weight: 700;
-            letter-spacing: .08em;
-            text-transform: uppercase;
-            color: #fff;
-            background: #19b8b0;
-            border: 2px solid #19b8b0;
-            border-radius: 8px;
-            padding: 10px 22px;
-            cursor: pointer;
-            transition: background .15s, color .15s;
-        }
-        .btn:hover { background: #128f89; border-color: #128f89; }
-        .btn.secundario { background: transparent; color: #128f89; }
-        .btn.secundario:hover { background: #128f89; color: #fff; }
-        .btn:disabled { opacity: .55; cursor: wait; }
-
-        .resultado {
-            display: none;
-            margin-top: 20px;
-            border-radius: 10px;
-            padding: 14px 16px;
-            font-size: 14px;
-            line-height: 1.55;
-        }
-        .resultado.ok    { display: block; background: #e7f6ef; border: 1px solid #9fd8bd; color: #1f5f43; }
-        .resultado.aviso { display: block; background: #fff6e5; border: 1px solid #f3c879; color: #7a4b00; }
-        .resultado.erro  { display: block; background: #fdecea; border: 1px solid #f5b5ae; color: #a12a1c; }
-        .resultado.info  { display: block; background: #eef4f6; border: 1px solid #dde4e6; color: #38464D; }
-        .resultado strong { font-weight: 700; }
-        .resultado ul { margin: 6px 0 0 20px; }
-        .resultado code { font-family: Consolas, monospace; font-size: 13px; }
-
-        .site-footer {
-            position: absolute;
-            bottom: 18px;
-            right: 40px;
-            color: rgba(255,255,255,0.65);
-            font-size: 12px;
-            font-weight: 300;
-            letter-spacing: 0.5px;
-        }
-
-        @media (max-width: 700px) {
-            .site-header { flex-direction: column; gap: 12px; padding: 16px; }
-            .header-acoes { position: static; transform: none; }
-            .main-content { padding: 32px 16px 72px; }
-            .painel { padding: 22px 18px; }
-            .grid { grid-template-columns: 1fr; }
-        }
-    </style>
+    {{ recursos() }}
 </head>
-<body>
-    <header class="site-header">
-        <img src="/static/LOGO HM E SESA - NOVA (1).png" alt="Logo" onclick="window.location.href='/'">
-        <div class="header-acoes">
+<body class="pg-config-banco">
+    {% call cabecalho('Configuração do Banco', 'Área restrita', voltar=False) %}
             <a href="{{ url_for('admin_menu') }}" class="btn-header secundario">Administração</a>
             <a href="{{ url_for('logout') }}" class="btn-header">Sair</a>
-        </div>
-    </header>
+        {% endcall %}
 
     <main class="main-content">
         <div class="deco deco-1"></div>
@@ -226,7 +67,6 @@
             <div class="resultado" id="resultado" role="status" aria-live="polite"></div>
         </form>
 
-        <div class="site-footer">Painel de indicadores 2.0 - Desenvolvido por NUTIC - Ano 2025</div>
     </main>
 
     <script>
@@ -341,5 +181,6 @@
             }
         });
     </script>
+    {{ rodape() }}
 </body>
 </html>

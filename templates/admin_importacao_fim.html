@@ -1,17 +1,13 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
 <!doctype html>
 <html lang="pt-BR">
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Importação de custos</title>
-    <style>
-        body { font-family: 'DM Sans', sans-serif; background: #e6e6e6; color: #38464D; margin: 0; padding: 40px 16px; }
-        .painel { max-width: 560px; margin: 0 auto; background: #fff; border-radius: 14px; padding: 24px 26px;
-                  box-shadow: 0 6px 24px rgba(0,0,0,0.15); }
-        a { color: #007C6B; }
-    </style>
+    {{ recursos() }}
 </head>
-<body>
+<body class="pg-admin-importacao-fim">
     <!-- página sem as mensagens do sistema: elas ficam para a tela de lançamento mostrar -->
     <div class="painel">
         <p>Voltando para o lançamento de custos…</p>

@@ -1,10 +1,10 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Indicadores Hospitalares — Tendência Mensal</title>
-<link href="https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
 <script src="/static/chart.umd.min.js"></script>
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
@@ -14,90 +14,9 @@
     document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
   }
 </script>
-<style>
-:root {
-  --teal: #3BB5A3; --cyan: #00B2C9; --green: #007C6B; --orange: #EB600A;
-  --amber: #F3A133; --dark: #38464D; --blue2: #2E758C; --teal2: #0F9688;
-  --peach: #F7975B; --sky: #53B7D9; --bg: #f0f4f5; --card: #ffffff;
-  --border: #dde4e6; --muted: #6b7f86;
-}
-* { box-sizing: border-box; margin: 0; padding: 0; }
-body { font-family: 'DM Sans', sans-serif; background: var(--bg); color: var(--dark); min-height: 100vh; }
-header {
-  background: #ffffff;
-  padding: .6rem 2rem;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-bottom: 3px solid var(--teal);
-  box-shadow: 0 2px 8px rgba(0,0,0,.07);
-  gap: 1rem;
-}
-.header-brand {
-  display: flex;
-  align-items: center;
-  gap: .85rem;
-  min-width: 0;
-}
-.header-logo {
-  height: 72px;
-  width: auto;
-  object-fit: contain;
-  border-radius: 6px;
-  flex-shrink: 0;
-}
-header h1 {
-  font-family: 'Syne', sans-serif;
-  font-size: 1.1rem;
-  font-weight: 800;
-  color: var(--dark);
-  letter-spacing: .04em;
-  text-transform: uppercase;
-}
-header span {
-  font-size: .75rem;
-  color: var(--muted);
-  font-weight: 500;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-}
-.wrapper { max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem; }
-.filters {
-  background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.25rem 1.5rem;
-  display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end;
-  margin-bottom: 1.5rem;
-}
-.filters label { display: block; font-size: .72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
-.filters input, .filters select {
-  width: 100%; padding: .5rem .75rem; border: 1px solid var(--border); border-radius: 6px; font-family: inherit;
-  font-size: .875rem; color: var(--dark); background: var(--bg); outline: none; transition: border .15s;
-}
-.filters input:focus, .filters select:focus { border-color: var(--teal); }
-.btn-apply {
-  padding: .55rem 1.4rem; background: var(--teal); color: #fff; border: none; border-radius: 6px;
-  font-family: 'Syne', sans-serif; font-size: .82rem; font-weight: 700; letter-spacing: .05em;
-  text-transform: uppercase; cursor: pointer; transition: background .15s, transform .1s; white-space: nowrap;
-}
-.btn-apply:hover { background: var(--green); transform: translateY(-1px); }
-.section-title { font-family: 'Syne', sans-serif; font-size: 1.25rem; font-weight: 700; color: var(--dark); margin-top: 2rem; margin-bottom: 1rem; border-bottom: 2px solid var(--teal); padding-bottom: .5rem; }
-.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
-.charts-grid.stacked { grid-template-columns: 1fr; }
-.chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
-.chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
-.chart-container { position: relative; height: 300px; }
-.error-bar { background: #fde; border: 1px solid #f99; color: #c00; border-radius: 8px; padding: .75rem 1rem; font-size: .85rem; margin-bottom: 1rem; display: none; }
-#loader-overlay { display: none; position: fixed; inset: 0; z-index: 9999; background: rgba(38,50,56,.45); backdrop-filter: blur(2px); align-items: center; justify-content: center; }
-#loader-overlay.active { display: flex; }
-.loader-ring { position: relative; width: 160px; height: 160px; }
-.loader-ring svg { position: absolute; inset: 0; width: 100%; height: 100%; animation: spin 1.1s linear infinite; }
-.loader-ring svg circle { fill: none; stroke: var(--teal); stroke-width: 4; stroke-linecap: round; stroke-dasharray: 200; stroke-dashoffset: 50; }
-.loader-ring img { position: absolute; inset: 0; margin: auto; width: 120px; height: 120px; object-fit: contain; border-radius: 50%; background: #fff; padding: 6px; }
-@keyframes spin { to { transform: rotate(360deg); } }
-@media(max-width:900px){ .charts-grid { grid-template-columns: 1fr; } }
-@media(max-width:600px){ .wrapper { padding: 1rem; } header h1 { font-size: .85rem; } .chart-container { height: 250px; } }
-</style>
+    {{ recursos() }}
 </head>
-<body>
+<body class="pg-hcasg-hospitalares-tendencia">
 
 <div id="loader-overlay">
   <div class="loader-ring">
@@ -106,18 +25,7 @@ header span {
   </div>
 </div>
 
-<header>
-  <div class="header-brand">
-    <img class="header-logo" src="/static/LOGO HM E SESA - NOVA (1).png" alt="logo">
-    <h1>Indicadores Hospitalares</h1>
-  </div>
-  <span>Painel de Gestão</span>
-  <div style="display:flex;align-items:center;gap:1rem;">
-    <a href="/hcasg/hospitalares" style="font-size:.78rem;color:var(--teal);text-decoration:none;font-weight:600;letter-spacing:.04em;">🗂️ Indicadores</a>
-    <a href="/hcasg/hospitalares/comparativo" style="font-size:.78rem;color:var(--teal);text-decoration:none;font-weight:600;letter-spacing:.04em;">📊 Comparativo</a>
-    <button id="btn-voltar-inicio" style="font-family:'Syne',sans-serif;font-size:.75rem;font-weight:700;letter-spacing:.08em;text-transform:uppercase;background:var(--teal);color:#fff;border:none;border-radius:6px;padding:8px 18px;cursor:pointer;transition:background .15s;white-space:nowrap;" onmouseover="this.style.background='var(--green)'" onmouseout="this.style.background='var(--teal)'">Voltar</button>
-  </div>
-</header>
+{{ cabecalho('Indicadores Hospitalares', 'Painel de Gestão', links=[('/hcasg/hospitalares', '🗂️ Indicadores'), ('/hcasg/hospitalares/comparativo', '📊 Comparativo')]) }}
 
 <div class="wrapper">
 
@@ -209,8 +117,8 @@ function criarGrafico(container, titulo, meses, valores, cor) {
       labels: meses,
       datasets: [
         { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 },
-        { label: `Média: ${media}`, data: media !== null ? Array(meses.length).fill(media) : [], type: 'line', borderColor: '#f97316', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 },
-        { label: `Mediana: ${mediana}`, data: mediana !== null ? Array(meses.length).fill(mediana) : [], type: 'line', borderColor: '#8b5cf6', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 }
+        { label: `Média: ${media}`, data: media !== null ? Array(meses.length).fill(media) : [], type: 'line', borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 },
+        { label: `Mediana: ${mediana}`, data: mediana !== null ? Array(meses.length).fill(mediana) : [], type: 'line', borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 }
       ]
     },
     options: {
@@ -290,7 +198,7 @@ function carregarGraficos() {
         { key: 'leito_dia', titulo: 'Leito-Dia', cor: '#F7975B' },
         { key: 'taxa_ocupacao', titulo: 'Taxa de Ocupação (%)', cor: '#EB600A' },
         { key: 'taxa_mortalidade_hospitalar', titulo: 'Taxa de Mortalidade Hospitalar (%)', cor: '#c0392b' },
-        { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#8b2f2f' }
+        { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#EB600A' }
       ];
 
       indicadores.forEach(ind => {
@@ -321,5 +229,6 @@ document.getElementById('mes_fim').addEventListener('change', carregarGraficos);
 
 carregarGraficos();
 </script>
+    {{ rodape() }}
 </body>
 </html>

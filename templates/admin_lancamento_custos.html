@@ -1,33 +1,9 @@
 {% extends 'admin_base.html' %}
+{% block classe_pagina %}pg-admin-lancamento-custos{% endblock %}
 {% from '_seletor_mes.html' import seletor_mes %}
 {% block titulo %}Lançar Dados de Custos{% endblock %}
 {% block cabecalho %}Lançar Dados de Custos{% endblock %}
 {% block conteudo %}
-<style>
-    .rolagem-x { overflow-x: auto; }
-    .tabela-lanc td.valor input { text-align: right; font-variant-numeric: tabular-nums; min-width: 130px; width: 100%; max-width: 200px; }
-    .tabela-lanc tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
-    .tabela-lanc td.quem { font-size: 12px; color: #6b7f86; min-width: 90px; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    th.num { text-align: right; }
-    .filtros { display: flex; flex-wrap: wrap; gap: 14px 18px; align-items: flex-end; }
-    .filtros label.campo { margin-top: 0; }
-    .filtros select { min-width: 280px; max-width: 420px; }
-    .navegar { display: flex; gap: 6px; }
-    .total-unidade { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: #007C6B; }
-    .alerta { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin: 12px 0; }
-    .alerta.aviso { background: #fff6e8; border: 1px solid #F3C27A; color: #7a4a00; }
-    .lado { display: flex; flex-direction: column; gap: 20px; }
-    .lista a { color: #007C6B; text-decoration: none; font-weight: 500; }
-    .lista a:hover { text-decoration: underline; }
-    .lista tr.atual td { background: #E0F3F3; }
-    .rolagem-y { max-height: 460px; overflow-y: auto; }
-    .rolagem-y thead th { position: sticky; top: 0; background: #fff; }
-    .despesas tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
-    .despesas td { font-size: 13px; padding: 6px 8px; }
-    .etiqueta.so-total { background: #eef4f6; color: #6b7f86; font-weight: 500; }
-    pre.sql { background: #f0f4f5; border-radius: 8px; padding: 12px 14px; font-size: 14px; margin: 12px 0; white-space: pre-wrap; }
-</style>
 
 {% if indisponivel %}
 <div class="painel" style="position:relative; max-width:820px;">

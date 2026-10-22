@@ -1,40 +1,8 @@
 {% extends 'admin_base.html' %}
+{% block classe_pagina %}pg-admin-importacao-custos{% endblock %}
 {% block titulo %}Pré-visualização da importação de custos{% endblock %}
 {% block cabecalho %}Importação de custos — pré-visualização{% endblock %}
 {% block conteudo %}
-<style>
-    .previa { position: relative; display: flex; flex-direction: column; gap: 20px; }
-    .resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 14px 0 4px; }
-    .card { background: #f0f4f5; border-radius: 10px; padding: 12px 14px; }
-    .card .rotulo { font-size: 11px; font-weight: 500; color: #6b7f86; text-transform: uppercase; letter-spacing: .05em; }
-    .card .valor { font-family: 'Syne', sans-serif; font-size: 18px; font-weight: 700; color: #007C6B; margin-top: 4px;
-                   font-variant-numeric: tabular-nums; }
-    .card .sub { font-size: 12px; color: #6b7f86; margin-top: 2px; }
-    .alerta { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-top: 10px; }
-    .alerta.aviso { background: #fff6e8; border: 1px solid #F3C27A; color: #7a4a00; }
-    .alerta.info { background: #E0F3F3; border: 1px solid #9fd8d0; color: #005b4f; }
-    .alerta ul { margin: 6px 0 0 18px; }
-    .meta { display: flex; flex-wrap: wrap; gap: 6px 24px; font-size: 14px; }
-    .meta b { font-weight: 600; }
-    .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-    th.num { text-align: right; }
-    tr.grupo td { background: #E0F3F3; color: #007C6B; font-weight: 700; }
-    tr.total td { font-weight: 700; border-top: 2px solid #dde4e6; }
-    .difere { color: #a12a1c; font-weight: 600; }
-    .etiqueta.novo { background: #F3A133; color: #fff; }
-    .rolagem { overflow: auto; max-height: 560px; border: 1px solid #eef4f6; border-radius: 8px; }
-    .rolagem thead th { position: sticky; top: 0; background: #fff; z-index: 2; }
-    .matriz { font-size: 12px; }
-    .matriz th, .matriz td { padding: 5px 8px; }
-    .matriz th { white-space: normal; min-width: 92px; vertical-align: bottom; }
-    .matriz td:first-child, .matriz th:first-child { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 220px; }
-    .matriz thead th:first-child { z-index: 3; }
-    .matriz tr.grupo td:first-child { background: #E0F3F3; }
-    details summary { cursor: pointer; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: #38464D; }
-    .barra-acoes { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; }
-    .barra-acoes form { display: inline; }
-    input[type=month] { padding: 8px 12px; border: 1px solid #dde4e6; border-radius: 8px; font: inherit; background: #f0f4f5; }
-</style>
 
 {% if erro %}
 <div class="painel" style="position:relative; max-width:760px;">
