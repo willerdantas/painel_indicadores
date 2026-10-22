@@ -102,40 +102,77 @@
             letter-spacing: 3px;
             text-transform: uppercase;
             margin-bottom: 36px;
+            text-align: center;
+            position: relative;
         }
 
-        /* ── Cards ── */
+        /* ── Cards: no máximo 4 por linha (largura de 4 cartões + 3 espaços),
+              centralizados, inclusive a última linha incompleta ── */
         .cards-row {
+            position: relative;
             display: flex;
             flex-wrap: wrap;
-            gap: 22px;
+            justify-content: center;
+            gap: 26px;
+            max-width: calc(4 * 240px + 3 * 26px);
+            margin: 0 auto;
+        }
+        .cards-row .card { flex: 0 0 240px; }
+        @media (max-width: 560px)  {
+            .main-content { padding: 36px 16px 72px; }
+            .cards-row .card { flex: 1 1 100%; max-width: 340px; }
         }
 
         .card {
+            position: relative;
+            overflow: hidden;
             background: #fff;
-            border-radius: 14px;
-            width: 195px;
-            height: 100px;
+            border: 2px solid rgba(255,255,255,0.85);
+            outline: 1px solid rgba(25,184,176,0.25);
+            outline-offset: -6px;
+            border-radius: 16px;
+            height: 150px;
             display: flex;
             align-items: center;
             justify-content: center;
             text-align: center;
             text-decoration: none;
-            color: #555;
+            color: #38464D;
             font-family: 'Syne', sans-serif;
-            font-size: 20px;
-            font-weight: 600;
-            letter-spacing: 0.03em;
-            padding: 16px;
-            box-shadow: 0 2px 10px rgba(0,0,0,0.10);
-            transition: box-shadow 0.2s, transform 0.2s, color 0.2s;
-            line-height: 1.4;
+            font-size: 22px;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            line-height: 1.3;
+            padding: 20px 22px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.06), 0 8px 20px rgba(0,60,58,0.18), 0 18px 36px -12px rgba(0,60,58,0.25);
+            transition: box-shadow 0.2s, transform 0.2s, color 0.2s, outline-color 0.2s;
+        }
+        .card span { position: relative; z-index: 1; }
+        /* ícone como marca d'água, no canto inferior direito */
+        .card svg.marca {
+            position: absolute;
+            right: -14px;
+            bottom: -16px;
+            width: 112px;
+            height: 112px;
+            stroke: #19b8b0;
+            stroke-width: 1.6;
+            fill: none;
+            stroke-linecap: round;
+            stroke-linejoin: round;
+            opacity: 0.13;
+            transform: rotate(-8deg);
+            transition: opacity 0.2s, transform 0.2s;
+            pointer-events: none;
         }
         .card:hover {
-            box-shadow: 0 6px 24px rgba(0,0,0,0.18);
-            transform: translateY(-3px);
-            color: #19b8b0;
+            box-shadow: 0 4px 8px rgba(0,0,0,0.08), 0 14px 32px rgba(0,60,58,0.24), 0 26px 48px -14px rgba(0,60,58,0.32);
+            transform: translateY(-4px);
+            color: #128f89;
+            outline-color: rgba(25,184,176,0.55);
         }
+        .card:hover svg.marca { opacity: 0.22; transform: rotate(-4deg) scale(1.06); }
+        .card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
         /* ── Footer ── */
         .site-footer {
@@ -225,17 +262,36 @@
 
         {# painéis públicos: visíveis sem login #}
         <div class="cards-row">
-            <a href="{{ url_for('producao_hospitalar') }}" class="card">Produção Hospitalar</a>
-            <a href="{{ url_for('indicadores') }}" class="card">Indicadores SIMAQ</a>
-            <a href="{{ url_for('lean_indicadores') }}" class="card">Indicadores LEAN</a>
-            <a href="{{ url_for('exames_por_clinica') }}" class="card">Exames</a>
-            <a href="{{ url_for('hcasg_hospitalares') }}" class="card">Indicadores Hospitalares</a>
-            <a href="{{ url_for('hcasg_emergencia') }}" class="card">Indicadores da Emergência</a>
-            <a href="{{ url_for('ambulatorio_pagina') }}" class="card">Ambulatório</a>
-            <a href="{{ url_for('custos_pagina') }}" class="card">Custos</a>
+            {# ícone de cada cartão (marca d'água), em SVG embutido, traço 24x24 #}
+            {% set icones = {
+                'atividade': '<polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/>',
+                'alvo': '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+                'tendencia': '<polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>',
+                'frasco': '<path d="M9 2h6"/><path d="M10 2v6L4.5 18.5A2 2 0 0 0 6.3 21h11.4a2 2 0 0 0 1.8-2.5L14 8V2"/><path d="M7 15h10"/>',
+                'hospital': '<path d="M4 21V5a2 2 0 0 1 2-2h12a2 2 0 0 1 2 2v16"/><path d="M2 21h20"/><path d="M12 7v6"/><path d="M9 10h6"/><path d="M10 21v-4h4v4"/>',
+                'sirene': '<path d="M7 18v-6a5 5 0 0 1 10 0v6"/><path d="M5 18h14a1 1 0 0 1 1 1v2H4v-2a1 1 0 0 1 1-1z"/><path d="M12 2v2"/><path d="M4.9 4.9l1.4 1.4"/><path d="M19.1 4.9l-1.4 1.4"/><path d="M2 12h2"/><path d="M20 12h2"/>',
+                'estetoscopio': '<path d="M5 3H4a1 1 0 0 0-1 1v5a5 5 0 0 0 10 0V4a1 1 0 0 0-1-1h-1"/><path d="M8 14v1a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/>',
+                'moeda': '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
+            } %}
+            {% set cartoes = [
+                ('producao_hospitalar', 'Produção Hospitalar', 'atividade'),
+                ('indicadores', 'Indicadores SIMAQ', 'alvo'),
+                ('lean_indicadores', 'Indicadores LEAN', 'tendencia'),
+                ('exames_por_clinica', 'Exames', 'frasco'),
+                ('hcasg_hospitalares', 'Indicadores Hospitalares', 'hospital'),
+                ('hcasg_emergencia', 'Indicadores da Emergência', 'sirene'),
+                ('ambulatorio_pagina', 'Ambulatório', 'estetoscopio'),
+                ('custos_pagina', 'Custos', 'moeda'),
+            ] %}
+            {% for rota, nome, icone in cartoes %}
+            <a href="{{ url_for(rota) }}" class="card">
+                <svg class="marca" viewBox="0 0 24 24" aria-hidden="true">{{ icones[icone] | safe }}</svg>
+                <span>{{ nome }}</span>
+            </a>
+            {% endfor %}
         </div>
 
-        <div class="site-footer">Painel de indicadores 2.0 - Desenvolvido por NUTIC - Ano 2025</div>
+        <div class="site-footer">Painel de indicadores 3.0 - Desenvolvido por NUTIC - Ano 2025</div>
     </main>
 
     <script>

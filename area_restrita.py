@@ -400,6 +400,12 @@ def moeda_br(valor):
     return f'{float(valor):,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
 
 
+def _mes_anterior():
+    """Mês anterior ao atual (AAAA-MM): o padrão quando ainda não há lançamento."""
+    hoje = datetime.now()
+    return f'{hoje.year - 1}-12' if hoje.month == 1 else f'{hoje.year}-{hoje.month - 1:02d}'
+
+
 def _mes_valido(mes):
     try:
         datetime.strptime(mes or '', '%Y-%m')
@@ -427,7 +433,7 @@ def admin_lancamento(chave):
     meses = t.meses()
     mes = request.args.get('mes')
     if not _mes_valido(mes):
-        mes = meses[0]['mes'] if meses else datetime.now().strftime('%Y-%m')
+        mes = meses[0]['mes'] if meses else _mes_anterior()  # último mês lançado
     do_mes = t.do_mes(mes)
     grupo = cfg['grupo']
     linhas = []
@@ -533,7 +539,7 @@ def admin_custos():
                                sql=banco_painel.sql_criar_schema())
     mes = request.args.get('mes')
     if not _mes_valido(mes):
-        mes = lancamento_custos.ultimo_mes() or datetime.now().strftime('%Y-%m')
+        mes = lancamento_custos.ultimo_mes() or _mes_anterior()  # último mês lançado
     unidades = lancamento_custos.unidades(mes)
     unidade_id = request.args.get('unidade', type=int)
     unidade = next((u for u in unidades if u['id'] == unidade_id), unidades[0] if unidades else None)

@@ -1,4 +1,5 @@
 {% extends 'admin_base.html' %}
+{% from '_seletor_mes.html' import seletor_mes %}
 {% block titulo %}{{ cfg.titulo }}{% endblock %}
 {% block cabecalho %}{{ cfg.titulo }}{% endblock %}
 {% block conteudo %}
@@ -29,17 +30,19 @@
 </div>
 {% else %}
 <div class="grade" style="grid-template-columns: minmax(0, 1fr) minmax(260px, 320px);">
-    <form class="painel" method="post" action="{{ url_for('admin_' ~ chave ~ '_salvar') }}">
-        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-        <div style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; justify-content:space-between;">
+    <section class="painel">
+        {# o mês é escolhido fora do formulário de salvar: escolher recarrega a tela no mês,
+           e salvar grava sempre no mês carregado (campo escondido abaixo) #}
+        <form method="get" style="display:flex; flex-wrap:wrap; gap:16px; align-items:flex-end; justify-content:space-between;">
             <div>
                 <label class="campo" for="mes" style="margin-top:0;">Mês do lançamento</label>
-                <input type="month" id="mes" name="mes" value="{{ mes }}" required
-                       style="padding:9px 12px; border:1px solid #dde4e6; border-radius:8px; font:inherit; background:#f0f4f5;"
-                       onchange="if (this.value) window.location.href='{{ url_for('admin_' ~ chave) }}?mes=' + this.value">
+                {{ seletor_mes('mes', 'mes', valor=mes, submeter=True, dica=False) }}
             </div>
             {% if coluna_total %}<div class="total-mes">Total do mês: <span id="total-mes">—</span></div>{% endif %}
-        </div>
+        </form>
+    <form method="post" action="{{ url_for('admin_' ~ chave ~ '_salvar') }}">
+        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+        <input type="hidden" name="mes" value="{{ mes }}">
         <div class="dica" style="margin:8px 0 14px;">
             Números no formato brasileiro (ex.: 1.234.567,89). Linha em branco = sem lançamento no mês (remove o que houver).
             {% set herdadas = t.colunas | selectattr('herda') | map(attribute='rotulo') | map('lower') | list %}
@@ -90,11 +93,12 @@
         </div>
 
         <div class="acoes">
-            <button type="submit" class="btn">Salvar mês</button>
+            <button type="submit" class="btn">Salvar {{ mes[5:] }}/{{ mes[:4] }}</button>
             <a href="{{ url_for(cfg.pagina) }}" class="btn secundario" target="_blank">Ver página {{ cfg.nome_pagina }}</a>
             {% if pode('cadastros') %}<a href="{{ url_for('admin_cadastros', _anchor=cfg.cadastro) }}" class="btn secundario">Cadastrar itens</a>{% endif %}
         </div>
     </form>
+    </section>
 
     <div style="display:flex; flex-direction:column; gap:20px;">
         <form class="painel" method="post" action="{{ url_for('admin_' ~ chave ~ '_importar') }}" enctype="multipart/form-data">
