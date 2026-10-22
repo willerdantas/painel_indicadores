@@ -104,23 +104,35 @@ function ajustarLayoutGraficos(qtdMeses) {
   el.classList.toggle('stacked', Number(qtdMeses) > 12);
 }
 
-function criarGrafico(container, titulo, meses, valores, cor) {
-  const valoresNum = valores.map(v => parseFloat(v) || null);
-  const media   = calcularMedia(valoresNum);
-  const mediana = calcularMediana(valoresNum);
+const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—'
+  : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+
+// linhas horizontais de média e mediana (paleta: laranja e azul)
+function linhasMediaMediana(qtdMeses, media, mediana) {
+  return [
+    { label: `Média: ${fmtNum(media)}`, data: media !== null ? Array(qtdMeses).fill(media) : [], type: 'line',
+      borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4],
+      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 },
+    { label: `Mediana: ${fmtNum(mediana)}`, data: mediana !== null ? Array(qtdMeses).fill(mediana) : [], type: 'line',
+      borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3],
+      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 }
+  ];
+}
+
+function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana) {
+  const valoresNum = valores.map(v => (v === null || v === undefined) ? null : parseFloat(v));
   const ctx = container.querySelector('canvas');
   if (chartInstances[titulo]) chartInstances[titulo].destroy();
+  const datasets = [
+    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 }
+  ];
+  if (comMediaMediana) {
+    datasets.push(...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum)));
+  }
 
   chartInstances[titulo] = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels: meses,
-      datasets: [
-        { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 },
-        { label: `Média: ${media}`, data: media !== null ? Array(meses.length).fill(media) : [], type: 'line', borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 },
-        { label: `Mediana: ${mediana}`, data: mediana !== null ? Array(meses.length).fill(mediana) : [], type: 'line', borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 }
-      ]
-    },
+    data: { labels: meses, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
@@ -147,23 +159,47 @@ function criarGraficoSaidas(container, titulo, meses, totais, destinosMensais) {
     backgroundColor: paleta[idx % paleta.length] + 'cc', borderColor: paleta[idx % paleta.length],
     borderWidth: 1, borderRadius: 3, stack: 'saidas'
   }));
+  // total do mês, com média e mediana do total (linhas fora da pilha)
+  const totaisNum = (totais || []).map(v => (v === null || v === undefined) ? null : parseFloat(v));
   datasets.push({
-    label: 'Total', type: 'line', data: (totais || []).map(v => parseFloat(v) || 0),
-    borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 2,
-    pointHoverRadius: 3, tension: 0.2, fill: false, order: 0
+    label: 'Total', type: 'line', data: totaisNum, stack: 'total',
+    borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3,
+    pointHoverRadius: 4, tension: 0.2, fill: false, order: 0
   });
+  linhasMediaMediana(meses.length, calcularMedia(totaisNum), calcularMediana(totaisNum))
+    .forEach((l, i) => datasets.push({ ...l, stack: 'linha' + i }));
+
   chartInstances[titulo] = new Chart(ctx, {
     type: 'bar', data: { labels: meses, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
       plugins: {
-        legend: { display: true, position: 'bottom' },
-        tooltip: { callbacks: { label: function(ctx) { return ` ${ctx.dataset.label}: ${ctx.parsed.y ?? 0}`; } } }
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+        tooltip: { callbacks: { label: function(ctx) { return ` ${ctx.dataset.label}: ${fmtNum(ctx.parsed.y ?? 0)}`; } } }
       },
       scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } }
     }
   });
+
+  // informações abaixo do gráfico: total, média e mediana mensais por destino e do total
+  const linha = (nome, vals, cor, classe) => {
+    const nums = vals.map(v => (v === null || v === undefined) ? null : parseFloat(v));
+    const total = nums.reduce((a, b) => a + (b || 0), 0);
+    return `<tr class="${classe || ''}">
+      <td>${cor ? `<span class="marca-cor" style="background:${cor}"></span>` : ''}${nome}</td>
+      <td class="num">${fmtNum(total)}</td>
+      <td class="num">${fmtNum(calcularMedia(nums))}</td>
+      <td class="num">${fmtNum(calcularMediana(nums))}</td></tr>`;
+  };
+  const corpo = destinos.map((d, idx) => linha(d.dsc_destino, d.valores || [], paleta[idx % paleta.length])).join('')
+    + linha('Total de saídas', totais || [], '#38464D', 'total');
+  const info = document.createElement('div');
+  info.className = 'saidas-info';
+  info.innerHTML = `<table class="tabela">
+      <thead><tr><th>Destino</th><th class="num">Total no período</th><th class="num">Média mensal</th><th class="num">Mediana mensal</th></tr></thead>
+      <tbody>${corpo}</tbody></table>`;
+  container.appendChild(info);
 }
 
 function carregarGraficos() {
@@ -190,15 +226,16 @@ function carregarGraficos() {
       Object.keys(chartInstances).forEach(k => { try { chartInstances[k].destroy(); } catch(e) {} delete chartInstances[k]; });
       container.innerHTML = '';
 
+      // gráficos da página, nesta ordem; media: linhas de média e mediana
       const indicadores = [
-        { key: 'paciente_dia', titulo: 'Paciente-dia (dias)', cor: '#0F9688' },
-        { key: 'saidas', titulo: 'Saídas (qtd)', cor: '#53B7D9' },
-        { key: 'tmph', titulo: 'Tempo Médio Permanência (dias)', cor: '#2E758C' },
-        { key: 'giro', titulo: 'Giro de Leito (saídas/leito)', cor: '#0F9688' },
-        { key: 'leito_dia', titulo: 'Leito-Dia', cor: '#F7975B' },
-        { key: 'taxa_ocupacao', titulo: 'Taxa de Ocupação (%)', cor: '#EB600A' },
-        { key: 'taxa_mortalidade_hospitalar', titulo: 'Taxa de Mortalidade Hospitalar (%)', cor: '#c0392b' },
-        { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#EB600A' }
+        { key: 'paciente_dia', titulo: 'Paciente-dia (dias)', cor: '#0F9688', media: true },
+        { key: 'leito_dia', titulo: 'Leito-dia', cor: '#F7975B' },
+        { key: 'tmph', titulo: 'Tempo Médio de Permanência (dias)', cor: '#2E758C' },
+        { key: 'giro', titulo: 'Giro de Leito (saídas/leito)', cor: '#00A1A2' },
+        { key: 'internacoes', titulo: 'Número de Internações', cor: '#53B7D9', media: true },
+        { key: 'saidas', titulo: 'Saídas por Destino', cor: '#3BB5A3' },
+        { key: 'taxa_mortalidade_hospitalar', titulo: 'Taxa de Mortalidade Hospitalar (%)', cor: '#EB600A' },
+        { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#F3A133' }
       ];
 
       indicadores.forEach(ind => {
@@ -206,13 +243,13 @@ function carregarGraficos() {
         const temDados = valores && valores.some(v => v !== null && v !== undefined && Number(v) !== 0);
         if (!temDados) return;
         const card = document.createElement('div');
-        card.className = 'chart-card';
+        card.className = 'chart-card' + (ind.key === 'saidas' ? ' largura-total' : '');
         card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
         container.appendChild(card);
         if (ind.key === 'saidas') {
           criarGraficoSaidas(card, ind.titulo, d.meses, d[ind.key], d.saidas_destinos_mensais);
         } else {
-          criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor);
+          criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor, ind.media);
         }
       });
     })

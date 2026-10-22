@@ -443,6 +443,9 @@ img { max-width: 100%; }
     font-weight: 700;
     color: var(--dark);
 }
+/* gráfico dentro de um cartão (.chart-card das tendências): sem moldura dupla */
+.chart-card .chart-container { position: relative; padding: 0; margin: 0; border: 0; box-shadow: none; background: none; overflow: visible; }
+.chart-card.largura-total { grid-column: 1 / -1; }
 .graf-resumo { font-size: .85rem; color: var(--muted); margin-bottom: 1rem; }
 .graf-resumo b { font-family: var(--fonte-titulo); font-size: 1rem; color: var(--dark); }
 .graf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -1134,6 +1137,11 @@ img { max-width: 100%; }
 .pg-hcasg-hospitalares-tendencia .chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
 .pg-hcasg-hospitalares-tendencia .chart-container { height: 300px; }
 .pg-hcasg-hospitalares-tendencia .error-bar { display: none; }
+.pg-hcasg-hospitalares-tendencia .chart-card.largura-total .chart-container { height: 360px; }
+.pg-hcasg-hospitalares-tendencia .saidas-info { margin-top: 1.25rem; overflow-x: auto; }
+.pg-hcasg-hospitalares-tendencia .saidas-info .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pg-hcasg-hospitalares-tendencia .saidas-info tr.total td { font-weight: 700; border-top: 2px solid var(--border); }
+.pg-hcasg-hospitalares-tendencia .marca-cor { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
 @media(max-width:900px) {
   .pg-hcasg-hospitalares-tendencia .charts-grid { grid-template-columns: 1fr; }
 }

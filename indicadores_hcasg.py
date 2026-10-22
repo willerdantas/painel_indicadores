@@ -599,10 +599,26 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         elif r["categoria_obito"] == "hospitalar":
             mapa_obito_hospitalar[r["mes"]] = r["qtd"]
 
+    # Internações por mês: mesma regra do painel (internação do tipo 1, contada
+    # no mês do cadastro, pela clínica da primeira movimentação).
+    rows_internacoes_mes = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
+        SELECT DATE_TRUNC('month', ti.dat_cadastro)::date AS mes,
+               COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
+        FROM t_internacao ti
+        JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
+        WHERE ti.isn_tipo_atendimento = 1
+          AND ti.dat_cadastro::date BETWEEN %s AND %s
+          AND pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
+        {filt_sql}
+        GROUP BY DATE_TRUNC('month', ti.dat_cadastro)::date
+    """, [dt_ini, dt_fim] + filt_vals)
+    mapa_internacoes = {r["mes"]: r["qtd"] for r in (rows_internacoes_mes or [])}
+
     result = {
         "meses": _meses_labels(meses_keys),
         "meses_iso": _meses_iso(meses_keys),
         "paciente_dia": [],
+        "internacoes": [],
         "saidas": [],
         "saidas_destinos_mensais": {},
         "tmph": [],
@@ -653,6 +669,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         leito_dia_mes = mapa_leito_dia.get(mes)
 
         result["paciente_dia"].append(pac_dia_mes)
+        result["internacoes"].append(mapa_internacoes.get(mes, 0))
         result["saidas"].append(saidas_mes)
         result["tmph"].append(mapa_tmph.get(mes))
         result["giro"].append(giro_mes)
