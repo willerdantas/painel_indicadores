@@ -29,6 +29,8 @@
     --muted:    #6B7F86;
     --claro:    #E0F3F3;
     /* estados */
+    --up:          var(--green);   /* variação positiva (comparativos) */
+    --down:        #C62828;        /* variação negativa: vermelho só para indicar queda */
     --erro:        var(--orange);
     --erro-fundo:  #FDF0E7;
     --aviso-fundo: #FEF6E8;
@@ -205,8 +207,9 @@ img { max-width: 100%; }
     color: var(--muted);
     margin-bottom: .35rem;
 }
-.filters input:not([type=checkbox]):not([type=radio]), .filters select,
-.filter-group input:not([type=checkbox]):not([type=radio]), .filter-group select {
+/* (o campo do seletor de mês com calendário tem estilo próprio, na seção 12) */
+.filters input:not([type=checkbox]):not([type=radio]):not(.seletor-mes-texto), .filters select,
+.filter-group input:not([type=checkbox]):not([type=radio]):not(.seletor-mes-texto), .filter-group select {
     width: 100%;
     padding: .5rem .75rem;
     border: 1px solid var(--border);
@@ -1070,6 +1073,21 @@ img { max-width: 100%; }
 .pg-hcasg-emergencia-comparativo .variacao.down { color: var(--down); }
 .pg-hcasg-emergencia-comparativo .variacao.flat { color: var(--muted); }
 .pg-hcasg-emergencia-comparativo .sem-dado { color: var(--muted); font-style: italic; }
+/* comparativo mês a mês: uma coluna por mês (valor e, abaixo, a variação sobre o mês anterior) */
+.pg-hcasg-emergencia-comparativo .nota-comparativo { font-size: .78rem; color: var(--muted); margin-bottom: .9rem; }
+.pg-hcasg-emergencia-comparativo table.comparativo td.celula-mes { white-space: nowrap; }
+.pg-hcasg-emergencia-comparativo .valor-mes { font-weight: 600; color: var(--dark); font-variant-numeric: tabular-nums; }
+.pg-hcasg-emergencia-comparativo .var-mes { margin-top: .2rem; font-size: .74rem; }
+.pg-hcasg-emergencia-comparativo table.comparativo .periodo { background: var(--claro); white-space: nowrap; }
+.pg-hcasg-emergencia-comparativo table.comparativo th.periodo small { font-weight: 500; text-transform: none; letter-spacing: 0; }
+.pg-hcasg-emergencia-comparativo table.comparativo th:first-child,
+.pg-hcasg-emergencia-comparativo table.comparativo td:first-child { position: sticky; left: 0; z-index: 1; min-width: 200px; background: var(--card); }
+.pg-hcasg-emergencia-comparativo table.comparativo th:first-child { background: var(--bg); }
+/* linhas de detalhe (classificação de risco, destino) recuadas abaixo do total */
+.pg-hcasg-emergencia-comparativo table.comparativo tr.sub td { padding-top: .45rem; padding-bottom: .45rem; }
+.pg-hcasg-emergencia-comparativo table.comparativo tr.sub .indicador-nome { padding-left: 1.1rem; font-weight: 500; color: var(--muted); }
+.pg-hcasg-emergencia-comparativo table.comparativo tr.sub .indicador-nome::before { content: '↳ '; color: var(--border); }
+.pg-hcasg-emergencia-comparativo table.comparativo tr.sub .unidade { padding-left: 1.1rem; }
 
 /* ---------- página: hcasg_emergencia_tendencia ---------- */
 .pg-hcasg-emergencia-tendencia .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }
@@ -1136,6 +1154,16 @@ img { max-width: 100%; }
 .pg-hcasg-hospitalares-comparativo .variacao.down { color: var(--down); }
 .pg-hcasg-hospitalares-comparativo .variacao.flat { color: var(--muted); }
 .pg-hcasg-hospitalares-comparativo .sem-dado { color: var(--muted); font-style: italic; }
+/* comparativo mês a mês: uma coluna por mês (valor e, abaixo, a variação sobre o mês anterior) */
+.pg-hcasg-hospitalares-comparativo .nota-comparativo { font-size: .78rem; color: var(--muted); margin-bottom: .9rem; }
+.pg-hcasg-hospitalares-comparativo table.comparativo td.celula-mes { white-space: nowrap; }
+.pg-hcasg-hospitalares-comparativo .valor-mes { font-weight: 600; color: var(--dark); font-variant-numeric: tabular-nums; }
+.pg-hcasg-hospitalares-comparativo .var-mes { margin-top: .2rem; font-size: .74rem; }
+.pg-hcasg-hospitalares-comparativo table.comparativo .periodo { background: var(--claro); white-space: nowrap; }
+.pg-hcasg-hospitalares-comparativo table.comparativo th.periodo small { font-weight: 500; text-transform: none; letter-spacing: 0; }
+.pg-hcasg-hospitalares-comparativo table.comparativo th:first-child,
+.pg-hcasg-hospitalares-comparativo table.comparativo td:first-child { position: sticky; left: 0; z-index: 1; min-width: 200px; background: var(--card); }
+.pg-hcasg-hospitalares-comparativo table.comparativo th:first-child { background: var(--bg); }
 
 /* ---------- página: hcasg_hospitalares_tendencia ---------- */
 .pg-hcasg-hospitalares-tendencia .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }

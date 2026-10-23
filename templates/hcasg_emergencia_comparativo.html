@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -43,12 +44,19 @@
       </select>
     </div>
     <div>
-      <label>Mês A</label>
-      <input type="month" id="mes_a" value="{{ mes_a }}">
+      <label for="modo">Comparação</label>
+      <select id="modo">
+        <option value="individual" title="Só o Mês A contra o Mês B">Individual</option>
+        <option value="periodo" title="Todos os meses de A até B">Período</option>
+      </select>
     </div>
     <div>
-      <label>Mês B</label>
-      <input type="month" id="mes_b" value="{{ mes_b }}">
+      <label for="mes-a">Mês A</label>
+      {{ seletor_mes('mes-a', 'mes_a', valor=mes_a, dica=False) }}
+    </div>
+    <div>
+      <label for="mes-b">Mês B</label>
+      {{ seletor_mes('mes-b', 'mes_b', valor=mes_b, dica=False) }}
     </div>
     <div>
       <label>&nbsp;</label>
@@ -60,17 +68,13 @@
 
   <h2 class="section-title" id="titulo-tabela">Comparativo</h2>
   <div class="tabela-card">
+    <p class="nota-comparativo" id="nota-comparativo"></p>
     <table class="comparativo">
-      <thead>
-        <tr>
-          <th>Indicador</th>
-          <th class="num" id="th-mes-a">Mês A</th>
-          <th class="num" id="th-mes-b">Mês B</th>
-          <th class="num">Variação</th>
-        </tr>
+      <thead id="thead-comparativo">
+        <tr><th>Indicador</th></tr>
       </thead>
       <tbody id="tbody-comparativo">
-        <tr><td colspan="4" class="sem-dado">Selecione os dois meses e clique em Comparar.</td></tr>
+        <tr><td class="sem-dado">Escolha os meses e clique em Comparar.</td></tr>
       </tbody>
     </table>
   </div>
@@ -98,29 +102,37 @@ function formatarValor(valor, unidade) {
 function formatarVariacao(variacao) {
   if (variacao === null || variacao === undefined) return '<span class="sem-dado">—</span>';
   const num = Number(variacao);
-  if (num > 0) {
-    return `<span class="variacao up">▲ ${num.toFixed(2)}%</span>`;
-  } else if (num < 0) {
-    return `<span class="variacao down">▼ ${Math.abs(num).toFixed(2)}%</span>`;
-  }
+  const txt = Math.abs(num).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+  if (num > 0) return `<span class="variacao up">▲ ${txt}</span>`;
+  if (num < 0) return `<span class="variacao down">▼ ${txt}</span>`;
   return `<span class="variacao flat">= 0,00%</span>`;
 }
 
+// valor AAAA-MM do seletor de mês (campo escondido do calendário)
+function mes(nome) { const el = document.querySelector(`input[name="${nome}"]`); return el ? el.value : ''; }
+
+const NOTAS = {
+  individual: 'Compara só o Mês A com o Mês B (os meses entre eles não entram).',
+  periodo: 'Cada mês mostra o valor e, abaixo, a variação em relação ao mês anterior; ' +
+           'a última coluna compara o primeiro com o último mês do período.'
+};
+
 function carregarComparativo() {
-  const mesA = v('mes_a');
-  const mesB = v('mes_b');
+  const mesA = mes('mes_a');
+  const mesB = mes('mes_b');
+  const modo = v('modo');
   const erroEl = document.getElementById('erro');
   erroEl.style.display = 'none';
 
-  if (!mesA || !mesB) {
-    erroEl.textContent = 'Selecione os dois meses para comparar.';
+  if (!mesA || !mesB || mesA === mesB) {
+    erroEl.textContent = 'Escolha dois meses diferentes (Mês A e Mês B).';
     erroEl.style.display = 'block';
     return;
   }
 
   const params = new URLSearchParams({
     clinica: v('clinica'), enfermaria: v('enfermaria'), leito: v('leito'),
-    mes_a: mesA, mes_b: mesB
+    mes_a: mesA, mes_b: mesB, modo
   });
 
   showLoader();
@@ -133,27 +145,43 @@ function carregarComparativo() {
         erroEl.style.display = 'block';
         return;
       }
-      document.getElementById('titulo-tabela').textContent =
-        `Comparativo — ${res.mes_a_label} vs ${res.mes_b_label}`;
-      document.getElementById('th-mes-a').textContent = res.mes_a_label;
-      document.getElementById('th-mes-b').textContent = res.mes_b_label;
+      const meses = res.meses || [];
+      const individual = res.modo === 'individual';
+      const primeiro = meses[0], ultimo = meses[meses.length - 1];
+      document.getElementById('nota-comparativo').textContent = NOTAS[individual ? 'individual' : 'periodo'];
+      document.getElementById('titulo-tabela').textContent = individual
+        ? `Comparativo — ${primeiro} x ${ultimo}`
+        : `Comparativo mês a mês — ${primeiro} a ${ultimo}`;
+      document.getElementById('thead-comparativo').innerHTML = `<tr><th>Indicador</th>` +
+        meses.map(m => `<th class="num">${m}</th>`).join('') +
+        (individual
+          ? `<th class="num periodo">Variação<br><small>${primeiro} → ${ultimo}</small></th></tr>`
+          : `<th class="num periodo">Variação no período<br><small>${primeiro} → ${ultimo}</small></th></tr>`);
 
       const tbody = document.getElementById('tbody-comparativo');
       if (!res.linhas || res.linhas.length === 0) {
-        tbody.innerHTML = '<tr><td colspan="4" class="sem-dado">Sem dados para os meses selecionados.</td></tr>';
+        tbody.innerHTML = `<tr><td colspan="${meses.length + 2}" class="sem-dado">Sem dados para os meses escolhidos.</td></tr>`;
         return;
       }
-      tbody.innerHTML = res.linhas.map(l => `
-        <tr>
+      tbody.innerHTML = res.linhas.map(l => {
+        const sufixo = l.unidade === '%' ? '%' : '';
+        // no período, a variação sobre o mês anterior fica abaixo de cada mês;
+        // no individual, só a variação A → B, na última coluna
+        const celulas = l.valores.map((valor, i) => `
+          <td class="num celula-mes">
+            <div class="valor-mes">${formatarValor(valor, sufixo)}</div>
+            ${individual ? '' : `<div class="var-mes">${i > 0 ? formatarVariacao(l.variacoes[i]) : '&nbsp;'}</div>`}
+          </td>`).join('');
+        // linha de detalhe (classificação de risco, destino): recuada, abaixo do total
+        return `<tr class="${l.sub ? 'sub' : ''}">
           <td>
             <div class="indicador-nome">${l.indicador}</div>
             ${l.unidade ? `<div class="unidade">${l.unidade}</div>` : ''}
           </td>
-          <td class="num">${formatarValor(l.valor_a, l.unidade === '%' ? '%' : '')}</td>
-          <td class="num">${formatarValor(l.valor_b, l.unidade === '%' ? '%' : '')}</td>
-          <td class="num">${formatarVariacao(l.variacao)}</td>
-        </tr>
-      `).join('');
+          ${celulas}
+          <td class="num periodo">${formatarVariacao(l.variacao_periodo)}</td>
+        </tr>`;
+      }).join('');
     })
     .catch(err => {
       hideLoader();
@@ -161,6 +189,8 @@ function carregarComparativo() {
       erroEl.style.display = 'block';
     });
 }
+
+document.getElementById('modo').addEventListener('change', carregarComparativo);
 
 carregarComparativo();
 </script>

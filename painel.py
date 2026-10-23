@@ -994,27 +994,30 @@ def graficos_mensais():
 # (@app.route) e o `if __name__ == '__main__':` final do app.py.
 # ---------------------------------------------------------------------------
 
+# Indicadores do comparativo dos Hospitalares, nesta ordem (séries de get_mensal_hospitalar)
 HCASG_CAMPOS_HOSPITALAR = [
     ("paciente_dia", "Paciente-dia", "dias"),
-    ("saidas", "Saídas", "qtd"),
+    ("leito_dia", "Leito-Dia", "leitos-dia"),
     ("tmph", "Tempo Médio de Permanência", "dias"),
     ("giro", "Giro de Leito", "saídas/leito"),
-    ("leito_dia", "Leito-Dia", "leitos-dia"),
     ("taxa_ocupacao", "Taxa de Ocupação", "%"),
-    ("total_obitos", "Óbitos (total)", "qtd"),
-    ("obitos_institucionais", "Óbitos Institucionais", "qtd"),
     ("taxa_mortalidade_hospitalar", "Taxa de Mortalidade Hospitalar", "%"),
     ("taxa_mortalidade_institucional", "Taxa de Mortalidade Institucional", "%"),
+    ("internacoes", "Internações", "qtd"),
+    ("saidas", "Saídas", "qtd"),
 ]
 
+# Comparativo da Emergência: LOS, porta-médico, atendimentos (total e por
+# classificação de risco), saídas (total e por destino), conversão e > 24 h.
+# As linhas por classificação e por destino entram em _mensal_emergencia_comparativo.
 HCASG_CAMPOS_EMERGENCIA = [
     ("los_sem", "LOS Sem Internação", "min"),
     ("los_com", "LOS Com Internação", "min"),
-    ("tmp_ps", "TMP Leitos PS", "dias"),
-    ("saidas_tmp_ps", "Saídas PS", "qtd"),
-    ("giro_ps", "Giro de Leito PS", "saídas/leito"),
     ("porta_medico", "Tempo Porta-Médico", "min"),
-    ("internacoes_ps", "Internações PS", "qtd"),
+]
+HCASG_CAMPOS_EMERGENCIA_FIM = [
+    ("taxa_conversao", "Taxa de Conversão", "%"),
+    ("perc_acima_24h", "Taxa de Pacientes acima de 24 h", "%"),
 ]
 
 
@@ -1032,30 +1035,27 @@ def _hcasg_variacao(valor_a, valor_b):
         return None
 
 
-def _hcasg_montar_comparativo(dados, campos, mes_a, mes_b):
-    meses_iso = dados.get("meses_iso") or []
-    if mes_a not in meses_iso or mes_b not in meses_iso:
-        return None
-    idx_a = meses_iso.index(mes_a)
-    idx_b = meses_iso.index(mes_b)
+def _hcasg_montar_comparativo_periodo(dados, campos):
+    """Comparativo mês a mês de todo o período: para cada indicador, o valor de
+    cada mês, a variação de cada mês sobre o anterior e a do período (primeiro
+    mês contra o último)."""
+    meses = dados.get("meses") or []
     linhas = []
     for chave, rotulo, unidade in campos:
-        serie = dados.get(chave) or []
-        valor_a = serie[idx_a] if idx_a < len(serie) else None
-        valor_b = serie[idx_b] if idx_b < len(serie) else None
+        serie = list(dados.get(chave) or [])
+        serie += [None] * (len(meses) - len(serie))
+        valores = [float(v) if v is not None else None for v in serie[:len(meses)]]
         linhas.append({
             "chave": chave,
             "indicador": rotulo,
             "unidade": unidade,
-            "valor_a": valor_a,
-            "valor_b": valor_b,
-            "variacao": _hcasg_variacao(valor_a, valor_b),
+            # detalhe de um total (classificação de risco, destino): recuado na tabela
+            "sub": "_risco_" in chave or "_destino_" in chave,
+            "valores": valores,
+            "variacoes": [None] + [_hcasg_variacao(valores[i - 1], valores[i]) for i in range(1, len(valores))],
+            "variacao_periodo": _hcasg_variacao(valores[0], valores[-1]) if valores else None,
         })
-    return {
-        "mes_a_label": dados["meses"][idx_a],
-        "mes_b_label": dados["meses"][idx_b],
-        "linhas": linhas,
-    }
+    return {"meses": meses, "meses_iso": dados.get("meses_iso") or [], "linhas": linhas}
 
 
 def _hcasg_params_filtro():
@@ -1229,6 +1229,7 @@ def hcasg_hospitalares_comparativo():
     clinicas, enfermarias, leitos = hcasg_get_filtros()
     hoje = datetime.now().date()
     primeiro_mes_atual = hoje.replace(day=1)
+    # padrão: os dois últimos meses fechados (Mês A = penúltimo, Mês B = último)
     mes_b = (primeiro_mes_atual - pd.DateOffset(months=1)).date()
     mes_a = (primeiro_mes_atual - pd.DateOffset(months=2)).date()
     return render_template(
@@ -1282,42 +1283,76 @@ def api_hcasg_emergencia_mensal():
 
 # ---- APIs: comparativo entre dois meses ----
 
-@app.route('/api/hcasg/hospitalares/comparativo')
-def api_hcasg_hospitalares_comparativo():
+def _mensal_emergencia_comparativo(clinica, enfermaria, leito, mes_ini, mes_fim):
+    """Séries do comparativo da Emergência: as da tendência mensal mais o fluxo
+    (atendimentos por classificação e saídas por destino, já como séries) e a
+    lista de linhas em "_campos"."""
+    dados = get_mensal_emergencia(clinica, enfermaria, leito, mes_ini, mes_fim)
+    fluxo = hcasg.get_mensal_emergencia_fluxo(mes_ini, mes_fim)
+    campos = list(HCASG_CAMPOS_EMERGENCIA)
+    dados["atendimentos_total"] = fluxo["risco_mensal"]["total"]
+    campos.append(("atendimentos_total", "Atendimentos de Emergência", "qtd"))
+    for n, r in enumerate(fluxo["risco_mensal"]["riscos"]):
+        chave = f"atendimentos_risco_{n}"
+        dados[chave] = r["valores"]
+        nome = r["dsc_risco"].strip()
+        campos.append((chave, nome.capitalize() if nome.isupper() else nome, "qtd"))
+    dados["saidas_emergencia_total"] = fluxo["saidas_emergencia_total"]
+    campos.append(("saidas_emergencia_total", "Saídas da Emergência", "qtd"))
+    for d in fluxo["saidas_emergencia_destinos"]:
+        chave = f"saidas_destino_{d['isn_destino']}"
+        dados[chave] = d["valores"]
+        campos.append((chave, d["dsc_destino"], "qtd"))
+    dados["taxa_conversao"] = fluxo["taxa_conversao"]
+    dados["perc_acima_24h"] = fluxo["perc_acima_24h"]
+    campos += HCASG_CAMPOS_EMERGENCIA_FIM
+    dados["_campos"] = campos
+    return dados
+
+
+def _hcasg_comparativo_resposta(funcao_mensal, campos):
+    """Resposta dos comparativos (Hospitalares e Emergência) entre o Mês A e o Mês B.
+    modo=individual: só os dois meses (A contra B), sem os meses do meio;
+    modo=periodo (padrão): todos os meses de A até B, mês a mês.
+    mes_ini/mes_fim continuam aceitos no lugar de mes_a/mes_b."""
     clinica, enfermaria, leito = _hcasg_params_filtro()
-    mes_a = request.args.get('mes_a')
-    mes_b = request.args.get('mes_b')
+    mes_a = request.args.get('mes_a') or request.args.get('mes_ini')
+    mes_b = request.args.get('mes_b') or request.args.get('mes_fim')
+    modo = request.args.get('modo') or 'periodo'
     if not mes_a or not mes_b:
-        return jsonify({'ok': False, 'erro': 'Informe os dois meses para comparar.'}), 400
-    mes_ini = min(mes_a, mes_b)
-    mes_fim = max(mes_a, mes_b)
+        return jsonify({'ok': False, 'erro': 'Informe o Mês A e o Mês B.'}), 400
+    if mes_a == mes_b:
+        return jsonify({'ok': False, 'erro': 'Escolha dois meses diferentes.'}), 400
     try:
-        dados = get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini, mes_fim)
-        comparativo = _hcasg_montar_comparativo(dados, HCASG_CAMPOS_HOSPITALAR, mes_a, mes_b)
-        if comparativo is None:
-            return jsonify({'ok': False, 'erro': 'Não há dados para um dos meses selecionados.'}), 400
-        return jsonify({'ok': True, **comparativo})
+        if modo == 'individual':
+            # cada mês consultado sozinho: meses distantes não calculam o intervalo todo
+            dados_a = funcao_mensal(clinica, enfermaria, leito, mes_a, mes_a)
+            dados_b = funcao_mensal(clinica, enfermaria, leito, mes_b, mes_b)
+            campos = dados_a.get('_campos') or campos
+            dados = {'meses': dados_a['meses'] + dados_b['meses'],
+                     'meses_iso': dados_a['meses_iso'] + dados_b['meses_iso']}
+            for chave, _, _ in campos:
+                dados[chave] = (dados_a.get(chave) or [None]) + (dados_b.get(chave) or [None])
+        else:
+            dados = funcao_mensal(clinica, enfermaria, leito, min(mes_a, mes_b), max(mes_a, mes_b))
+            campos = dados.get('_campos') or campos
+        resposta = _hcasg_montar_comparativo_periodo(dados, campos)
+        # detalhe (classificação/destino) zerado em todos os meses não aparece
+        resposta['linhas'] = [l for l in resposta['linhas']
+                              if not l['sub'] or any(v for v in l['valores'])]
+        return jsonify({'ok': True, 'modo': modo, **resposta})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/api/hcasg/hospitalares/comparativo')
+def api_hcasg_hospitalares_comparativo():
+    return _hcasg_comparativo_resposta(get_mensal_hospitalar, HCASG_CAMPOS_HOSPITALAR)
 
 
 @app.route('/api/hcasg/emergencia/comparativo')
 def api_hcasg_emergencia_comparativo():
-    clinica, enfermaria, leito = _hcasg_params_filtro()
-    mes_a = request.args.get('mes_a')
-    mes_b = request.args.get('mes_b')
-    if not mes_a or not mes_b:
-        return jsonify({'ok': False, 'erro': 'Informe os dois meses para comparar.'}), 400
-    mes_ini = min(mes_a, mes_b)
-    mes_fim = max(mes_a, mes_b)
-    try:
-        dados = get_mensal_emergencia(clinica, enfermaria, leito, mes_ini, mes_fim)
-        comparativo = _hcasg_montar_comparativo(dados, HCASG_CAMPOS_EMERGENCIA, mes_a, mes_b)
-        if comparativo is None:
-            return jsonify({'ok': False, 'erro': 'Não há dados para um dos meses selecionados.'}), 400
-        return jsonify({'ok': True, **comparativo})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    return _hcasg_comparativo_resposta(_mensal_emergencia_comparativo, HCASG_CAMPOS_EMERGENCIA)
 
 
 # ---------------------------------------------------------------------------
