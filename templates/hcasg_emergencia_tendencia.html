@@ -14,6 +14,7 @@
     document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
   }
 </script>
+<script src="/static/js/tendencia.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-emergencia-tendencia">
@@ -88,25 +89,12 @@ function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loader
 
 function v(id){ return document.getElementById(id).value; }
 
-function calcularMedia(valores) {
-  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v));
-  return nums.length > 0 ? parseFloat((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null;
-}
-function calcularMediana(valores) {
-  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v)).sort((a, b) => a - b);
-  if (nums.length === 0) return null;
-  const mid = Math.floor(nums.length / 2);
-  return parseFloat((nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2).toFixed(2));
-}
 
 function ajustarLayoutGraficos(qtdMeses) {
   const el = document.getElementById('charts_emergencia');
   el.classList.toggle('stacked', Number(qtdMeses) > 12);
 }
 
-const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—'
-  : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
-const numeros = vals => (vals || []).map(v => (v === null || v === undefined) ? null : parseFloat(v));
 
 // cores da paleta por classificação de risco (as mesmas da página da Emergência)
 function corRisco(nome) {
@@ -121,17 +109,6 @@ function corRisco(nome) {
   return '#6B7F86';
 }
 
-// linhas horizontais de média e mediana (paleta: laranja e azul)
-function linhasMediaMediana(qtdMeses, media, mediana) {
-  return [
-    { label: `Média: ${fmtNum(media)}`, data: media !== null ? Array(qtdMeses).fill(media) : [], type: 'line',
-      borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4],
-      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 },
-    { label: `Mediana: ${fmtNum(mediana)}`, data: mediana !== null ? Array(qtdMeses).fill(mediana) : [], type: 'line',
-      borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3],
-      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 }
-  ];
-}
 
 // barras empilhadas por categoria + linha do total; opcional: média e mediana do
 // total e tabela abaixo com total, %, média e mediana mensais de cada categoria
@@ -189,15 +166,15 @@ function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
   }
 }
 
-function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana) {
+function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana, sufixo) {
   const valoresNum = numeros(valores);
   const ctx = container.querySelector('canvas');
   if (chartInstances[titulo]) chartInstances[titulo].destroy();
   const datasets = [
-    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 }
+    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2, sufixo: sufixo || '' }
   ];
   if (comMediaMediana) {
-    datasets.push(...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum)));
+    datasets.push(...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum), sufixo));
   }
 
   chartInstances[titulo] = new Chart(ctx, {
@@ -257,9 +234,9 @@ function carregarGraficos() {
         { key: 'los_sem', titulo: 'LOS Sem Internação (minutos)', cor: '#3BB5A3' },
         { key: 'los_com', titulo: 'LOS Com Internação (minutos)', cor: '#00B2C9' },
         { key: 'porta_medico', titulo: 'Tempo Porta-Médico (minutos)', cor: '#F3A133' },
-        { key: 'taxa_conversao', titulo: 'Taxa de Conversão (% das saídas que foram para internação)', cor: '#EB600A' }
+        { key: 'taxa_conversao', titulo: 'Taxa de Conversão (% das saídas que foram para internação)', cor: '#EB600A', sufixo: '%' }
       ].forEach(ind => {
-        if (temDados(d[ind.key])) criarGrafico(linhaCard(ind.titulo), ind.titulo, d.meses, d[ind.key], ind.cor, false);
+        if (temDados(d[ind.key])) criarGrafico(linhaCard(ind.titulo), ind.titulo, d.meses, d[ind.key], ind.cor, true, ind.sufixo);
       });
 
       // atendimentos por classificação de risco: empilhado, total, média e mediana do total
@@ -273,14 +250,14 @@ function carregarGraficos() {
           { mediaMediana: true, tabela: 'Classificação', linhasTabela: series });
       }
 
-      // saídas da emergência por destino, com o total
+      // saídas da emergência por destino, com o total e a média/mediana do total
       const coresDestino = ['#00B2C9', '#3BB5A3', '#F3A133', '#EB600A', '#2E758C', '#0F9688'];
       if (temDados(d.saidas_emergencia_total)) {
         const series = (d.saidas_emergencia_destinos || [])
           .map((x, idx) => ({ nome: x.dsc_destino, valores: x.valores, cor: coresDestino[idx % coresDestino.length] }))
           .filter(s => temDados(s.valores));
         const titulo = 'Saídas da Emergência por Destino';
-        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, series, d.saidas_emergencia_total, {});
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, series, d.saidas_emergencia_total, { mediaMediana: true });
       }
 
       // pacientes acima de 24 h na emergência (pela data da saída): quantidade e % das saídas
@@ -292,8 +269,12 @@ function carregarGraficos() {
           data: { labels: d.meses, datasets: [
             { label: 'Pacientes acima de 24 h', data: numeros(d.acima_24h), backgroundColor: '#EB600Acc',
               borderColor: '#EB600A', borderWidth: 1, borderRadius: 4, yAxisID: 'y', order: 2 },
-            { label: '% das saídas', data: numeros(d.perc_acima_24h), type: 'line', borderColor: '#2E758C',
-              backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.2, yAxisID: 'y1', order: 0 }
+            { label: '% das saídas', data: numeros(d.perc_acima_24h), type: 'line', borderColor: '#0F9688',
+              backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.2, yAxisID: 'y1', order: 0,
+              sufixo: '%' },
+            // média e mediana da quantidade de pacientes (eixo da esquerda)
+            ...linhasMediaMediana(d.meses.length, calcularMedia(numeros(d.acima_24h)),
+                                  calcularMediana(numeros(d.acima_24h)), '', 'y')
           ] },
           options: {
             responsive: true, maintainAspectRatio: false,

@@ -14,6 +14,7 @@
     document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
   }
 </script>
+<script src="/static/js/tendencia.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-hospitalares-tendencia">
@@ -88,46 +89,23 @@ function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loader
 
 function v(id){ return document.getElementById(id).value; }
 
-function calcularMedia(valores) {
-  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v));
-  return nums.length > 0 ? parseFloat((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null;
-}
-function calcularMediana(valores) {
-  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v)).sort((a, b) => a - b);
-  if (nums.length === 0) return null;
-  const mid = Math.floor(nums.length / 2);
-  return parseFloat((nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2).toFixed(2));
-}
 
 function ajustarLayoutGraficos(qtdMeses) {
   const el = document.getElementById('charts_hospitalares');
   el.classList.toggle('stacked', Number(qtdMeses) > 12);
 }
 
-const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—'
-  : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
 
-// linhas horizontais de média e mediana (paleta: laranja e azul)
-function linhasMediaMediana(qtdMeses, media, mediana) {
-  return [
-    { label: `Média: ${fmtNum(media)}`, data: media !== null ? Array(qtdMeses).fill(media) : [], type: 'line',
-      borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4],
-      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 },
-    { label: `Mediana: ${fmtNum(mediana)}`, data: mediana !== null ? Array(qtdMeses).fill(mediana) : [], type: 'line',
-      borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3],
-      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 }
-  ];
-}
 
-function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana) {
+function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana, sufixo) {
   const valoresNum = valores.map(v => (v === null || v === undefined) ? null : parseFloat(v));
   const ctx = container.querySelector('canvas');
   if (chartInstances[titulo]) chartInstances[titulo].destroy();
   const datasets = [
-    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 }
+    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2, sufixo: sufixo || '' }
   ];
   if (comMediaMediana) {
-    datasets.push(...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum)));
+    datasets.push(...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum), sufixo));
   }
 
   chartInstances[titulo] = new Chart(ctx, {
@@ -226,16 +204,16 @@ function carregarGraficos() {
       Object.keys(chartInstances).forEach(k => { try { chartInstances[k].destroy(); } catch(e) {} delete chartInstances[k]; });
       container.innerHTML = '';
 
-      // gráficos da página, nesta ordem; media: linhas de média e mediana
+      // gráficos da página, nesta ordem (todos com valores, média e mediana)
       const indicadores = [
-        { key: 'paciente_dia', titulo: 'Paciente-dia (dias)', cor: '#0F9688', media: true },
+        { key: 'paciente_dia', titulo: 'Paciente-dia (dias)', cor: '#0F9688' },
         { key: 'leito_dia', titulo: 'Leito-dia', cor: '#F7975B' },
         { key: 'tmph', titulo: 'Tempo Médio de Permanência (dias)', cor: '#2E758C' },
         { key: 'giro', titulo: 'Giro de Leito (saídas/leito)', cor: '#00A1A2' },
-        { key: 'internacoes', titulo: 'Número de Internações', cor: '#53B7D9', media: true },
+        { key: 'internacoes', titulo: 'Número de Internações', cor: '#53B7D9' },
         { key: 'saidas', titulo: 'Saídas por Destino', cor: '#3BB5A3' },
-        { key: 'taxa_mortalidade_hospitalar', titulo: 'Taxa de Mortalidade Hospitalar (%)', cor: '#EB600A' },
-        { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#F3A133' }
+        { key: 'taxa_mortalidade_hospitalar', titulo: 'Taxa de Mortalidade Hospitalar (%)', cor: '#EB600A', sufixo: '%' },
+        { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#F3A133', sufixo: '%' }
       ];
 
       indicadores.forEach(ind => {
@@ -249,7 +227,7 @@ function carregarGraficos() {
         if (ind.key === 'saidas') {
           criarGraficoSaidas(card, ind.titulo, d.meses, d[ind.key], d.saidas_destinos_mensais);
         } else {
-          criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor, ind.media);
+          criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor, true, ind.sufixo);
         }
       });
     })
