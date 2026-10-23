@@ -2616,6 +2616,118 @@ def get_saidas_emergencia(data_ini, data_fim):
         "internacao_clinica_risco": internacao_clinica_risco,
     }
 
+def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None):
+    """Tendência mensal do fluxo da emergência, com as mesmas regras da página
+    da Emergência (get_atendimentos_emergencia / get_saidas_emergencia), por mês:
+    atendimentos por classificação de risco (mês do cadastro), saídas por
+    destino (mês da saída), taxa de conversão e pacientes acima de 24 h.
+    Não usa os filtros de clínica/enfermaria/leito (como na página)."""
+    dt_ini, dt_fim = _resolve_month_window(mes_ini, mes_fim)
+    meses_keys = []
+    m = date(dt_ini.year, dt_ini.month, 1)
+    while m <= dt_fim:
+        meses_keys.append(m)
+        m = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+    idx_mes = {mes: i for i, mes in enumerate(meses_keys)}
+
+    rows_risco = fetch_all("""
+        WITH atend AS MATERIALIZED (
+            SELECT ti.isn_internacao, DATE_TRUNC('month', ti.dat_cadastro)::date AS mes
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 2
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ),
+        risco_final AS (
+            SELECT DISTINCT ON (tir.isn_internacao) tir.isn_internacao, tir.isn_risco
+            FROM t_internacao_risco tir
+            JOIN atend a ON a.isn_internacao = tir.isn_internacao
+            WHERE tir.isn_risco IS NOT NULL
+            ORDER BY tir.isn_internacao, COALESCE(tir.flg_ultimo, 0) DESC, tir.isn_internacao_risco DESC
+        )
+        SELECT a.mes, rf.isn_risco, COUNT(*) AS qtd
+        FROM atend a
+        LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao
+        GROUP BY 1, 2
+    """, [dt_ini, dt_fim])
+    riscos = fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco") or []
+    colunas_risco = [(r["isn_risco"], r["dsc_risco"].strip()) for r in riscos] + [(None, "Sem classificação")]
+    por_risco = {isn: [0] * len(meses_keys) for isn, _ in colunas_risco}
+    for r in rows_risco or []:
+        if r["mes"] in idx_mes:
+            chave = r["isn_risco"] if r["isn_risco"] in por_risco else None
+            por_risco[chave][idx_mes[r["mes"]]] += int(r["qtd"])
+
+    rows_saidas = fetch_all(f"""
+        WITH candidatas AS MATERIALIZED (
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            JOIN t_internacao ti ON ti.isn_internacao = til.isn_internacao
+            WHERE ti.isn_tipo_atendimento = 2
+              AND COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                           til.dat_alta + til.hor_alta::time)::date BETWEEN %s AND %s
+        ),
+        ultimo_registro AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                til.isn_destino,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                         til.dat_alta + til.hor_alta::time) AS ts_saida
+            FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM candidatas)
+            ORDER BY til.isn_internacao,
+                COALESCE(til.dat_alta_info + til.hor_alta_info::time,
+                         til.dat_alta + til.hor_alta::time) DESC NULLS LAST,
+                til.isn_internacao_leito DESC
+        )
+        SELECT
+            DATE_TRUNC('month', u.ts_saida)::date AS mes,
+            u.isn_destino,
+            COUNT(*) AS qtd,
+            COUNT(*) FILTER (WHERE u.ts_saida - ti.dat_cadastro > INTERVAL '24 hours') AS acima_24h
+        FROM ultimo_registro u
+        JOIN t_internacao ti ON ti.isn_internacao = u.isn_internacao
+        WHERE u.isn_destino IN ({DESTINOS_SAIDA_PS_SQL})
+          AND u.ts_saida::date BETWEEN %s AND %s
+        GROUP BY 1, 2
+    """, [dt_ini, dt_fim, dt_ini, dt_fim])
+    nomes = {
+        int(r["isn_destino"]): r["dsc_destino"].strip()
+        for r in fetch_all(
+            f"SELECT isn_destino, dsc_destino FROM t_destino WHERE isn_destino IN ({DESTINOS_SAIDA_PS_SQL})"
+        ) or []
+    }
+    saidas = {dest: [0] * len(meses_keys) for dest in DESTINOS_SAIDA_PS}
+    acima_24h = [0] * len(meses_keys)
+    for r in rows_saidas or []:
+        if r["mes"] in idx_mes:
+            i = idx_mes[r["mes"]]
+            saidas[int(r["isn_destino"])][i] = int(r["qtd"])
+            acima_24h[i] += int(r["acima_24h"])
+    total_saidas = [sum(saidas[dest][i] for dest in DESTINOS_SAIDA_PS) for i in range(len(meses_keys))]
+
+    return {
+        "fluxo_meses": _meses_labels(meses_keys),
+        "risco_mensal": {
+            "riscos": [{"dsc_risco": dsc, "valores": por_risco[isn]} for isn, dsc in colunas_risco],
+            "total": [sum(por_risco[isn][i] for isn, _ in colunas_risco) for i in range(len(meses_keys))],
+        },
+        "saidas_emergencia_destinos": [
+            {"isn_destino": dest, "dsc_destino": nomes.get(dest) or f"Destino {dest}", "valores": saidas[dest]}
+            for dest in DESTINOS_SAIDA_PS
+        ],
+        "saidas_emergencia_total": total_saidas,
+        "taxa_conversao": [
+            round(saidas[13][i] / total_saidas[i] * 100, 1) if total_saidas[i] else None
+            for i in range(len(meses_keys))
+        ],
+        "acima_24h": acima_24h,
+        "perc_acima_24h": [
+            round(acima_24h[i] / total_saidas[i] * 100, 1) if total_saidas[i] else None
+            for i in range(len(meses_keys))
+        ],
+    }
+
+
 # ---------------------------------------------------------------------------
 # PÁGINA INDICADORES LEAN (/lean) — visão consolidada hospitalar + emergência
 # (antes servida por um app separado na porta 5200)

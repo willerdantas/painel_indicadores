@@ -1273,6 +1273,8 @@ def api_hcasg_emergencia_mensal():
     mes_fim = request.args.get('mes_fim') or None
     try:
         dados = get_mensal_emergencia(clinica, enfermaria, leito, mes_ini, mes_fim)
+        # classificação de risco, saídas por destino, conversão e acima de 24 h
+        dados.update(hcasg.get_mensal_emergencia_fluxo(mes_ini, mes_fim))
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500

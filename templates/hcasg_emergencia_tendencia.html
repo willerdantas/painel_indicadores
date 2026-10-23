@@ -104,23 +104,105 @@ function ajustarLayoutGraficos(qtdMeses) {
   el.classList.toggle('stacked', Number(qtdMeses) > 12);
 }
 
-function criarGrafico(container, titulo, meses, valores, cor) {
-  const valoresNum = valores.map(v => parseFloat(v) || null);
-  const media   = calcularMedia(valoresNum);
-  const mediana = calcularMediana(valoresNum);
+const fmtNum = n => (n === null || n === undefined || isNaN(n)) ? '—'
+  : Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+const numeros = vals => (vals || []).map(v => (v === null || v === undefined) ? null : parseFloat(v));
+
+// cores da paleta por classificação de risco (as mesmas da página da Emergência)
+function corRisco(nome) {
+  const n = (nome || '').toLowerCase();
+  if (n.includes('vermelh')) return '#EB600A';
+  if (n.includes('laranj'))  return '#F7975B';
+  if (n.includes('amarel'))  return '#F3A133';
+  if (n.includes('verde'))   return '#0F9688';
+  if (n.includes('azul'))    return '#2E758C';
+  if (n.includes('branc'))   return '#DDE4E6';
+  if (n.includes('pret'))    return '#38464D';
+  return '#6B7F86';
+}
+
+// linhas horizontais de média e mediana (paleta: laranja e azul)
+function linhasMediaMediana(qtdMeses, media, mediana) {
+  return [
+    { label: `Média: ${fmtNum(media)}`, data: media !== null ? Array(qtdMeses).fill(media) : [], type: 'line',
+      borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4],
+      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 },
+    { label: `Mediana: ${fmtNum(mediana)}`, data: mediana !== null ? Array(qtdMeses).fill(mediana) : [], type: 'line',
+      borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3],
+      pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 0 }
+  ];
+}
+
+// barras empilhadas por categoria + linha do total; opcional: média e mediana do
+// total e tabela abaixo com total, %, média e mediana mensais de cada categoria
+function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
+  opts = opts || {};
   const ctx = container.querySelector('canvas');
   if (chartInstances[titulo]) chartInstances[titulo].destroy();
+  const totaisNum = numeros(totais);
+  const datasets = series.map(s => ({
+    label: s.nome, type: 'bar', data: numeros(s.valores).map(v => v || 0),
+    backgroundColor: s.cor + 'cc', borderColor: s.cor, borderWidth: 1, borderRadius: 3, stack: 'barras', order: 2
+  }));
+  datasets.push({
+    label: 'Total', type: 'line', data: totaisNum, stack: 'total',
+    borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3,
+    pointHoverRadius: 4, tension: 0.2, fill: false, order: 0
+  });
+  if (opts.mediaMediana) {
+    linhasMediaMediana(meses.length, calcularMedia(totaisNum), calcularMediana(totaisNum))
+      .forEach((l, i) => datasets.push({ ...l, stack: 'linha' + i }));
+  }
+  chartInstances[titulo] = new Chart(ctx, {
+    type: 'bar', data: { labels: meses, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtNum(c.parsed.y ?? 0)}` } }
+      },
+      scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } }
+    }
+  });
+
+  if (opts.tabela) {
+    const totalGeral = totaisNum.reduce((a, b) => a + (b || 0), 0);
+    const linha = (nome, vals, cor, classe) => {
+      const nums = numeros(vals);
+      const total = nums.reduce((a, b) => a + (b || 0), 0);
+      return `<tr class="${classe || ''}">
+        <td>${cor ? `<span class="marca-cor" style="background:${cor}"></span>` : ''}${nome}</td>
+        <td class="num">${fmtNum(total)}</td>
+        <td class="num">${totalGeral ? fmtNum(Math.round(total / totalGeral * 1000) / 10) + '%' : '—'}</td>
+        <td class="num">${fmtNum(calcularMedia(nums))}</td>
+        <td class="num">${fmtNum(calcularMediana(nums))}</td></tr>`;
+    };
+    const info = document.createElement('div');
+    info.className = 'tabela-info';
+    info.innerHTML = `<table class="tabela">
+        <thead><tr><th>${opts.tabela}</th><th class="num">Total no período</th><th class="num">%</th>
+          <th class="num">Média mensal</th><th class="num">Mediana mensal</th></tr></thead>
+        <tbody>${(opts.linhasTabela || series).map(s => linha(s.nome, s.valores, s.cor)).join('')}
+          ${linha('Total', totais, '#38464D', 'total')}</tbody></table>`;
+    container.appendChild(info);
+  }
+}
+
+function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana) {
+  const valoresNum = numeros(valores);
+  const ctx = container.querySelector('canvas');
+  if (chartInstances[titulo]) chartInstances[titulo].destroy();
+  const datasets = [
+    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 }
+  ];
+  if (comMediaMediana) {
+    datasets.push(...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum)));
+  }
 
   chartInstances[titulo] = new Chart(ctx, {
     type: 'bar',
-    data: {
-      labels: meses,
-      datasets: [
-        { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2 },
-        { label: `Média: ${media}`, data: media !== null ? Array(meses.length).fill(media) : [], type: 'line', borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 },
-        { label: `Mediana: ${mediana}`, data: mediana !== null ? Array(meses.length).fill(mediana) : [], type: 'line', borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2.5, borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, tension: 0, fill: false, order: 1 }
-      ]
-    },
+    data: { labels: meses, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
@@ -133,35 +215,6 @@ function criarGrafico(container, titulo, meses, valores, cor) {
         }
       },
       scales: { y: { beginAtZero: true }, x: { ticks: { font: { size: 11 } } } }
-    }
-  });
-}
-
-function criarGraficoSaidas(container, titulo, meses, totais, destinosMensais) {
-  const ctx = container.querySelector('canvas');
-  if (chartInstances[titulo]) chartInstances[titulo].destroy();
-  const paleta = ['#00B2C9', '#3BB5A3', '#2E758C', '#F3A133', '#EB600A', '#0F9688'];
-  const destinos = Object.values(destinosMensais || {});
-  const datasets = destinos.map((d, idx) => ({
-    label: `${d.dsc_destino}`, type: 'bar', data: (d.valores || []).map(v => parseFloat(v) || 0),
-    backgroundColor: paleta[idx % paleta.length] + 'cc', borderColor: paleta[idx % paleta.length],
-    borderWidth: 1, borderRadius: 3, stack: 'saidas'
-  }));
-  datasets.push({
-    label: 'Total', type: 'line', data: (totais || []).map(v => parseFloat(v) || 0),
-    borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 2,
-    pointHoverRadius: 3, tension: 0.2, fill: false, order: 0
-  });
-  chartInstances[titulo] = new Chart(ctx, {
-    type: 'bar', data: { labels: meses, datasets },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { intersect: false, mode: 'index' },
-      plugins: {
-        legend: { display: true, position: 'bottom' },
-        tooltip: { callbacks: { label: function(ctx) { return ` ${ctx.dataset.label}: ${ctx.parsed.y ?? 0}`; } } }
-      },
-      scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } }
     }
   });
 }
@@ -190,30 +243,73 @@ function carregarGraficos() {
       Object.keys(chartInstances).forEach(k => { try { chartInstances[k].destroy(); } catch(e) {} delete chartInstances[k]; });
       container.innerHTML = '';
 
-      const indicadores = [
+      // gráficos da página, nesta ordem
+      const linhaCard = (titulo, larga) => {
+        const card = document.createElement('div');
+        card.className = 'chart-card' + (larga ? ' largura-total' : '');
+        card.innerHTML = `<h3>${titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
+        container.appendChild(card);
+        return card;
+      };
+      const temDados = vals => (vals || []).some(v => v !== null && v !== undefined && Number(v) !== 0);
+
+      [
         { key: 'los_sem', titulo: 'LOS Sem Internação (minutos)', cor: '#3BB5A3' },
         { key: 'los_com', titulo: 'LOS Com Internação (minutos)', cor: '#00B2C9' },
-        { key: 'tmp_ps', titulo: 'TMP Leitos PS (dias)', cor: '#EB600A' },
-        { key: 'saidas_tmp_ps', titulo: 'Saídas PS (qtd)', cor: '#53B7D9' },
-        { key: 'giro_ps', titulo: 'Giro de Leito PS (saídas/leito)', cor: '#2E758C' },
         { key: 'porta_medico', titulo: 'Tempo Porta-Médico (minutos)', cor: '#F3A133' },
-        { key: 'internacoes_ps', titulo: 'Internações PS (qtd)', cor: '#007C6B' }
-      ];
-
-      indicadores.forEach(ind => {
-        const valores = d[ind.key];
-        const temDados = valores && valores.some(v => v !== null && v !== undefined);
-        if (!temDados) return;
-        const card = document.createElement('div');
-        card.className = 'chart-card';
-        card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
-        container.appendChild(card);
-        if (ind.key === 'saidas_tmp_ps') {
-          criarGraficoSaidas(card, ind.titulo, d.meses, d[ind.key], d.saidas_tmp_ps_destinos_mensais);
-        } else {
-          criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor);
-        }
+        { key: 'taxa_conversao', titulo: 'Taxa de Conversão (% das saídas que foram para internação)', cor: '#EB600A' }
+      ].forEach(ind => {
+        if (temDados(d[ind.key])) criarGrafico(linhaCard(ind.titulo), ind.titulo, d.meses, d[ind.key], ind.cor, false);
       });
+
+      // atendimentos por classificação de risco: empilhado, total, média e mediana do total
+      // e, abaixo, total, média e mediana mensais de cada classificação
+      const riscos = (d.risco_mensal && d.risco_mensal.riscos) || [];
+      if (temDados(d.risco_mensal && d.risco_mensal.total)) {
+        const series = riscos.map(r => ({ nome: r.dsc_risco, valores: r.valores, cor: corRisco(r.dsc_risco) }));
+        const titulo = 'Atendimentos por Classificação de Risco';
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses,
+          series.filter(s => temDados(s.valores)), d.risco_mensal.total,
+          { mediaMediana: true, tabela: 'Classificação', linhasTabela: series });
+      }
+
+      // saídas da emergência por destino, com o total
+      const coresDestino = ['#00B2C9', '#3BB5A3', '#F3A133', '#EB600A', '#2E758C', '#0F9688'];
+      if (temDados(d.saidas_emergencia_total)) {
+        const series = (d.saidas_emergencia_destinos || [])
+          .map((x, idx) => ({ nome: x.dsc_destino, valores: x.valores, cor: coresDestino[idx % coresDestino.length] }))
+          .filter(s => temDados(s.valores));
+        const titulo = 'Saídas da Emergência por Destino';
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, series, d.saidas_emergencia_total, {});
+      }
+
+      // pacientes acima de 24 h na emergência (pela data da saída): quantidade e % das saídas
+      if (temDados(d.acima_24h)) {
+        const titulo = 'Pacientes acima de 24 h na Emergência';
+        const card = linhaCard(titulo);
+        chartInstances[titulo] = new Chart(card.querySelector('canvas'), {
+          type: 'bar',
+          data: { labels: d.meses, datasets: [
+            { label: 'Pacientes acima de 24 h', data: numeros(d.acima_24h), backgroundColor: '#EB600Acc',
+              borderColor: '#EB600A', borderWidth: 1, borderRadius: 4, yAxisID: 'y', order: 2 },
+            { label: '% das saídas', data: numeros(d.perc_acima_24h), type: 'line', borderColor: '#2E758C',
+              backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3, tension: 0.2, yAxisID: 'y1', order: 0 }
+          ] },
+          options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { intersect: false, mode: 'index' },
+            plugins: {
+              legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+              tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtNum(c.parsed.y)}${c.dataset.yAxisID === 'y1' ? '%' : ''}` } }
+            },
+            scales: {
+              y: { beginAtZero: true, title: { display: true, text: 'pacientes' } },
+              y1: { beginAtZero: true, position: 'right', grid: { drawOnChartArea: false },
+                    ticks: { callback: v => v + '%' }, title: { display: true, text: '% das saídas' } }
+            }
+          }
+        });
+      }
     })
     .catch(err => {
       loaderOff();

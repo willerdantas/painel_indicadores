@@ -446,6 +446,12 @@ img { max-width: 100%; }
 /* gráfico dentro de um cartão (.chart-card das tendências): sem moldura dupla */
 .chart-card .chart-container { position: relative; padding: 0; margin: 0; border: 0; box-shadow: none; background: none; overflow: visible; }
 .chart-card.largura-total { grid-column: 1 / -1; }
+.chart-card.largura-total .chart-container { height: 360px; }
+/* tabela abaixo de um gráfico (total, média e mediana por categoria) */
+.tabela-info, .saidas-info { margin-top: 1.25rem; overflow-x: auto; }
+.tabela-info .num, .saidas-info .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.tabela-info tr.total td, .saidas-info tr.total td { font-weight: 700; border-top: 2px solid var(--border); }
+.marca-cor { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
 .graf-resumo { font-size: .85rem; color: var(--muted); margin-bottom: 1rem; }
 .graf-resumo b { font-family: var(--fonte-titulo); font-size: 1rem; color: var(--dark); }
 .graf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
@@ -512,7 +518,7 @@ img { max-width: 100%; }
     max-width: calc(4 * 240px + 3 * 26px);
     margin: 0 auto;
 }
-.card {
+.cards-row .card {
     position: relative;
     overflow: hidden;
     flex: 0 0 240px;
@@ -537,8 +543,8 @@ img { max-width: 100%; }
     box-shadow: var(--sombra-g);
     transition: box-shadow .2s, transform .2s, color .2s, outline-color .2s;
 }
-.card span { position: relative; z-index: 1; }
-.card svg.marca {
+.cards-row .card span { position: relative; z-index: 1; }
+.cards-row .card svg.marca {
     position: absolute;
     right: -14px;
     bottom: -16px;
@@ -554,14 +560,14 @@ img { max-width: 100%; }
     transition: opacity .2s, transform .2s;
     pointer-events: none;
 }
-.card:hover {
+.cards-row .card:hover {
     transform: translateY(-4px);
     color: var(--green);
     outline-color: rgba(0, 161, 162, .55);
     box-shadow: 0 4px 8px rgba(0,0,0,.08), 0 14px 32px rgba(0,60,58,.24), 0 26px 48px -14px rgba(0,60,58,.32);
 }
-.card:hover svg.marca { opacity: .22; transform: rotate(-4deg) scale(1.06); }
-.card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
+.cards-row .card:hover svg.marca { opacity: .22; transform: rotate(-4deg) scale(1.06); }
+.cards-row .card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
 /* 11. Área restrita (painéis, botões, mensagens e etiquetas) --------------------- */
 .painel { position: relative; background: var(--card); border-radius: var(--raio-g); box-shadow: 0 6px 24px rgba(0, 0, 0, .15); padding: 24px 26px; }
@@ -681,7 +687,7 @@ img { max-width: 100%; }
     .wrapper, .page-content { padding: 1rem; }
     .main-content { padding: 32px 16px 48px; }
     .kpi .value, .kpi .val, .kpi-box p { font-size: 1.5rem; }
-    .card { flex: 1 1 100%; max-width: 340px; }
+    .cards-row .card { flex: 1 1 100%; max-width: 340px; }
     .rodape { text-align: center; padding: 12px 1rem; }
 }
 
@@ -689,7 +695,6 @@ img { max-width: 100%; }
 
 /* ---------- página: admin ---------- */
 .pg-admin .cards-row { display: flex; flex-wrap: wrap; gap: 22px; }
-.pg-admin .card { width: 195px; height: 100px; display: flex; align-items: center; justify-content: center; }
 
 /* ---------- área restrita (admin_base e telas que a estendem) ---------- */
 .area-restrita .grade { position: relative; display: grid; grid-template-columns: minmax(300px, 400px) 1fr; gap: 20px; align-items: start; }
@@ -747,6 +752,10 @@ img { max-width: 100%; }
 }
 
 /* ---------- página: admin_importacao_custos ---------- */
+.pg-admin-importacao-custos .card { background: var(--bg); border-radius: var(--raio); padding: 12px 14px; }
+.pg-admin-importacao-custos .card .rotulo { font-size: 11px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.pg-admin-importacao-custos .card .valor { font-family: var(--fonte-titulo); font-size: 18px; font-weight: 700; color: var(--green); margin-top: 4px; font-variant-numeric: tabular-nums; }
+.pg-admin-importacao-custos .card .sub { font-size: 12px; color: var(--muted); margin-top: 2px; }
 .pg-admin-importacao-custos .previa { position: relative; display: flex; flex-direction: column; gap: 20px; }
 .pg-admin-importacao-custos .resumo { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px; margin: 14px 0 4px; }
 .pg-admin-importacao-custos .alerta { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin-top: 10px; }
@@ -1003,7 +1012,7 @@ img { max-width: 100%; }
 .pg-hcasg-emergencia .clinica-list { max-height: 220px; overflow-y: auto; display: flex; flex-direction: column; gap: .15rem; }
 .pg-hcasg-emergencia .clinica-list label { display: flex; align-items: center; gap: .4rem; }
 .pg-hcasg-emergencia .clinica-toggle-all { display: block; }
-.pg-hcasg-emergencia .kpis { display: grid; grid-template-columns: repeat(5, minmax(180px, 1fr)); gap: 1rem; }
+.pg-hcasg-emergencia .kpis { display: grid; grid-template-columns: repeat(4, minmax(180px, 1fr)); gap: 1rem; }
 .pg-hcasg-emergencia .kpi { min-height: 160px; overflow: hidden; }
 .pg-hcasg-emergencia .kpi::before { width: 80px; height: 80px; }
 .pg-hcasg-emergencia .kpi .detail { max-height: 70px; overflow: auto; }
@@ -1024,7 +1033,8 @@ img { max-width: 100%; }
 .pg-hcasg-emergencia .atend-resumo { font-size: .85rem; color: var(--muted); margin-bottom: 1rem; }
 .pg-hcasg-emergencia .atend-resumo b { color: var(--dark); font-family: 'Syne', sans-serif; font-size: 1rem; }
 .pg-hcasg-emergencia .atend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-.pg-hcasg-emergencia .card { min-width: 0; }
+.pg-hcasg-emergencia .card { min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: var(--raio); box-shadow: var(--sombra); padding: 1.1rem 1.25rem; }
+.pg-hcasg-emergencia .card h3 { font-family: var(--fonte-titulo); font-size: .9rem; font-weight: 700; color: var(--dark); margin-bottom: .75rem; }
 .pg-hcasg-emergencia .card.full { grid-column: 1 / -1; }
 .pg-hcasg-emergencia .chart-box { height: 300px; }
 .pg-hcasg-emergencia .tabela-risco { width: 100%; border-collapse: collapse; font-size: .875rem; }
@@ -1137,11 +1147,6 @@ img { max-width: 100%; }
 .pg-hcasg-hospitalares-tendencia .chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
 .pg-hcasg-hospitalares-tendencia .chart-container { height: 300px; }
 .pg-hcasg-hospitalares-tendencia .error-bar { display: none; }
-.pg-hcasg-hospitalares-tendencia .chart-card.largura-total .chart-container { height: 360px; }
-.pg-hcasg-hospitalares-tendencia .saidas-info { margin-top: 1.25rem; overflow-x: auto; }
-.pg-hcasg-hospitalares-tendencia .saidas-info .num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
-.pg-hcasg-hospitalares-tendencia .saidas-info tr.total td { font-weight: 700; border-top: 2px solid var(--border); }
-.pg-hcasg-hospitalares-tendencia .marca-cor { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 8px; vertical-align: middle; }
 @media(max-width:900px) {
   .pg-hcasg-hospitalares-tendencia .charts-grid { grid-template-columns: 1fr; }
 }
