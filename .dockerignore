@@ -1,0 +1,29 @@
+# fora da imagem: ambientes, cache, testes e git
+.git
+.gitignore
+.venv
+.venv-win
+.vscode
+.ruff_cache
+.pytest_cache
+__pycache__
+*.pyc
+tests
+
+# arquivos locais com segredos e dados: ficam no volume (/app/local), nunca na imagem
+.env
+.secret_key
+.chave_config
+config_banco.enc
+config_banco.enc.tmp
+config_banco.json
+config_banco.json.tmp
+config_paginas.json
+config_paginas.json.tmp
+painel_usuarios.db
+painel_dados.db
+
+# arquivos do Docker
+Dockerfile
+docker-compose.yml
+.dockerignore

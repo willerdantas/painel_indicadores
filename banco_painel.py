@@ -35,7 +35,8 @@ import config_banco
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(BASE_DIR, 'dados')
-SQLITE_CUSTOS_LEGADO = os.path.join(BASE_DIR, 'painel_dados.db')
+# custos lançados antes do PostgreSQL (só lido na migração)
+SQLITE_CUSTOS_LEGADO = os.path.join(os.environ.get('PAINEL_PASTA_LOCAL') or BASE_DIR, 'painel_dados.db')
 
 # Sem o schema (ou sem banco), tenta de novo no máximo a cada minuto: cada
 # tentativa pode levar até o timeout de conexão.

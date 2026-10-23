@@ -27,7 +27,9 @@ from datetime import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ARQUIVO_DB = os.path.join(BASE_DIR, 'painel_usuarios.db')
+# arquivos locais (chaves, configuração, SQLite): PAINEL_PASTA_LOCAL ou a pasta do projeto
+PASTA_LOCAL = os.environ.get('PAINEL_PASTA_LOCAL') or BASE_DIR
+ARQUIVO_DB = os.path.join(PASTA_LOCAL, 'painel_usuarios.db')
 
 # Áreas restritas que podem ser liberadas por perfil: chave, nome e os
 # prefixos de rota que pertencem a ela. Os painéis são públicos e não entram

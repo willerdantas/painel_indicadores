@@ -40,9 +40,11 @@ import psycopg2
 from cryptography.fernet import Fernet, InvalidToken
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ARQUIVO_CONFIG = os.path.join(BASE_DIR, 'config_banco.enc')
-ARQUIVO_LEGADO = os.path.join(BASE_DIR, 'config_banco.json')
-ARQUIVO_CHAVE = os.path.join(BASE_DIR, '.chave_config')
+# arquivos locais (chaves, configuração, SQLite): PAINEL_PASTA_LOCAL ou a pasta do projeto
+PASTA_LOCAL = os.environ.get('PAINEL_PASTA_LOCAL') or BASE_DIR
+ARQUIVO_CONFIG = os.path.join(PASTA_LOCAL, 'config_banco.enc')
+ARQUIVO_LEGADO = os.path.join(PASTA_LOCAL, 'config_banco.json')
+ARQUIVO_CHAVE = os.path.join(PASTA_LOCAL, '.chave_config')
 VARIAVEL_CHAVE = 'PAINEL_CHAVE_CONFIG'
 
 CAMPOS = ('host', 'port', 'dbname', 'user', 'password', 'schema', 'schema_painel')

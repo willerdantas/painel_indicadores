@@ -1,8 +1,6 @@
-import psycopg2
 from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, jsonify, request
 import secrets
-import json
 import pandas as pd
 import os
 import base64
@@ -26,7 +24,8 @@ def _carregar_secret_key():
     primeira execução (assim o login sobrevive a reinícios do servidor)."""
     if os.environ.get('FLASK_SECRET_KEY'):
         return os.environ['FLASK_SECRET_KEY']
-    caminho = os.path.join(os.path.dirname(os.path.abspath(__file__)), '.secret_key')
+    pasta = os.environ.get('PAINEL_PASTA_LOCAL') or os.path.dirname(os.path.abspath(__file__))
+    caminho = os.path.join(pasta, '.secret_key')
     try:
         with open(caminho, encoding='utf-8') as f:
             chave = f.read().strip()

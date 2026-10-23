@@ -14,7 +14,9 @@ import os
 import threading
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ARQUIVO = os.path.join(BASE_DIR, 'config_paginas.json')
+# arquivos locais (chaves, configuração, SQLite): PAINEL_PASTA_LOCAL ou a pasta do projeto
+PASTA_LOCAL = os.environ.get('PAINEL_PASTA_LOCAL') or BASE_DIR
+ARQUIVO = os.path.join(PASTA_LOCAL, 'config_paginas.json')
 
 # (chave, nome no menu, endpoint, ícone do cartão, prefixos das rotas)
 PAGINAS = [

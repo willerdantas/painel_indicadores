@@ -1,0 +1,29 @@
+# Painel de Indicadores
+#   cp .env.example .env      (ajuste as variáveis)
+#   docker compose up -d --build
+#   http://<servidor>:5500
+#
+# O PostgreSQL (sistema hospitalar + schema "painel") é externo: informe os
+# dados em .env (DB_*) ou depois, na página Administração > Configuração do Banco.
+services:
+  painel:
+    build: .
+    image: painel-indicadores:latest
+    container_name: painel-indicadores
+    restart: unless-stopped
+    env_file:
+      - path: .env
+        required: false
+    environment:
+      PAINEL_PASTA_LOCAL: /app/local
+    ports:
+      - "${PAINEL_PORTA:-5500}:5500"
+    volumes:
+      # chaves, configuração do banco, usuários e páginas visíveis
+      - painel_local:/app/local
+    extra_hosts:
+      # permite DB_HOST=host.docker.internal quando o PostgreSQL roda na própria máquina
+      - "host.docker.internal:host-gateway"
+
+volumes:
+  painel_local:
