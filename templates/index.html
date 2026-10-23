@@ -46,21 +46,14 @@
                 'estetoscopio': '<path d="M5 3H4a1 1 0 0 0-1 1v5a5 5 0 0 0 10 0V4a1 1 0 0 0-1-1h-1"/><path d="M8 14v1a6 6 0 0 0 12 0v-3"/><circle cx="20" cy="10" r="2"/>',
                 'moeda': '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>',
             } %}
-            {% set cartoes = [
-                ('producao_hospitalar', 'Produção Hospitalar', 'atividade'),
-                ('indicadores', 'Indicadores SIMAQ', 'alvo'),
-                ('lean_indicadores', 'Indicadores LEAN', 'tendencia'),
-                ('exames_por_clinica', 'Exames', 'frasco'),
-                ('hcasg_hospitalares', 'Indicadores Hospitalares', 'hospital'),
-                ('hcasg_emergencia', 'Indicadores da Emergência', 'sirene'),
-                ('ambulatorio_pagina', 'Ambulatório', 'estetoscopio'),
-                ('custos_pagina', 'Custos', 'moeda'),
-            ] %}
+            {# cartoes: páginas visíveis (paginas_visiveis.py, escolhidas em /admin/banco) #}
             {% for rota, nome, icone in cartoes %}
             <a href="{{ url_for(rota) }}" class="card">
                 <svg class="marca" viewBox="0 0 24 24" aria-hidden="true">{{ icones[icone] | safe }}</svg>
                 <span>{{ nome }}</span>
             </a>
+            {% else %}
+            <p class="sem-paginas">Nenhum painel disponível no momento.</p>
             {% endfor %}
         </div>
 

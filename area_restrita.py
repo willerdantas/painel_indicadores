@@ -25,6 +25,7 @@ import banco_painel
 import config_banco
 import importacao_custos
 import lancamento_custos
+import paginas_visiveis
 import usuarios
 
 # Rotas e ganchos ficam registrados aqui e entram no app em registrar(), com
@@ -64,6 +65,13 @@ def _sem_permissao():
                                                  'Fale com o administrador do painel.'), 403
 
 
+# Logout automático: a sessão termina após INATIVIDADE_MAX segundos sem
+# nenhuma requisição de quem está logado. A página (static/js/sessao.js)
+# avisa o uso em /sessao/ativa e sai sozinha quando o tempo acaba.
+INATIVIDADE_MAX = 15 * 60
+MSG_SESSAO_EXPIRADA = 'Sua sessão foi encerrada após 15 minutos sem uso. Entre novamente.'
+
+
 @_gancho('before_request')
 def controlar_acesso():
     """Carrega o usuário logado e verifica a permissão da rota pedida."""
@@ -74,14 +82,29 @@ def controlar_acesso():
     if g.usuario is not None and not g.usuario['ativo']:
         session.clear()
         g.usuario = None
+    if g.usuario is not None:
+        agora = time.time()
+        ultimo = session.get('ultimo_acesso')
+        if ultimo and agora - ultimo > INATIVIDADE_MAX:
+            session.clear()
+            session['sessao_expirada'] = True
+            g.usuario = None
+        else:
+            session['ultimo_acesso'] = agora
 
     caminho = request.path
+    # painel oculto em /admin/banco: só o administrador ainda abre pelo endereço
+    if paginas_visiveis.oculta(caminho) and not (g.usuario and usuarios.eh_admin(g.usuario)):
+        msg = 'Esta página está desativada. Fale com o administrador do painel.'
+        if _eh_requisicao_de_dados():
+            return jsonify({'ok': False, 'erro': msg}), 404
+        return render_template('error.html', message=msg), 404
     if not _area_restrita(caminho):
         return None  # painéis, login e arquivos estáticos: públicos
     if g.usuario is None:
         if _eh_requisicao_de_dados():
             return jsonify({'ok': False, 'erro': 'Sessão expirada. Faça login novamente.'}), 401
-        return redirect(url_for('login', proximo=caminho))
+        return redirect(url_for('login', proximo=request.full_path.rstrip('?')))
 
     # proteção contra envio forjado na área restrita: todo POST traz o token,
     # no formulário (campo csrf) ou no header X-CSRF-Token (chamadas fetch)
@@ -106,6 +129,26 @@ def controlar_acesso():
     if chave is None:
         return None if usuarios.eh_admin(g.usuario) else _sem_permissao()
     return None if usuarios.pode_acessar(g.usuario, chave) else _sem_permissao()
+
+
+@_gancho('after_request')
+def marcar_sessao(resposta):
+    """Cookie painel_sessao=1 enquanto há alguém logado: o script de
+    inatividade (static/js/sessao.js) só conta o tempo nesse caso."""
+    if request.path.startswith('/static/'):
+        return resposta
+    if getattr(g, 'usuario', None):
+        resposta.set_cookie('painel_sessao', '1', samesite='Lax')
+    elif request.cookies.get('painel_sessao'):
+        resposta.delete_cookie('painel_sessao')
+    return resposta
+
+
+@_rota('/sessao/ativa')
+def sessao_ativa():
+    """A página avisa que há uso (cliques, digitação): controlar_acesso já
+    renovou o último acesso; não há conteúdo."""
+    return '', 204
 
 
 @_gancho('context_processor')
@@ -177,15 +220,28 @@ def login():
             session.clear()
             session['usuario_id'] = u['id']
             session['csrf'] = secrets.token_hex(16)
+            session['ultimo_acesso'] = time.time()
             return redirect(_destino_seguro(proximo))
         erro = 'Usuário ou senha inválidos, ou usuário inativo.'
+    elif session.pop('sessao_expirada', False):
+        erro = MSG_SESSAO_EXPIRADA
     return render_template('login.html', erro=erro, proximo=proximo or '')
 
 
 @_rota('/logout')
 def logout():
+    """inatividade=1: saída automática do script de inatividade; proximo: a
+    página em que a pessoa estava (área restrita volta pelo login)."""
     session.clear()
-    return redirect(url_for('index'))
+    g.usuario = None
+    if request.args.get('inatividade') != '1':
+        return redirect(url_for('index'))
+    session['sessao_expirada'] = True
+    proximo = request.args.get('proximo') or ''
+    seguro = proximo.startswith('/') and not proximo.startswith('//') and '\\' not in proximo
+    if seguro and not _area_restrita(proximo.split('?')[0]):
+        return redirect(proximo)  # painel público: continua na página, sem login
+    return redirect(url_for('login', proximo=proximo if seguro else None))
 
 
 @_rota('/admin')
@@ -335,7 +391,18 @@ def admin_banco():
     cfg = config_banco.carregar()
     tem_senha = bool(cfg.pop('password'))  # a senha nunca volta para o navegador
     return render_template('config_banco.html', cfg=cfg, tem_senha=tem_senha,
-                           erro_config=config_banco.erro_arquivo())
+                           erro_config=config_banco.erro_arquivo(), paginas=paginas_visiveis.listar())
+
+
+@_rota('/admin/banco/paginas', methods=['POST'])
+def admin_banco_paginas():
+    """Páginas visíveis no menu inicial: recebe {"visiveis": [chaves]}."""
+    visiveis = set((request.get_json(silent=True) or {}).get('visiveis') or [])
+    try:
+        paginas_visiveis.salvar([c for c in paginas_visiveis.CHAVES if c not in visiveis])
+    except OSError as e:
+        return jsonify({'ok': False, 'erro': f'Não foi possível salvar: {e}'}), 500
+    return jsonify({'ok': True, 'paginas': paginas_visiveis.listar()})
 
 
 @_rota('/admin/banco/testar', methods=['POST'])

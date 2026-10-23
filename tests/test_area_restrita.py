@@ -1,4 +1,5 @@
 """Login, CSRF, troca obrigatória de senha e ganho de privilégio na área restrita."""
+import paginas_visiveis
 import usuarios
 
 
@@ -153,3 +154,91 @@ def test_admin_continua_podendo_tudo(cliente, logar, admin_id):
     cliente.post('/admin/perfis/salvar', data={'csrf': 'tok', 'id': perfis['SoPerfis'], 'nome': 'SoPerfis',
                                                'paginas': ['perfis', 'custos']})
     assert usuarios.obter_perfil(perfis['SoPerfis'])['paginas'] == ['perfis', 'custos']
+
+
+# ---------------------------------------------------------------- inatividade (15 minutos)
+
+def _ultimo_acesso(cliente, segundos_atras):
+    import time
+    with cliente.session_transaction() as sess:
+        sess['ultimo_acesso'] = time.time() - segundos_atras
+
+
+def test_sessao_expira_apos_15_minutos_sem_uso(cliente, logar, admin_id):
+    logar(admin_id)
+    _ultimo_acesso(cliente, 16 * 60)
+    r = cliente.get('/admin/usuarios')
+    assert r.status_code == 302 and '/login' in r.headers['Location']
+    assert 'encerrada após 15 minutos' in cliente.get('/login').get_data(as_text=True)
+    with cliente.session_transaction() as sess:
+        assert 'usuario_id' not in sess
+
+
+def test_sessao_continua_com_uso_dentro_do_prazo(cliente, logar, admin_id):
+    logar(admin_id)
+    _ultimo_acesso(cliente, 14 * 60)
+    assert cliente.get('/admin/usuarios').status_code == 200
+
+
+def test_aviso_de_uso_renova_a_sessao(cliente, logar, admin_id):
+    logar(admin_id)
+    _ultimo_acesso(cliente, 14 * 60)
+    assert cliente.get('/sessao/ativa').status_code == 204
+    _ultimo_acesso(cliente, 0)  # renovada: o prazo recomeça
+    assert cliente.get('/admin/usuarios').status_code == 200
+
+
+def test_saida_por_inatividade(cliente, logar, admin_id):
+    logar(admin_id)
+    r = cliente.get('/logout?inatividade=1&proximo=/admin/usuarios')
+    assert r.status_code == 302 and '/login' in r.headers['Location'] and 'proximo=' in r.headers['Location']
+    logar(admin_id)
+    r = cliente.get('/logout?inatividade=1&proximo=/custos')
+    assert r.status_code == 302 and r.headers['Location'].endswith('/custos')  # painel público: fica na página
+    logar(admin_id)
+    r = cliente.get('/logout?inatividade=1&proximo=//site-externo.com')
+    assert '/login' in r.headers['Location'] and 'site-externo' not in r.headers['Location']
+
+
+def test_cookie_indica_sessao_ativa(cliente, logar, admin_id):
+    logar(admin_id)
+    r = cliente.get('/admin/usuarios')
+    assert 'painel_sessao=1' in ' '.join(r.headers.getlist('Set-Cookie'))
+    r = cliente.get('/logout')
+    assert any(c.startswith('painel_sessao=;') for c in r.headers.getlist('Set-Cookie'))
+
+
+# ---------------------------------------------------------------- páginas visíveis (/admin/banco)
+
+def test_todas_as_paginas_visiveis_por_padrao(cliente):
+    html = cliente.get('/').get_data(as_text=True)
+    for _c, nome, *_ in paginas_visiveis.PAGINAS:
+        assert nome in html
+
+
+def test_pagina_oculta_sai_do_menu_e_nao_abre(cliente, logar, admin_id):
+    paginas_visiveis.salvar(['custos', 'lean'])
+    html = cliente.get('/').get_data(as_text=True)
+    assert 'href="/custos"' not in html and 'Indicadores LEAN' not in html
+    assert 'Ambulatório' in html
+    assert cliente.get('/custos').status_code == 404
+    assert cliente.get('/api/custos/dados').status_code == 404
+    assert cliente.get('/lean/tendencias').status_code == 404
+    logar(admin_id)  # o administrador ainda abre pelo endereço
+    assert cliente.get('/custos').status_code != 404
+
+
+def test_admin_escolhe_paginas_visiveis(cliente, logar, admin_id):
+    logar(admin_id)
+    assert 'Páginas visíveis' in cliente.get('/admin/banco').get_data(as_text=True)
+    r = cliente.post('/admin/banco/paginas', json={'visiveis': ['custos', 'ambulatorio', 'xpto']},
+                     headers={'X-CSRF-Token': 'tok'})
+    assert r.get_json()['ok']
+    assert paginas_visiveis.ocultas() == set(paginas_visiveis.CHAVES) - {'custos', 'ambulatorio'}
+
+
+def test_so_admin_escolhe_paginas_visiveis(cliente, logar):
+    _, ids = _perfis_e_usuarios()
+    logar(ids['caio'])
+    r = cliente.post('/admin/banco/paginas', json={'visiveis': []}, headers={'X-CSRF-Token': 'tok'})
+    assert r.status_code == 403 and paginas_visiveis.ocultas() == set()

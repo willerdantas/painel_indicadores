@@ -67,6 +67,25 @@
             <div class="resultado" id="resultado" role="status" aria-live="polite"></div>
         </form>
 
+        <h2 class="section-title">Páginas visíveis</h2>
+        <form class="painel" id="form-paginas" onsubmit="return false">
+            <div class="dica">Marque os painéis que aparecem no menu inicial. Uma página desmarcada sai do menu
+                e deixa de abrir para quem não é administrador (inclusive pelo endereço).</div>
+            <div class="lista-paginas">
+                {% for p in paginas %}
+                <label class="opcao-pagina">
+                    <input type="checkbox" name="visiveis" value="{{ p.chave }}" {{ 'checked' if p.visivel }}>
+                    <span>{{ p.nome }}</span>
+                </label>
+                {% endfor %}
+            </div>
+            <div class="acoes">
+                <button type="button" class="btn secundario" id="btn-paginas-todas">Marcar todas</button>
+                <button type="button" class="btn" id="btn-paginas-salvar">Salvar páginas</button>
+            </div>
+            <div class="resultado" id="resultado-paginas" role="status" aria-live="polite"></div>
+        </form>
+
     </main>
 
     <script>
@@ -178,6 +197,42 @@
                 mostrar('erro', '<strong>Falha na requisição.</strong><br>' + escapeHtml(e.message));
             } finally {
                 ocupado(false);
+            }
+        });
+
+        // páginas visíveis no menu inicial
+        const resPaginas = document.getElementById('resultado-paginas');
+        const caixasPaginas = () => [...document.querySelectorAll('#form-paginas input[name="visiveis"]')];
+        document.getElementById('btn-paginas-todas').addEventListener('click', () => {
+            caixasPaginas().forEach(c => c.checked = true);
+        });
+        document.getElementById('btn-paginas-salvar').addEventListener('click', async (ev) => {
+            const btn = ev.currentTarget;
+            btn.disabled = true;
+            try {
+                const r = await fetch('{{ url_for("admin_banco_paginas") }}', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '{{ csrf_token }}' },
+                    body: JSON.stringify({ visiveis: caixasPaginas().filter(c => c.checked).map(c => c.value) }),
+                });
+                if (r.status === 401) {
+                    window.location.href = '{{ url_for("login") }}?proximo=' + encodeURIComponent(location.pathname);
+                    return;
+                }
+                const d = await r.json();
+                resPaginas.className = 'resultado ' + (d.ok ? 'ok' : 'erro');
+                if (d.ok) {
+                    const qtd = d.paginas.filter(p => p.visivel).length;
+                    resPaginas.innerHTML = '<strong>Páginas salvas.</strong> ' + qtd + ' de ' + d.paginas.length +
+                        ' painéis visíveis no menu inicial.';
+                } else {
+                    resPaginas.innerHTML = '<strong>Não foi salvo.</strong><br>' + escapeHtml(d.erro);
+                }
+            } catch (e) {
+                resPaginas.className = 'resultado erro';
+                resPaginas.innerHTML = '<strong>Falha na requisição.</strong><br>' + escapeHtml(e.message);
+            } finally {
+                btn.disabled = false;
             }
         });
     </script>

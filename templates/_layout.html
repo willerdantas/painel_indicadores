@@ -40,4 +40,6 @@
 
 {% macro rodape() %}
 <footer class="rodape">Painel de Indicadores 3.0 · Desenvolvido por NUTIC · 2025</footer>
+{# logout automático após 15 minutos sem uso (só age com alguém logado) #}
+<script src="{{ url_for('static', filename='js/sessao.js') }}"></script>
 {% endmacro %}

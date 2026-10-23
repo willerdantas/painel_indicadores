@@ -16,6 +16,7 @@ import ambulatorio
 import banco_painel
 import custos
 import area_restrita
+import paginas_visiveis
 
 app = Flask(__name__)
 
@@ -169,8 +170,8 @@ def calcular_kpis(df):
 
 @app.route('/')
 def index():
-    # Página inicial do painel (menu de dashboards)
-    return render_template('index.html')
+    # Página inicial do painel (menu de dashboards; páginas ocultas em /admin/banco ficam de fora)
+    return render_template('index.html', cartoes=paginas_visiveis.visiveis())
 
 
 # Login e área restrita (/admin): area_restrita.py

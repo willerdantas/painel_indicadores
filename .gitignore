@@ -4,6 +4,8 @@ config_banco.json.tmp
 config_banco.enc
 config_banco.enc.tmp
 .chave_config
+config_paginas.json
+config_paginas.json.tmp
 .secret_key
 painel_usuarios.db
 painel_dados.db
