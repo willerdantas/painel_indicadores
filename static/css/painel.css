@@ -876,6 +876,18 @@ img { max-width: 100%; }
 .pg-config-banco .lista-paginas { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; margin-top: 16px; }
 .pg-config-banco label.opcao-pagina { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 15px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--dark); cursor: pointer; }
 .pg-config-banco label.opcao-pagina input { width: 18px; height: 18px; padding: 0; accent-color: var(--primaria); }
+.pg-config-banco .aviso-inicial { max-width: 760px; margin-bottom: 20px; padding: 16px 18px; border-radius: 12px; background: var(--aviso-fundo); border: 1px solid var(--amber); color: var(--dark); font-size: 14px; line-height: 1.6; }
+.pg-config-banco .aviso-inicial strong { display: block; color: var(--orange); margin-bottom: 4px; }
+.pg-config-banco fieldset.bloco { border: 1px solid var(--border); border-radius: 10px; padding: 16px 18px 18px; margin: 0 0 18px; }
+.pg-config-banco fieldset.bloco legend { padding: 0 8px; font-weight: 700; color: var(--primaria); font-size: 15px; }
+.pg-config-banco fieldset.bloco > .dica { margin-top: 12px; line-height: 1.5; }
+.pg-config-banco ul.modulos { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 6px; }
+.pg-config-banco ul.modulos li { font-size: 13px; color: var(--muted); }
+.pg-config-banco ul.modulos li strong { color: var(--dark); margin-right: 6px; }
+.pg-config-banco .resultado ul.lista-modulos { list-style: none; margin: 6px 0 10px 0; }
+.pg-config-banco .resultado .lista-modulos li.ok { color: var(--green); }
+.pg-config-banco .resultado .lista-modulos li.falta { color: var(--orange); }
+.pg-config-banco .resultado .btn { display: inline-block; margin-top: 10px; text-decoration: none; }
 .pg-config-banco .lista-logos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 16px; }
 .pg-config-banco .logo-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--bg); }
 .pg-config-banco .logo-nome { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }

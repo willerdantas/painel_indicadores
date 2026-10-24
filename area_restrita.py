@@ -19,6 +19,7 @@ import time
 from datetime import datetime
 from decimal import Decimal
 
+import psycopg2
 from flask import abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
 
 import banco_painel
@@ -57,6 +58,29 @@ def _area_restrita(caminho):
 def _eh_requisicao_de_dados():
     return request.method != 'GET' or '/api/' in request.path or \
         request.headers.get('X-Requested-With') == 'XMLHttpRequest'
+
+
+def _banco_pendente():
+    """Servidor novo: a conexão com o banco ainda não foi configurada."""
+    return not config_banco.configurado()
+
+
+def _banco_indisponivel(mensagem, status=503):
+    if _eh_requisicao_de_dados():
+        return jsonify({'ok': False, 'erro': mensagem}), status
+    return render_template('error.html', message=mensagem), status
+
+
+@_gancho('errorhandler', config_banco.ConfiguracaoAusente)
+def banco_nao_configurado(e):
+    """Servidor novo: painéis abertos antes da configuração do banco."""
+    return _banco_indisponivel(str(e))
+
+
+@_gancho('errorhandler', psycopg2.OperationalError)
+def banco_fora_do_ar(e):
+    print(f'[painel] banco de dados inacessível em {request.path}: {str(e).strip()[:300]}', flush=True)
+    return _banco_indisponivel('Não foi possível conectar ao banco de dados. Tente de novo em alguns minutos.')
 
 
 def _sem_permissao():
@@ -121,6 +145,13 @@ def controlar_acesso():
         if _eh_requisicao_de_dados():
             return jsonify({'ok': False, 'erro': 'Troque sua senha antes de continuar.'}), 403
         return redirect(url_for('admin_senha'))
+
+    # servidor novo: depois da senha, o administrador configura o banco antes do resto
+    if usuarios.eh_admin(g.usuario) and caminho != '/admin/senha' and not caminho.startswith('/admin/banco') \
+            and _banco_pendente():
+        if _eh_requisicao_de_dados():
+            return jsonify({'ok': False, 'erro': 'Configure o banco de dados antes de continuar.'}), 409
+        return redirect(url_for('admin_banco'))
 
     if caminho in ('/admin', '/admin/senha'):
         return None  # menu da área restrita (mostra só o que o perfil libera) e troca da própria senha
@@ -282,10 +313,13 @@ def admin_senha():
         erro = usuarios.trocar_senha(g.usuario['id'], request.form.get('atual'),
                                      request.form.get('nova'), request.form.get('confirmacao'))
         if not erro:
+            if usuarios.eh_admin(g.usuario) and _banco_pendente():
+                return redirect(url_for('admin_banco'))  # primeiro acesso: passo 2, configurar o banco
             flash('Senha alterada.', 'ok')
             return redirect(url_for('admin_menu'))
         flash(erro, 'erro')
-    return render_template('admin_senha.html', obrigatoria=g.usuario['trocar_senha'])
+    return render_template('admin_senha.html', obrigatoria=g.usuario['trocar_senha'],
+                           configuracao_inicial=usuarios.eh_admin(g.usuario) and _banco_pendente())
 
 
 # Quem tem acesso a Usuários/Perfis mas não é administrador só mexe em perfis
@@ -418,7 +452,8 @@ def admin_banco():
     tem_senha = bool(cfg.pop('password'))  # a senha nunca volta para o navegador
     return render_template('config_banco.html', cfg=cfg, tem_senha=tem_senha,
                            erro_config=config_banco.erro_arquivo(), paginas=paginas_visiveis.listar(),
-                           logos=logos.listar(_enderecos_logos()))
+                           logos=logos.listar(_enderecos_logos()), modulos=config_banco.MODULOS_HOSPITALAR,
+                           configuracao_inicial=_banco_pendente())
 
 
 @_rota('/admin/banco/logo', methods=['POST'])
@@ -479,7 +514,14 @@ def admin_banco_salvar():
         return jsonify({'ok': False, 'erro': f'Não foi possível salvar: {e}'}), 500
     # banco ou schema dos dados podem ter mudado: refaz tabelas/migração no destino novo
     pronto = banco_painel.reiniciar()
-    return jsonify({'ok': True, 'schema_painel_pronto': pronto, 'erro_schema_painel': banco_painel.erro()})
+    tabelas = []
+    if pronto:
+        try:
+            tabelas = banco_painel.resumo_tabelas()
+        except Exception:  # só informativo: a configuração já foi salva
+            tabelas = []
+    return jsonify({'ok': True, 'schema_painel_pronto': pronto, 'erro_schema_painel': banco_painel.erro(),
+                    'tabelas_painel': tabelas})
 
 
 # ---- lançamento de dados (área restrita): produção hospitalar e SIMAQ ----

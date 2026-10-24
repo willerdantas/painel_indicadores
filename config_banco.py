@@ -69,14 +69,21 @@ _ENV = {
     'schema_painel': ('DB_SCHEMA_PAINEL',),
 }
 
-# Tabelas que o painel consulta; o teste de conexão confere se existem no schema.
-TABELAS_USADAS = (
-    't_admissao', 't_clinica', 't_destino', 't_enfermaria', 't_exame',
-    't_exame_classificacao', 't_exame_solic', 't_internacao',
+# Tabelas do sistema hospitalar que cada painel consulta (schema "schema");
+# o teste de conexão confere, painel a painel, se existem.
+_TABELAS_INTERNACAO = (
+    't_admissao', 't_clinica', 't_destino', 't_enfermaria', 't_internacao',
     't_internacao_atendimento', 't_internacao_leito', 't_internacao_risco',
-    't_leito', 't_leito_interditado', 't_paciente', 't_risco',
-    't_tipo_atendimento',
+    't_leito', 't_leito_interditado', 't_paciente', 't_risco', 't_tipo_atendimento',
 )
+MODULOS_HOSPITALAR = (
+    ('Indicadores LEAN', _TABELAS_INTERNACAO),                    # indicadores_hcasg.py
+    ('Indicadores Hospitalares', _TABELAS_INTERNACAO),
+    ('Indicadores da Emergência', _TABELAS_INTERNACAO),
+    ('Exames', ('t_clinica', 't_exame', 't_exame_classificacao', 't_exame_solic')),  # painel.py
+    ('Ambulatório', ('t_especialidade', 't_internacao', 't_marcacao', 't_marcacao_situacao')),  # ambulatorio.py
+)
+TABELAS_USADAS = tuple(sorted({t for _nome, tabelas in MODULOS_HOSPITALAR for t in tabelas}))
 
 _SCHEMA_VALIDO = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 
@@ -299,6 +306,8 @@ def testar(cfg):
         'schema_existe': schema_existe,
         'tabelas_faltando': [t for t in TABELAS_USADAS if t not in encontradas],
         'total_tabelas': len(TABELAS_USADAS),
+        'modulos': [{'nome': nome, 'total': len(tabelas), 'faltando': [t for t in tabelas if t not in encontradas]}
+                    for nome, tabelas in MODULOS_HOSPITALAR],
         'schema_painel_existe': painel_existe,
         'schema_painel_pode_criar': painel_pode,
         'sql_schema_painel': f'CREATE SCHEMA IF NOT EXISTS {cfg["schema_painel"]} AUTHORIZATION {usuario};',

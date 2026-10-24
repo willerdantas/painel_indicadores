@@ -59,6 +59,28 @@ sql/                   SQL de apoio (criação do schema painel)
 tests/                 testes (pytest)
 ```
 
+## Primeiro acesso (servidor novo)
+
+1. Suba o painel (Docker ou local) e veja a senha provisória do administrador no log.
+   - Ela não aparece se você definiu `ADMIN_PASS`.
+   - No Docker: `docker compose logs painel | grep Administrador`.
+2. Entre em **Área Restrita** com o usuário `admin` e essa senha.
+3. **Passo 1 de 2:** troque a senha do administrador (obrigatório).
+4. **Passo 2 de 2:** o painel abre a **Configuração do Banco**. Até ela ser salva, o resto da área restrita fica bloqueado. Informe:
+   - **Conexão com o PostgreSQL:** servidor, porta, banco, usuário e senha.
+   - **Banco hospitalar (consulta):** o schema do sistema hospitalar de onde vêm os dados de LEAN, Exames, Ambulatório, Indicadores Hospitalares e Indicadores da Emergência.
+   - **Dados do painel:** o schema onde o painel cria as tabelas próprias (padrão `painel`).
+5. **Testar conexão** confere, painel a painel, se as tabelas do sistema hospitalar existem. Também verifica se o usuário pode criar o schema do painel.
+6. **Salvar** grava a configuração (criptografada) e cria o schema e as tabelas:
+   - de lançamento manual: custos por unidade, produção, SIMAQ e cadastros;
+   - de importação de planilhas;
+   - na primeira vez, carrega as planilhas de `dados/`.
+
+   A tela lista as tabelas criadas e quantas linhas tem cada uma.
+
+Até o banco ser configurado, os painéis públicos mostram "O banco de dados
+ainda não foi configurado".
+
 ## Banco de dados
 
 O painel usa **um** PostgreSQL com dois schemas:

@@ -19,41 +19,79 @@
 
         <h1 class="section-title">Configuração do Banco</h1>
 
+        {% if configuracao_inicial %}
+        <div class="aviso-inicial" role="note">
+            <strong>Primeiro acesso — passo 2 de 2: configure o banco de dados.</strong>
+            Informe a conexão com o PostgreSQL, o schema do sistema hospitalar (onde o painel consulta os dados)
+            e o schema onde o painel guarda os próprios dados. Clique em "Testar conexão" e depois em "Salvar":
+            o painel cria o schema dos dados e as tabelas. Até salvar, as outras telas da área restrita ficam bloqueadas.
+        </div>
+        {% endif %}
+
         <form class="painel" id="form-banco" autocomplete="off" onsubmit="return false">
-            <div class="grid">
-                <div>
-                    <label for="host">Servidor</label>
-                    <input id="host" name="host" value="{{ cfg.host }}" required>
+            <fieldset class="bloco">
+                <legend>1. Conexão com o PostgreSQL</legend>
+                <div class="grid">
+                    <div>
+                        <label for="host">Servidor</label>
+                        <input id="host" name="host" value="{{ cfg.host }}" placeholder="ex.: 10.0.0.15" required>
+                    </div>
+                    <div>
+                        <label for="port">Porta</label>
+                        <input id="port" name="port" value="{{ cfg.port }}" inputmode="numeric" required>
+                    </div>
+                    <div>
+                        <label for="dbname">Banco</label>
+                        <input id="dbname" name="dbname" value="{{ cfg.dbname }}" required>
+                    </div>
+                    <div>
+                        <label for="user">Usuário</label>
+                        <input id="user" name="user" value="{{ cfg.user }}" autocomplete="off" required>
+                    </div>
+                    <div>
+                        <label for="password">Senha</label>
+                        <input id="password" name="password" type="password" autocomplete="new-password"
+                               placeholder="{{ '••••••••' if tem_senha else 'informe a senha' }}">
+                        <div class="dica">{{ 'Em branco mantém a senha atual.' if tem_senha else 'Nenhuma senha salva.' }}</div>
+                    </div>
                 </div>
-                <div>
-                    <label for="port">Porta</label>
-                    <input id="port" name="port" value="{{ cfg.port }}" inputmode="numeric" required>
+            </fieldset>
+
+            <fieldset class="bloco">
+                <legend>2. Banco hospitalar (consulta)</legend>
+                <div class="grid">
+                    <div>
+                        <label for="schema">Schema do sistema hospitalar</label>
+                        <input id="schema" name="schema" value="{{ cfg.schema }}" required>
+                        <div class="dica">Só leitura: o painel nunca grava neste schema.</div>
+                    </div>
                 </div>
-                <div>
-                    <label for="dbname">Banco</label>
-                    <input id="dbname" name="dbname" value="{{ cfg.dbname }}" required>
+                <div class="dica">Alimenta os painéis abaixo. "Testar conexão" confere se as tabelas existem no schema.</div>
+                <ul class="modulos">
+                    {% for nome, tabelas in modulos %}
+                    <li><strong>{{ nome }}</strong> <span>{{ tabelas | join(', ') }}</span></li>
+                    {% endfor %}
+                </ul>
+            </fieldset>
+
+            <fieldset class="bloco">
+                <legend>3. Dados do painel</legend>
+                <div class="grid">
+                    <div>
+                        <label for="schema_painel">Schema dos dados do painel</label>
+                        <input id="schema_painel" name="schema_painel" value="{{ cfg.schema_painel }}" required>
+                        <div class="dica">Criado ao salvar, se ainda não existir.</div>
+                    </div>
                 </div>
-                <div>
-                    <label for="schema">Schema do sistema hospitalar</label>
-                    <input id="schema" name="schema" value="{{ cfg.schema }}" required>
-                    <div class="dica">Onde estão t_internacao, t_exame etc. (só leitura).</div>
+                <div class="dica">
+                    Ao salvar, o painel cria neste schema as tabelas de <strong>lançamento manual</strong>
+                    (custos por unidade, produção hospitalar, SIMAQ e os cadastros de unidades, grupos e itens)
+                    e de <strong>importação de planilhas</strong> (lotes e linhas da planilha mensal de custos).
+                    Na primeira vez, as planilhas da pasta <code>dados/</code> são carregadas nessas tabelas.
+                    Se o usuário não puder criar schemas, o teste mostra o comando para o administrador do PostgreSQL.
                 </div>
-                <div>
-                    <label for="user">Usuário</label>
-                    <input id="user" name="user" value="{{ cfg.user }}" autocomplete="off" required>
-                </div>
-                <div>
-                    <label for="schema_painel">Schema dos dados do painel</label>
-                    <input id="schema_painel" name="schema_painel" value="{{ cfg.schema_painel }}" required>
-                    <div class="dica">Onde ficam os lançamentos de custos, produção e SIMAQ.</div>
-                </div>
-                <div>
-                    <label for="password">Senha</label>
-                    <input id="password" name="password" type="password" autocomplete="new-password"
-                           placeholder="{{ '••••••••' if tem_senha else 'informe a senha' }}">
-                    <div class="dica">{{ 'Em branco mantém a senha atual.' if tem_senha else 'Nenhuma senha salva.' }}</div>
-                </div>
-            </div>
+            </fieldset>
+
             <div class="dica" style="margin-top:14px;">
                 Os dados de acesso ficam salvos criptografados no servidor (config_banco.enc); a senha nunca é mostrada.
             </div>
@@ -110,6 +148,8 @@
 
     <script>
         const CAMPOS = ['host', 'port', 'dbname', 'schema', 'user', 'schema_painel', 'password'];
+        const CONFIGURACAO_INICIAL = {{ 'true' if configuracao_inicial else 'false' }};
+        const schemaPainelAtual = () => '<code>' + escapeHtml(document.getElementById('schema_painel').value) + '</code>';
         const res = document.getElementById('resultado');
         const btnTestar = document.getElementById('btn-testar');
         const btnSalvar = document.getElementById('btn-salvar');
@@ -153,18 +193,22 @@
             let tipo = 'ok';
             let html = '<strong>Conexão bem-sucedida.</strong><br>' +
                 escapeHtml(r.versao) + ' — usuário <code>' + escapeHtml(r.usuario) + '</code>';
-            const faltando = r.tabelas_faltando || [];
             if (!r.schema_existe) {
                 tipo = 'aviso';
                 html += '<br><br><strong>O schema <code>' + schema + '</code> não existe neste banco.</strong>';
-            } else if (faltando.length === 0) {
-                html += '<br>Todas as ' + r.total_tabelas + ' tabelas usadas pelo painel estão em <code>' + schema + '</code>.';
             } else {
-                tipo = 'aviso';
-                html += '<br><br><strong>' + faltando.length + ' de ' + r.total_tabelas +
-                    ' tabelas usadas pelo painel não estão em <code>' + schema + '</code>:</strong>' +
-                    '<ul>' + faltando.map(t => '<li><code>' + escapeHtml(t) + '</code></li>').join('') + '</ul>' +
-                    'As páginas que usam essas tabelas vão mostrar erro.';
+                // banco hospitalar: tabelas painel a painel
+                const modulos = r.modulos || [];
+                html += '<br><br><strong>Banco hospitalar (<code>' + schema + '</code>):</strong><ul class="lista-modulos">' +
+                    modulos.map(m => m.faltando.length === 0
+                        ? '<li class="ok">✓ ' + escapeHtml(m.nome) + ': ' + m.total + ' tabelas encontradas</li>'
+                        : '<li class="falta">✗ ' + escapeHtml(m.nome) + ': faltam ' +
+                          m.faltando.map(t => '<code>' + escapeHtml(t) + '</code>').join(', ') + '</li>').join('') +
+                    '</ul>';
+                if (modulos.some(m => m.faltando.length)) {
+                    tipo = 'aviso';
+                    html += 'Os painéis marcados com ✗ vão mostrar erro até as tabelas existirem.';
+                }
             }
             // schema dos dados lançados (custos, produção, SIMAQ)
             if (r.schema_painel_existe && r.schema_painel_pode_criar) {
@@ -204,8 +248,13 @@
                 if (r.ok) {
                     document.getElementById('password').value = '';
                     if (r.schema_painel_pronto) {
+                        const tabelas = r.tabelas_painel || [];
                         mostrar('ok', '<strong>Configuração salva.</strong> O painel já está usando este banco, ' +
-                            'e as tabelas dos dados do painel estão prontas.');
+                            'e as tabelas dos dados do painel estão prontas' +
+                            (tabelas.length ? ' em ' + schemaPainelAtual() + ':<ul class="lista-modulos">' +
+                                tabelas.map(t => '<li><code>' + escapeHtml(t.tabela) + '</code> — ' +
+                                    Number(t.linhas).toLocaleString('pt-BR') + ' linha(s)</li>').join('') + '</ul>' : '.') +
+                            (CONFIGURACAO_INICIAL ? '<a class="btn" href="{{ url_for("admin_menu") }}">Concluir e ir para a Administração</a>' : ''));
                     } else {
                         mostrar('aviso', '<strong>Configuração salva.</strong> O painel já está usando este banco, ' +
                             'mas os dados do painel ainda não estão disponíveis:<br>' + escapeHtml(r.erro_schema_painel || ''));

@@ -1105,9 +1105,15 @@ def ambulatorio_pagina():
 
 @app.route('/api/ambulatorio/dados')
 def api_ambulatorio_dados():
+    data_ini, data_fim = request.args.get('data_ini'), request.args.get('data_fim')
+    try:
+        datetime.strptime(data_ini or '', '%Y-%m-%d')
+        datetime.strptime(data_fim or '', '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'ok': False, 'erro': 'Informe data_ini e data_fim no formato AAAA-MM-DD.'}), 400
     try:
         dados = ambulatorio.get_ambulatorio(
-            request.args.get('data_ini'), request.args.get('data_fim'),
+            data_ini, data_fim,
             especialidade=request.args.get('especialidade') or None,
             status=request.args.get('status') or None,
         )

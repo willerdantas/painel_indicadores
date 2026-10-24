@@ -6,7 +6,10 @@
 <div class="grade">
     <form class="painel" method="post" action="{{ url_for('admin_senha') }}" autocomplete="off">
         <h2>Nova senha</h2>
-        {% if obrigatoria %}
+        {% if obrigatoria and configuracao_inicial %}
+        <div class="dica"><strong>Primeiro acesso — passo 1 de 2:</strong> troque a senha provisória do administrador.
+            Em seguida você vai configurar o banco de dados.</div>
+        {% elif obrigatoria %}
         <div class="dica">Sua senha é provisória. Defina uma senha nova para continuar.</div>
         {% endif %}
         <input type="hidden" name="csrf" value="{{ csrf_token }}">

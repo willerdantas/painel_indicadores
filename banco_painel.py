@@ -864,6 +864,21 @@ def iniciar(forcar=False):
         return _estado['pronto']
 
 
+def resumo_tabelas():
+    """[{'tabela', 'linhas'}] do schema dos dados do painel, para a tela de
+    configuração mostrar o que foi criado (e o que veio das planilhas)."""
+    from psycopg2 import sql
+    with _cursor() as cur:
+        cur.execute("""SELECT table_name FROM information_schema.tables
+                       WHERE table_schema = %s AND table_type = 'BASE TABLE' ORDER BY table_name""", [schema()])
+        nomes = [r['table_name'] for r in cur.fetchall()]
+        resumo = []
+        for nome in nomes:
+            cur.execute(sql.SQL('SELECT count(*) AS qtd FROM {}.{}').format(sql.Identifier(schema()), sql.Identifier(nome)))
+            resumo.append({'tabela': nome, 'linhas': cur.fetchone()['qtd']})
+    return resumo
+
+
 def reiniciar():
     """Depois de mudar a configuração do banco: esquece o estado e tenta de novo."""
     with _lock:

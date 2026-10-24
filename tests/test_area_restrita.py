@@ -291,3 +291,78 @@ def test_so_admin_troca_logo(cliente, logar):
     logar(ids['caio'])
     assert _enviar_logo(cliente, 'cabecalho', PNG_MINIMO).status_code == 403
     assert logos.arquivo_personalizado('cabecalho') is None
+
+
+# ---------------------------------------------------------------- servidor novo: senha -> banco
+
+def _admin_provisorio():
+    with usuarios._conectar() as c:
+        uid = c.execute('SELECT id FROM usuarios').fetchone()[0]
+        c.execute('UPDATE usuarios SET trocar_senha = 1, senha_hash = ? WHERE id = ?',
+                  [usuarios.generate_password_hash('Provisoria1'), uid])
+    return uid
+
+
+def test_primeiro_acesso_troca_senha_e_vai_para_o_banco(cliente, monkeypatch):
+    import area_restrita
+    monkeypatch.setattr(area_restrita, '_banco_pendente', lambda: True)
+    _admin_provisorio()
+
+    r = cliente.post('/login', data={'usuario': 'admin', 'senha': 'Provisoria1'})
+    assert r.status_code == 302
+    r = cliente.get('/admin')
+    assert r.headers['Location'].endswith('/admin/senha')  # passo 1: senha
+    assert 'passo 1 de 2' in cliente.get('/admin/senha').get_data(as_text=True)
+
+    with cliente.session_transaction() as s:
+        s['csrf'] = 'tok'
+    r = cliente.post('/admin/senha', data={'csrf': 'tok', 'atual': 'Provisoria1',
+                                           'nova': 'NovaSenha!9', 'confirmacao': 'NovaSenha!9'})
+    assert r.headers['Location'].endswith('/admin/banco')  # passo 2: banco
+
+    # até salvar o banco, o resto da área restrita leva para a configuração
+    assert cliente.get('/admin/usuarios').headers['Location'].endswith('/admin/banco')
+    assert cliente.post('/admin/cadastros/unidade/salvar', json={}, headers={'X-CSRF-Token': 'tok'}).status_code == 409
+    html = cliente.get('/admin/banco').get_data(as_text=True)
+    assert 'passo 2 de 2' in html
+    for nome in ('Indicadores LEAN', 'Exames', 'Ambulatório', 'Indicadores Hospitalares', 'Indicadores da Emergência'):
+        assert nome in html
+    assert 'Dados do painel' in html and 'importação de planilhas' in html
+
+
+def test_com_banco_configurado_senha_volta_ao_menu(cliente):
+    _admin_provisorio()
+    cliente.post('/login', data={'usuario': 'admin', 'senha': 'Provisoria1'})
+    with cliente.session_transaction() as s:
+        s['csrf'] = 'tok'
+    r = cliente.post('/admin/senha', data={'csrf': 'tok', 'atual': 'Provisoria1',
+                                           'nova': 'NovaSenha!9', 'confirmacao': 'NovaSenha!9'})
+    assert r.headers['Location'].endswith('/admin')
+    assert 'passo 2 de 2' not in cliente.get('/admin/banco').get_data(as_text=True)
+
+
+def test_banco_pendente_nao_desvia_quem_nao_e_admin(cliente, logar, monkeypatch):
+    import area_restrita
+    _, ids = _perfis_e_usuarios()
+    monkeypatch.setattr(area_restrita, '_banco_pendente', lambda: True)
+    logar(ids['bia'])
+    assert cliente.get('/admin/usuarios').status_code == 200
+
+
+def test_teste_de_conexao_cobre_todos_os_paineis():
+    import config_banco
+    nomes = [n for n, _t in config_banco.MODULOS_HOSPITALAR]
+    assert nomes == ['Indicadores LEAN', 'Indicadores Hospitalares', 'Indicadores da Emergência', 'Exames', 'Ambulatório']
+    for t in ('t_marcacao', 't_especialidade', 't_marcacao_situacao', 't_exame_solic', 't_internacao_leito'):
+        assert t in config_banco.TABELAS_USADAS
+
+
+def test_painel_sem_banco_configurado_mostra_aviso(cliente, monkeypatch):
+    import config_banco
+    import painel
+
+    def sem_banco():
+        raise config_banco.ConfiguracaoAusente('O banco de dados ainda não foi configurado.')
+    monkeypatch.setattr(painel, 'hcasg_get_filtros', sem_banco)
+    r = cliente.get('/hcasg/hospitalares')
+    assert r.status_code == 503 and 'ainda não foi configurado' in r.get_data(as_text=True)

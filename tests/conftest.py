@@ -36,6 +36,8 @@ def banco_usuarios(tmp_path, monkeypatch):
     monkeypatch.setattr(usuarios, 'ARQUIVO_DB', str(tmp_path / 'usuarios.db'))
     monkeypatch.setattr(paginas_visiveis, 'ARQUIVO', str(tmp_path / 'config_paginas.json'))
     monkeypatch.setattr(logos, 'PASTA', str(tmp_path / 'logos'))
+    # banco já configurado (o fluxo de servidor novo é testado à parte)
+    monkeypatch.setattr(area_restrita, '_banco_pendente', lambda: False)
     usuarios.iniciar()
     area_restrita._login_falhas.clear()
     assert usuarios.ARQUIVO_DB != _ARQUIVO_DB_REAL
