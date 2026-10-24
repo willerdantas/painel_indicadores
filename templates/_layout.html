@@ -11,6 +11,9 @@
   cabecalho(): logo (leva ao início), título/subtítulo, links da página e o
   botão "Voltar ao início" (id_voltar: o id que o JavaScript da página usa).
   Ações extras (ex.: botões de relatório) entram com {% call cabecalho(...) %}.
+
+  Logos: logo('cabecalho') e logo('carregando') dão o endereço da imagem
+  (trocável em Configuração do Banco; ver logos.py).
 #}
 
 {% macro recursos() %}
@@ -22,7 +25,7 @@
 {% macro cabecalho(titulo='', subtitulo='', links=(), voltar=True, id_voltar='btn-voltar-inicio', texto_voltar='Voltar ao início') %}
 <header class="cabecalho">
     <a class="cabecalho-marca" href="{{ url_for('index') }}" title="Início">
-        <img class="cabecalho-logo" src="/static/LOGO HM E SESA - NOVA (1).png" alt="Hospital de Messejana e Secretaria da Saúde do Ceará">
+        <img class="cabecalho-logo" src="{{ logo('cabecalho') }}" alt="Hospital de Messejana e Secretaria da Saúde do Ceará">
     </a>
     {% if titulo %}
     <div class="cabecalho-titulo">

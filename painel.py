@@ -3,7 +3,6 @@ from flask import Flask, render_template, jsonify, request
 import secrets
 import pandas as pd
 import os
-import base64
 from datetime import datetime, timedelta
 from indicadores_hcasg import get_filtros as hcasg_get_filtros
 from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
@@ -45,7 +44,6 @@ app.secret_key = _carregar_secret_key()
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(BASE_DIR, 'dados')
 ARQUIVO_EXCEL = 'PRODUÇÃO HOSPITALAR CONSOLIDADA.xlsx'
-ARQUIVO_LOGO = 'logo.png'
 
 # Configuração do banco PostgreSQL: centralizada em config_banco.py
 # (editável pela página /admin/banco, variáveis DB_* ou padrões).
@@ -126,15 +124,6 @@ def carregar_dados():
     }).sort_values('Mês Referência')
     df['Mês Formatado'] = df['Mês Referência'].dt.strftime('%d/%m/%Y')
     return df
-
-def get_encoded_logo():
-    """Converte o logo para base64 para incorpora��o no HTML"""
-    caminho_logo = os.path.join(PASTA_DADOS, ARQUIVO_LOGO)
-    if os.path.exists(caminho_logo):
-        with open(caminho_logo, 'rb') as f:
-            encoded = base64.b64encode(f.read()).decode('ascii')
-        return f'data:image/png;base64,{encoded}'
-    return ''
 
 def calcular_kpis(df):
     """Calcula KPIs básicos para produção hospitalar"""
@@ -222,7 +211,6 @@ def producao_hospitalar():
     dados_json = dados_json.to_dict(orient='records')
 
     context = {
-        'logo': get_encoded_logo(),
         'servicos': servicos,
         'exames_procedimentos': exames,
         'tipos_procedimento': tipos,

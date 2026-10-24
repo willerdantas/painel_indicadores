@@ -14,6 +14,7 @@ os.environ.pop('ADMIN_PASS', None)
 os.environ.setdefault('FLASK_SECRET_KEY', 'teste')
 
 import banco_painel  # noqa: E402
+import logos  # noqa: E402
 import paginas_visiveis  # noqa: E402
 import usuarios  # noqa: E402
 
@@ -34,6 +35,7 @@ import area_restrita  # noqa: E402
 def banco_usuarios(tmp_path, monkeypatch):
     monkeypatch.setattr(usuarios, 'ARQUIVO_DB', str(tmp_path / 'usuarios.db'))
     monkeypatch.setattr(paginas_visiveis, 'ARQUIVO', str(tmp_path / 'config_paginas.json'))
+    monkeypatch.setattr(logos, 'PASTA', str(tmp_path / 'logos'))
     usuarios.iniciar()
     area_restrita._login_falhas.clear()
     assert usuarios.ARQUIVO_DB != _ARQUIVO_DB_REAL

@@ -876,6 +876,14 @@ img { max-width: 100%; }
 .pg-config-banco .lista-paginas { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 10px 20px; margin-top: 16px; }
 .pg-config-banco label.opcao-pagina { display: flex; align-items: center; gap: 10px; margin: 0; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; background: var(--bg); font-size: 15px; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--dark); cursor: pointer; }
 .pg-config-banco label.opcao-pagina input { width: 18px; height: 18px; padding: 0; accent-color: var(--primaria); }
+.pg-config-banco .lista-logos { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 20px; margin-top: 16px; }
+.pg-config-banco .logo-item { border: 1px solid var(--border); border-radius: 10px; padding: 14px; background: var(--bg); }
+.pg-config-banco .logo-nome { font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 10px; }
+.pg-config-banco .logo-previa { height: 96px; display: flex; align-items: center; justify-content: center; background: #fff; border: 1px dashed var(--border); border-radius: 8px; margin-bottom: 12px; }
+.pg-config-banco .logo-previa img { max-height: 80px; max-width: 90%; object-fit: contain; }
+.pg-config-banco .logo-item input[type=file] { padding: 8px; font-size: 13px; background: #fff; }
+.pg-config-banco .logo-item .acoes { margin-top: 12px; }
+.pg-config-banco .btn:disabled { opacity: .5; cursor: not-allowed; }
 .pg-index .sem-paginas { grid-column: 1 / -1; text-align: center; color: var(--muted); }
 @media (max-width: 700px) {
   .pg-config-banco .grid { grid-template-columns: 1fr; }

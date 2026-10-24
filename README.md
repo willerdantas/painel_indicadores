@@ -28,7 +28,8 @@ planilhas da pasta `dados/` e dos lançamentos feitos na área restrita.
 - Usuários e perfis de acesso: cada perfil libera só algumas telas.
 - Configuração do Banco (só administrador):
   - dados de conexão, guardados criptografados;
-  - escolha das **páginas visíveis** no menu inicial.
+  - escolha das **páginas visíveis** no menu inicial;
+  - troca das **logos** (cabeçalho e tela de carregamento).
 
 Segurança:
 - proteção CSRF em todos os formulários;
@@ -49,6 +50,7 @@ lancamento_custos.py   lançamento de custos por unidade
 importacao_custos.py   importação da planilha mensal de custos
 config_banco.py        configuração do PostgreSQL (criptografada)
 paginas_visiveis.py    painéis visíveis no menu inicial
+logos.py               logos do cabeçalho e da tela de carregamento (trocáveis)
 usuarios.py            usuários e perfis (SQLite)
 templates/             páginas (Jinja2); _layout.html é o layout comum
 static/                CSS único (css/painel.css), JS e imagens
@@ -91,6 +93,7 @@ Todas são opcionais.
 | `.chave_config` | chave de criptografia |
 | `config_banco.enc` | conexão com o banco |
 | `config_paginas.json` | páginas visíveis |
+| `logos/` | logos enviadas (sem elas, valem as de `static/`) |
 | `painel_usuarios.db` | usuários e perfis |
 | `painel_dados.db` | custos antigos, usados só na migração |
 
@@ -118,8 +121,8 @@ Como o contêiner funciona:
 
 ```bash
 docker compose up -d
-for f in .secret_key .chave_config config_banco.enc config_paginas.json painel_usuarios.db painel_dados.db; do
-  [ -f "$f" ] && docker compose cp "$f" painel:/app/local/
+for f in .secret_key .chave_config config_banco.enc config_paginas.json painel_usuarios.db painel_dados.db logos; do
+  [ -e "$f" ] && docker compose cp "$f" painel:/app/local/
 done
 docker compose exec -u root painel chown -R painel:painel /app/local
 docker compose restart painel

@@ -86,6 +86,26 @@
             <div class="resultado" id="resultado-paginas" role="status" aria-live="polite"></div>
         </form>
 
+        <h2 class="section-title">Logos</h2>
+        <div class="painel" id="painel-logos">
+            <div class="dica">PNG, JPG ou WebP de até 2 MB. A troca vale na hora para todas as páginas;
+                "Restaurar padrão" volta para a logo original.</div>
+            <div class="lista-logos">
+                {% for l in logos %}
+                <form class="logo-item" data-tipo="{{ l.tipo }}" onsubmit="return false">
+                    <div class="logo-nome">{{ l.nome }}</div>
+                    <div class="logo-previa"><img src="{{ l.url }}" alt="{{ l.nome }}"></div>
+                    <input type="file" name="arquivo" accept="image/png,image/jpeg,image/webp" aria-label="Nova imagem: {{ l.nome }}">
+                    <div class="acoes">
+                        <button type="button" class="btn" data-acao="enviar">Trocar logo</button>
+                        <button type="button" class="btn secundario" data-acao="restaurar" {{ 'disabled' if not l.personalizada }}>Restaurar padrão</button>
+                    </div>
+                </form>
+                {% endfor %}
+            </div>
+            <div class="resultado" id="resultado-logos" role="status" aria-live="polite"></div>
+        </div>
+
     </main>
 
     <script>
@@ -234,6 +254,72 @@
             } finally {
                 btn.disabled = false;
             }
+        });
+
+        // logos (cabeçalho e tela de carregamento)
+        const resLogos = document.getElementById('resultado-logos');
+        function mostrarLogo(tipo, html) {
+            resLogos.className = 'resultado ' + tipo;
+            resLogos.innerHTML = html;
+        }
+        document.querySelectorAll('.logo-item').forEach(form => {
+            const tipo = form.dataset.tipo;
+            const previa = form.querySelector('.logo-previa img');
+            const arquivo = form.querySelector('input[type=file]');
+            const btnEnviar = form.querySelector('[data-acao=enviar]');
+            const btnRestaurar = form.querySelector('[data-acao=restaurar]');
+            let personalizada = !btnRestaurar.disabled;
+
+            // mostra a imagem escolhida antes de enviar
+            arquivo.addEventListener('change', () => {
+                if (arquivo.files[0]) previa.src = URL.createObjectURL(arquivo.files[0]);
+            });
+
+            async function chamar(url, opcoes, msgOk, ficaPersonalizada) {
+                btnEnviar.disabled = btnRestaurar.disabled = true;
+                try {
+                    const r = await fetch(url, Object.assign({ method: 'POST' }, opcoes));
+                    if (r.status === 401) {
+                        window.location.href = '{{ url_for("login") }}?proximo=' + encodeURIComponent(location.pathname);
+                        return;
+                    }
+                    const d = await r.json();
+                    if (d.ok) {
+                        previa.src = d.url;
+                        if (tipo === 'cabecalho') document.querySelector('.cabecalho-logo').src = d.url;
+                        arquivo.value = '';
+                        personalizada = ficaPersonalizada;
+                        mostrarLogo('ok', msgOk);
+                    } else {
+                        mostrarLogo('erro', '<strong>Não foi salvo.</strong><br>' + escapeHtml(d.erro));
+                    }
+                } catch (e) {
+                    mostrarLogo('erro', '<strong>Falha na requisição.</strong><br>' + escapeHtml(e.message));
+                } finally {
+                    btnEnviar.disabled = false;
+                    btnRestaurar.disabled = !personalizada;
+                }
+            }
+
+            btnEnviar.addEventListener('click', () => {
+                if (!arquivo.files[0]) {
+                    mostrarLogo('aviso', 'Escolha a imagem da nova logo.');
+                    return;
+                }
+                const dados = new FormData();
+                dados.append('tipo', tipo);
+                dados.append('arquivo', arquivo.files[0]);
+                chamar('{{ url_for("admin_banco_logo") }}',
+                       { headers: { 'X-CSRF-Token': '{{ csrf_token }}' }, body: dados },
+                       '<strong>Logo trocada.</strong> Já aparece em todas as páginas.', true);
+            });
+            btnRestaurar.addEventListener('click', () => {
+                if (!confirm('Voltar para a logo padrão?')) return;
+                chamar('{{ url_for("admin_banco_logo_restaurar") }}',
+                       { headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '{{ csrf_token }}' },
+                         body: JSON.stringify({ tipo }) },
+                       '<strong>Logo padrão restaurada.</strong>', false);
+            });
         });
     </script>
     {{ rodape() }}

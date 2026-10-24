@@ -19,12 +19,13 @@ import time
 from datetime import datetime
 from decimal import Decimal
 
-from flask import flash, g, jsonify, redirect, render_template, request, session, url_for
+from flask import abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
 
 import banco_painel
 import config_banco
 import importacao_custos
 import lancamento_custos
+import logos
 import paginas_visiveis
 import usuarios
 
@@ -149,6 +150,31 @@ def sessao_ativa():
     """A página avisa que há uso (cliques, digitação): controlar_acesso já
     renovou o último acesso; não há conteúdo."""
     return '', 204
+
+
+def _enderecos_logos():
+    return logos.enderecos(lambda nome: url_for('static', filename=nome),
+                           lambda tipo, v: url_for('logo_imagem', tipo=tipo, v=v))
+
+
+@_gancho('template_global', 'logo')
+def logo(tipo):
+    """Endereço da logo nos templates (inclusive nas macros do _layout.html):
+    logo('cabecalho') ou logo('carregando')."""
+    return _enderecos_logos()[tipo]
+
+
+@_rota('/logo/<tipo>')
+def logo_imagem(tipo):
+    """Logo enviada em Configuração do Banco (pública, como os painéis)."""
+    if tipo not in logos.LOGOS:
+        abort(404)
+    caminho = logos.arquivo_personalizado(tipo)
+    if caminho is None:
+        return redirect(url_for('static', filename=logos.LOGOS[tipo][1]))
+    extensao = caminho.rsplit('.', 1)[1]
+    # o endereço muda (?v=) a cada troca: pode ficar em cache
+    return send_file(caminho, mimetype=logos.MIMETYPES[extensao], max_age=7 * 24 * 3600)
 
 
 @_gancho('context_processor')
@@ -391,7 +417,34 @@ def admin_banco():
     cfg = config_banco.carregar()
     tem_senha = bool(cfg.pop('password'))  # a senha nunca volta para o navegador
     return render_template('config_banco.html', cfg=cfg, tem_senha=tem_senha,
-                           erro_config=config_banco.erro_arquivo(), paginas=paginas_visiveis.listar())
+                           erro_config=config_banco.erro_arquivo(), paginas=paginas_visiveis.listar(),
+                           logos=logos.listar(_enderecos_logos()))
+
+
+@_rota('/admin/banco/logo', methods=['POST'])
+def admin_banco_logo():
+    """Troca uma logo: formulário com tipo e arquivo."""
+    tipo = request.form.get('tipo', '')
+    arquivo = request.files.get('arquivo')
+    try:
+        logos.salvar(tipo, arquivo.read(logos.TAMANHO_MAXIMO + 1) if arquivo else b'')
+    except logos.LogoInvalida as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 400
+    except OSError as e:
+        return jsonify({'ok': False, 'erro': f'Não foi possível salvar: {e}'}), 500
+    return jsonify({'ok': True, 'url': _enderecos_logos()[tipo]})
+
+
+@_rota('/admin/banco/logo/restaurar', methods=['POST'])
+def admin_banco_logo_restaurar():
+    tipo = (request.get_json(silent=True) or {}).get('tipo', '')
+    if tipo not in logos.LOGOS:
+        return jsonify({'ok': False, 'erro': 'Logo desconhecida.'}), 400
+    try:
+        logos.restaurar(tipo)
+    except OSError as e:
+        return jsonify({'ok': False, 'erro': f'Não foi possível restaurar: {e}'}), 500
+    return jsonify({'ok': True, 'url': _enderecos_logos()[tipo]})
 
 
 @_rota('/admin/banco/paginas', methods=['POST'])

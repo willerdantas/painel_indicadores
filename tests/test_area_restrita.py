@@ -1,4 +1,5 @@
 """Login, CSRF, troca obrigatória de senha e ganho de privilégio na área restrita."""
+import logos
 import paginas_visiveis
 import usuarios
 
@@ -242,3 +243,51 @@ def test_so_admin_escolhe_paginas_visiveis(cliente, logar):
     logar(ids['caio'])
     r = cliente.post('/admin/banco/paginas', json={'visiveis': []}, headers={'X-CSRF-Token': 'tok'})
     assert r.status_code == 403 and paginas_visiveis.ocultas() == set()
+
+
+# ---------------------------------------------------------------- logos (/admin/banco)
+
+PNG_MINIMO = (b'\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01\x08\x06\x00\x00\x00\x1f\x15\xc4\x89'
+              b'\x00\x00\x00\rIDATx\x9cc\xf8\x0f\x00\x00\x01\x01\x00\x05\x18\xd8N\x00\x00\x00\x00IEND\xaeB`\x82')
+
+
+def _enviar_logo(cliente, tipo, conteudo, nome='logo.png'):
+    import io
+    return cliente.post('/admin/banco/logo', data={'tipo': tipo, 'arquivo': (io.BytesIO(conteudo), nome)},
+                        headers={'X-CSRF-Token': 'tok'}, content_type='multipart/form-data')
+
+
+def test_logo_padrao_nas_paginas(cliente):
+    html = cliente.get('/').get_data(as_text=True)
+    assert 'LOGO%20HM%20E%20SESA' in html or 'LOGO HM E SESA' in html
+    assert 'LOGO%20HM%20-%20NOVA' in html or 'LOGO HM - NOVA' in html
+
+
+def test_admin_troca_e_restaura_logo(cliente, logar, admin_id):
+    logar(admin_id)
+    r = _enviar_logo(cliente, 'cabecalho', PNG_MINIMO)
+    assert r.get_json()['ok'] and '/logo/cabecalho?v=' in r.get_json()['url']
+    assert '/logo/cabecalho?v=' in cliente.get('/').get_data(as_text=True)
+    img = cliente.get('/logo/cabecalho')
+    assert img.status_code == 200 and img.mimetype == 'image/png' and img.data == PNG_MINIMO
+    img.close()  # libera o arquivo (no Windows, aberto não pode ser apagado)
+
+    r = cliente.post('/admin/banco/logo/restaurar', json={'tipo': 'cabecalho'}, headers={'X-CSRF-Token': 'tok'})
+    assert r.get_json()['ok'] and '/static/' in r.get_json()['url']
+    assert logos.arquivo_personalizado('cabecalho') is None
+
+
+def test_logo_rejeita_arquivo_que_nao_e_imagem(cliente, logar, admin_id):
+    logar(admin_id)
+    r = _enviar_logo(cliente, 'cabecalho', b'<svg onload="alert(1)"></svg>', 'logo.png')
+    assert r.status_code == 400 and logos.arquivo_personalizado('cabecalho') is None
+    assert _enviar_logo(cliente, 'outra', PNG_MINIMO).status_code == 400
+    grande = PNG_MINIMO + b'0' * logos.TAMANHO_MAXIMO
+    assert _enviar_logo(cliente, 'carregando', grande).status_code == 400
+
+
+def test_so_admin_troca_logo(cliente, logar):
+    _, ids = _perfis_e_usuarios()
+    logar(ids['caio'])
+    assert _enviar_logo(cliente, 'cabecalho', PNG_MINIMO).status_code == 403
+    assert logos.arquivo_personalizado('cabecalho') is None
