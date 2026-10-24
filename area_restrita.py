@@ -272,6 +272,9 @@ def login():
             erro = 'Muitas tentativas erradas. Aguarde alguns minutos e tente de novo.'
             return render_template('login.html', erro=erro, proximo=proximo or ''), 429
         u = usuarios.autenticar(login_digitado, request.form.get('senha'))
+        if u is None and not request.form.get('senha') and _banco_pendente():
+            # sem banco configurado: administrador entra sem senha para configurá-lo
+            u = usuarios.liberar_admin_sem_senha(login_digitado)
         _login_registrar(login_digitado, bool(u))
         if u:
             session.clear()
@@ -282,7 +285,8 @@ def login():
         erro = 'Usuário ou senha inválidos, ou usuário inativo.'
     elif session.pop('sessao_expirada', False):
         erro = MSG_SESSAO_EXPIRADA
-    return render_template('login.html', erro=erro, proximo=proximo or '')
+    return render_template('login.html', erro=erro, proximo=proximo or '', banco_pendente=_banco_pendente(),
+                           login_admin=os.environ.get('ADMIN_USER', 'admin'))
 
 
 @_rota('/logout')

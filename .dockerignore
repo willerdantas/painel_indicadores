@@ -10,6 +10,9 @@ __pycache__
 *.pyc
 tests
 
+# planilhas de origem (dados do hospital): a imagem começa sem dados
+dados
+
 # arquivos locais com segredos e dados: ficam no volume (/app/local), nunca na imagem
 .env
 .secret_key

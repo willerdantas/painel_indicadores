@@ -11,6 +11,9 @@ logos/
 painel_usuarios.db
 painel_dados.db
 
+# planilhas de origem: dados do hospital, ficam só no servidor (um servidor novo começa vazio)
+dados/
+
 # Python
 __pycache__/
 *.pyc

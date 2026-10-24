@@ -169,8 +169,10 @@ area_restrita.registrar(app)
 @app.route('/producao_hospitalar')
 def producao_hospitalar():
     df = carregar_dados()
-    if df.empty:
-        return "Erro ao carregar dados. Verifique o arquivo Excel.", 500
+    if df.empty:  # servidor novo: página vazia até os lançamentos
+        df = pd.DataFrame({'Mês Referência': pd.Series(dtype='datetime64[ns]'), 'Serviço': pd.Series(dtype=str),
+                           'Tipo Procedimento': pd.Series(dtype=str), 'Exame/Procedimento': pd.Series(dtype=str),
+                           'Quantidade': pd.Series(dtype=int)})
 
     # Garantir que as colunas existem
     for col in ['Serviço', 'Exame/Procedimento', 'Tipo Procedimento', 'Quantidade', 'Mês Referência']:
@@ -295,9 +297,16 @@ def indicadores():
     except Exception as e:
         return render_template('error.html', message=f"Erro ao carregar dados: {e}")
 
+def _sem_planilha(nome):
+    """Financeiro e faturamento leem só planilhas (dados/, fora do git)."""
+    return render_template('error.html', message=f'Sem dados: a planilha "{nome}" não está na pasta dados/ do servidor.'), 404
+
+
 @app.route('/financeiro', methods=['GET', 'POST'])
 def financeiro():
     caminho_planilha = os.path.join(PASTA_DADOS, 'DESPESAS EMPENHADAS.xlsx')
+    if not os.path.exists(caminho_planilha):
+        return _sem_planilha('DESPESAS EMPENHADAS.xlsx')
     try:
         df_original = pd.read_excel(
             caminho_planilha,
@@ -469,6 +478,8 @@ def financeiro():
 @app.route('/faturamento', methods=['GET', 'POST'])
 def faturamento():
     caminho_planilha = os.path.join(PASTA_DADOS, 'FATURAMENTO CONTAS MEDICAS.xlsx')
+    if not os.path.exists(caminho_planilha):
+        return _sem_planilha('FATURAMENTO CONTAS MEDICAS.xlsx')
     try:
         df_original = pd.read_excel(
             caminho_planilha,

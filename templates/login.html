@@ -17,9 +17,17 @@
         <form class="login-card" method="post" action="{{ url_for('login') }}">
             <h1>Login</h1>
             {% if erro %}<div class="erro" role="alert">{{ erro }}</div>{% endif %}
+            {% if banco_pendente %}
+            <div class="aviso-banco" role="note">
+                <strong>Banco de dados ainda não configurado.</strong>
+                Entre com o usuário <code>{{ login_admin }}</code> e a senha em branco para definir a senha
+                do administrador e configurar o banco.
+            </div>
+            {% endif %}
             <input type="hidden" name="proximo" value="{{ proximo }}">
             <label for="usuario">Usuário</label>
-            <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus>
+            <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus
+                   {% if banco_pendente %}value="{{ login_admin }}"{% endif %}>
             <label for="senha">Senha</label>
             <input type="password" id="senha" name="senha" autocomplete="current-password">
             <div class="acoes">

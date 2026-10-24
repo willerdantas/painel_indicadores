@@ -54,7 +54,7 @@ logos.py               logos do cabeçalho e da tela de carregamento (trocáveis
 usuarios.py            usuários e perfis (SQLite)
 templates/             páginas (Jinja2); _layout.html é o layout comum
 static/                CSS único (css/painel.css), JS e imagens
-dados/                 planilhas de origem
+dados/                 planilhas de origem (fora do git: só no servidor que já as tem)
 sql/                   SQL de apoio (criação do schema painel)
 tests/                 testes (pytest)
 ```
@@ -62,8 +62,7 @@ tests/                 testes (pytest)
 ## Primeiro acesso (servidor novo)
 
 1. Suba o painel (Docker ou local).
-2. Entre em **Área Restrita** com o usuário `admin` e a **senha em branco**.
-   - Se você definiu `ADMIN_PASS`, use essa senha.
+2. Entre em **Área Restrita** com o usuário `admin` e a **senha em branco**. Enquanto o banco não estiver configurado, a tela de login avisa isso e aceita a senha em branco para o administrador, mesmo que ele já tenha uma senha.
 3. **Passo 1 de 2:** defina a senha do administrador (obrigatório). A partir daí, a senha em branco deixa de funcionar.
 
 > Enquanto ninguém fizer o primeiro acesso, qualquer pessoa que alcance o
@@ -84,6 +83,15 @@ tests/                 testes (pytest)
 
 Até o banco ser configurado, os painéis públicos mostram "O banco de dados
 ainda não foi configurado".
+
+**Servidor novo começa sem dados.** A pasta `dados/` (planilhas do hospital)
+fica fora do git e da imagem Docker. Os painéis se alimentam:
+- do banco hospitalar, depois da configuração;
+- dos lançamentos e importações feitos na área restrita.
+
+Para levar o histórico das planilhas para um servidor novo:
+1. Copie a pasta `dados/` para o projeto (no Docker, monte-a em `/app/dados`).
+2. Salve a configuração do banco: na primeira vez, as planilhas são carregadas nas tabelas.
 
 ## Banco de dados
 

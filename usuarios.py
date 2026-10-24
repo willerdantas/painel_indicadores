@@ -214,6 +214,19 @@ def _senha_confere(r, senha):
     return check_password_hash(r['senha_hash'], senha or '')
 
 
+def liberar_admin_sem_senha(login):
+    """Servidor sem banco configurado: o administrador informado entra com a
+    senha em branco, para configurar o banco. A senha dele é apagada e a troca
+    fica obrigatória (passo 1 do primeiro acesso). Retorna o usuário ou None."""
+    with _lock, _conectar() as conn:
+        r = conn.execute("""SELECT u.id FROM usuarios u JOIN perfis p ON p.id = u.perfil_id
+                           WHERE u.login = ? AND u.ativo = 1 AND p.admin = 1""", [(login or '').strip()]).fetchone()
+        if r is None:
+            return None
+        conn.execute('UPDATE usuarios SET senha_hash = ?, trocar_senha = 1 WHERE id = ?', [SEM_SENHA, r['id']])
+    return obter_usuario(r['id'])
+
+
 def sem_senha(usuario_id):
     """True se o usuário ainda não tem senha (primeiro acesso do administrador)."""
     with _conectar() as conn:

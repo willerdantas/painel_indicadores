@@ -402,3 +402,31 @@ def test_admin_pass_define_a_senha_inicial(tmp_path, monkeypatch):
     usuarios.iniciar()
     assert usuarios.autenticar('admin', '') is None
     assert usuarios.autenticar('admin', 'DefinidaNoEnv1') is not None
+
+
+# ---------------------------------------------------------------- login sem banco configurado
+
+def test_sem_banco_admin_entra_sem_senha_mesmo_com_senha_salva(cliente, admin_id, monkeypatch):
+    import area_restrita
+    monkeypatch.setattr(area_restrita, '_banco_pendente', lambda: True)
+    html = cliente.get('/login').get_data(as_text=True)
+    assert 'Banco de dados ainda não configurado' in html
+
+    r = cliente.post('/login', data={'usuario': 'admin', 'senha': ''})
+    assert r.status_code == 302
+    assert cliente.get('/admin').headers['Location'].endswith('/admin/senha')  # define a senha primeiro
+    assert 'id="atual"' not in cliente.get('/admin/senha').get_data(as_text=True)
+
+
+def test_sem_banco_so_admin_entra_sem_senha(cliente, monkeypatch):
+    import area_restrita
+    _perfis_e_usuarios()
+    monkeypatch.setattr(area_restrita, '_banco_pendente', lambda: True)
+    assert cliente.post('/login', data={'usuario': 'caio', 'senha': ''}).status_code == 200
+    assert cliente.post('/login', data={'usuario': 'ninguem', 'senha': ''}).status_code == 200
+
+
+def test_com_banco_configurado_senha_em_branco_nao_entra(cliente, admin_id):
+    assert 'Banco de dados ainda não configurado' not in cliente.get('/login').get_data(as_text=True)
+    assert cliente.post('/login', data={'usuario': 'admin', 'senha': ''}).status_code == 200
+    assert usuarios.autenticar('admin', 'SenhaAdmin1') is not None  # senha intacta

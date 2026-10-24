@@ -115,3 +115,16 @@ def test_chave_malformada_nao_derruba(monkeypatch, tmp_path):
     cfg = config_banco.carregar()  # não levanta ValueError
     assert set(cfg) == set(config_banco.CAMPOS)
     assert config_banco.erro_arquivo()
+
+
+def test_paginas_sem_dados_nao_quebram(cliente, tmp_path, monkeypatch):
+    """Servidor novo: sem planilhas em dados/ e sem lançamentos."""
+    import painel
+    monkeypatch.setattr(banco_painel, 'PASTA_DADOS', str(tmp_path))
+    monkeypatch.setattr(painel, 'PASTA_DADOS', str(tmp_path))
+    assert cliente.get('/producao_hospitalar').status_code == 200
+    assert cliente.get('/indicadores').status_code == 200
+    assert cliente.get('/custos').status_code == 200
+    r = cliente.get('/financeiro')
+    assert r.status_code == 404 and 'Sem dados' in r.get_data(as_text=True)
+    assert cliente.get('/faturamento').status_code == 404
