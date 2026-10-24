@@ -19,7 +19,6 @@ pessoa e a antiga senha padrão "admin" obrigam a troca no próximo acesso.
 
 import json
 import os
-import secrets
 import sqlite3
 import threading
 from datetime import datetime
@@ -46,6 +45,10 @@ PAGINAS = [
 CHAVES_PAGINAS = [p[0] for p in PAGINAS]
 
 _lock = threading.Lock()
+
+# senha_hash do administrador inicial sem senha (ADMIN_PASS não informado):
+# entra com a senha em branco só enquanto não definir uma (trocar_senha = 1)
+SEM_SENHA = ''
 
 
 def _conectar():
@@ -88,14 +91,17 @@ def iniciar():
                 perfil_id = perfil['id']
             login = os.environ.get('ADMIN_USER', 'admin')
             senha = os.environ.get('ADMIN_PASS')
-            if not senha:
-                senha = secrets.token_urlsafe(9)
-                print(f'[painel] Administrador inicial criado: login "{login}", senha "{senha}" '
-                      '(troque no primeiro acesso).', flush=True)
+            if senha:
+                senha_hash = generate_password_hash(senha)
+            else:
+                # servidor novo: o primeiro acesso é sem senha e a troca é obrigatória
+                senha_hash = SEM_SENHA
+                print(f'[painel] Administrador inicial criado: login "{login}", sem senha '
+                      '(defina a senha no primeiro acesso).', flush=True)
             conn.execute(
                 'INSERT INTO usuarios (login, nome, senha_hash, perfil_id, ativo, criado_em, trocar_senha) '
                 'VALUES (?, ?, ?, ?, 1, ?, 1)',
-                [login, 'Administrador', generate_password_hash(senha),
+                [login, 'Administrador', senha_hash,
                  perfil_id, datetime.now().isoformat(timespec='seconds')])
         # instalações antigas: quem ainda usa a senha padrão "admin" tem de trocar
         for r in conn.execute('SELECT id, senha_hash FROM usuarios WHERE trocar_senha = 0').fetchall():
@@ -197,9 +203,22 @@ def autenticar(login, senha):
     """Retorna o usuário se login/senha conferem e ele está ativo; senão None."""
     with _conectar() as conn:
         r = conn.execute('SELECT * FROM usuarios WHERE login = ?', [(login or '').strip()]).fetchone()
-    if r is None or not r['ativo'] or not check_password_hash(r['senha_hash'], senha or ''):
+    if r is None or not r['ativo'] or not _senha_confere(r, senha):
         return None
     return obter_usuario(r['id'])
+
+
+def _senha_confere(r, senha):
+    if r['senha_hash'] == SEM_SENHA:
+        return not senha and bool(r['trocar_senha'])  # primeiro acesso sem senha
+    return check_password_hash(r['senha_hash'], senha or '')
+
+
+def sem_senha(usuario_id):
+    """True se o usuário ainda não tem senha (primeiro acesso do administrador)."""
+    with _conectar() as conn:
+        r = conn.execute('SELECT senha_hash FROM usuarios WHERE id = ?', [usuario_id]).fetchone()
+    return r is not None and r['senha_hash'] == SEM_SENHA
 
 
 def salvar_usuario(usuario_id, login, nome, senha, perfil_id, ativo, trocar_senha=True):
@@ -244,8 +263,8 @@ def trocar_senha(usuario_id, atual, nova, confirmacao):
     if nova == atual or nova.lower() == 'admin':
         return 'Escolha uma senha diferente da atual.'
     with _lock, _conectar() as conn:
-        r = conn.execute('SELECT senha_hash FROM usuarios WHERE id = ?', [usuario_id]).fetchone()
-        if r is None or not check_password_hash(r['senha_hash'], atual or ''):
+        r = conn.execute('SELECT senha_hash, trocar_senha FROM usuarios WHERE id = ?', [usuario_id]).fetchone()
+        if r is None or not _senha_confere(r, atual):
             return 'Senha atual incorreta.'
         conn.execute('UPDATE usuarios SET senha_hash = ?, trocar_senha = 0 WHERE id = ?',
                      [generate_password_hash(nova), usuario_id])

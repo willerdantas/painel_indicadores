@@ -7,15 +7,19 @@
     <form class="painel" method="post" action="{{ url_for('admin_senha') }}" autocomplete="off">
         <h2>Nova senha</h2>
         {% if obrigatoria and configuracao_inicial %}
-        <div class="dica"><strong>Primeiro acesso — passo 1 de 2:</strong> troque a senha provisória do administrador.
+        <div class="dica"><strong>Primeiro acesso — passo 1 de 2:</strong> defina a senha do administrador.
             Em seguida você vai configurar o banco de dados.</div>
         {% elif obrigatoria %}
         <div class="dica">Sua senha é provisória. Defina uma senha nova para continuar.</div>
         {% endif %}
         <input type="hidden" name="csrf" value="{{ csrf_token }}">
 
+        {% if sem_senha %}
+        <input type="hidden" name="atual" value="">
+        {% else %}
         <label class="campo" for="atual">Senha atual</label>
         <input type="password" id="atual" name="atual" autocomplete="current-password" required>
+        {% endif %}
 
         <label class="campo" for="nova">Nova senha</label>
         <input type="password" id="nova" name="nova" autocomplete="new-password" minlength="8" required>

@@ -61,11 +61,15 @@ tests/                 testes (pytest)
 
 ## Primeiro acesso (servidor novo)
 
-1. Suba o painel (Docker ou local) e veja a senha provisória do administrador no log.
-   - Ela não aparece se você definiu `ADMIN_PASS`.
-   - No Docker: `docker compose logs painel | grep Administrador`.
-2. Entre em **Área Restrita** com o usuário `admin` e essa senha.
-3. **Passo 1 de 2:** troque a senha do administrador (obrigatório).
+1. Suba o painel (Docker ou local).
+2. Entre em **Área Restrita** com o usuário `admin` e a **senha em branco**.
+   - Se você definiu `ADMIN_PASS`, use essa senha.
+3. **Passo 1 de 2:** defina a senha do administrador (obrigatório). A partir daí, a senha em branco deixa de funcionar.
+
+> Enquanto ninguém fizer o primeiro acesso, qualquer pessoa que alcance o
+> servidor entra como administrador. Faça o primeiro acesso logo depois de
+> subir o painel, ou defina `ADMIN_PASS`.
+
 4. **Passo 2 de 2:** o painel abre a **Configuração do Banco**. Até ela ser salva, o resto da área restrita fica bloqueado. Informe:
    - **Conexão com o PostgreSQL:** servidor, porta, banco, usuário e senha.
    - **Banco hospitalar (consulta):** o schema do sistema hospitalar de onde vêm os dados de LEAN, Exames, Ambulatório, Indicadores Hospitalares e Indicadores da Emergência.
@@ -100,7 +104,7 @@ Todas são opcionais.
 
 | Variável | Para quê |
 |---|---|
-| `ADMIN_USER` / `ADMIN_PASS` | Administrador criado no primeiro início. Sem senha, uma aleatória sai no log. |
+| `ADMIN_USER` / `ADMIN_PASS` | Administrador criado no primeiro início. Sem `ADMIN_PASS`, o primeiro acesso é sem senha. |
 | `FLASK_SECRET_KEY` | Chave das sessões. Sem ela, é gerada em `.secret_key`. |
 | `PAINEL_CHAVE_CONFIG` | Chave que criptografa a configuração do banco. Sem ela, é gerada em `.chave_config`. |
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`, `DB_SCHEMA`, `DB_SCHEMA_PAINEL` | Conexão com o PostgreSQL. |
@@ -181,7 +185,7 @@ No VS Code, a configuração "Painel (local, com debug)" do `.vscode/launch.json
 roda com `PAINEL_DEBUG=1`.
 
 No primeiro início, o administrador `admin` é criado:
-- a senha vem de `ADMIN_PASS` ou sai no terminal;
+- a senha é `ADMIN_PASS` ou, sem ela, em branco;
 - a troca de senha é obrigatória no primeiro acesso.
 
 ## Testes

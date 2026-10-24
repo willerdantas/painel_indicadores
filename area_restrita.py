@@ -319,6 +319,7 @@ def admin_senha():
             return redirect(url_for('admin_menu'))
         flash(erro, 'erro')
     return render_template('admin_senha.html', obrigatoria=g.usuario['trocar_senha'],
+                           sem_senha=usuarios.sem_senha(g.usuario['id']),
                            configuracao_inicial=usuarios.eh_admin(g.usuario) and _banco_pendente())
 
 

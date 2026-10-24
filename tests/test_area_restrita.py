@@ -366,3 +366,39 @@ def test_painel_sem_banco_configurado_mostra_aviso(cliente, monkeypatch):
     monkeypatch.setattr(painel, 'hcasg_get_filtros', sem_banco)
     r = cliente.get('/hcasg/hospitalares')
     assert r.status_code == 503 and 'ainda não foi configurado' in r.get_data(as_text=True)
+
+
+# ---------------------------------------------------------------- administrador inicial sem senha
+
+def test_admin_inicial_entra_sem_senha_so_no_primeiro_acesso(cliente):
+    assert usuarios.sem_senha(usuarios.listar_usuarios()[0]['id'])
+    assert usuarios.autenticar('admin', '') is not None
+    assert usuarios.autenticar('admin', 'qualquer') is None
+
+    r = cliente.post('/login', data={'usuario': 'admin', 'senha': ''})
+    assert r.status_code == 302
+    html = cliente.get('/admin/senha').get_data(as_text=True)
+    assert 'id="atual"' not in html  # sem senha atual para informar
+
+    with cliente.session_transaction() as s:
+        s['csrf'] = 'tok'
+    r = cliente.post('/admin/senha', data={'csrf': 'tok', 'atual': '', 'nova': 'NovaSenha!9',
+                                           'confirmacao': 'NovaSenha!9'})
+    assert r.status_code == 302
+    assert usuarios.autenticar('admin', '') is None  # em branco não entra mais
+    assert usuarios.autenticar('admin', 'NovaSenha!9') is not None
+
+
+def test_sem_senha_nao_vale_depois_de_liberada_a_troca(admin_id):
+    # admin_id já trocou a senha; outro usuário sem senha e sem troca pendente não entra
+    with usuarios._conectar() as c:
+        c.execute('UPDATE usuarios SET senha_hash = ?, trocar_senha = 0 WHERE id = ?', [usuarios.SEM_SENHA, admin_id])
+    assert usuarios.autenticar('admin', '') is None
+
+
+def test_admin_pass_define_a_senha_inicial(tmp_path, monkeypatch):
+    monkeypatch.setattr(usuarios, 'ARQUIVO_DB', str(tmp_path / 'outro.db'))
+    monkeypatch.setenv('ADMIN_PASS', 'DefinidaNoEnv1')
+    usuarios.iniciar()
+    assert usuarios.autenticar('admin', '') is None
+    assert usuarios.autenticar('admin', 'DefinidaNoEnv1') is not None
