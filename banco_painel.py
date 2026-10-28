@@ -28,6 +28,7 @@ import time
 from contextlib import contextmanager
 from decimal import Decimal
 
+import psycopg2
 from psycopg2 import errors as pg_erros
 from psycopg2.extras import RealDictCursor, execute_batch
 
@@ -789,6 +790,56 @@ def _criar_tabelas_unidade(cur):
         cur.execute(sql)
 
 
+# Classificações iniciais dos exames (as que existiam na t_exame_classificacao
+# do sistema hospitalar); depois são mantidas em /admin/classificacoes.
+CLASSIFICACOES_EXAME_PADRAO = (
+    'BRONCOSCOPIA', 'ECOCARDIOGRAFIA', 'ELETROFISIOLOGIA', 'ERGOMETRIA', 'ESPIROMETRIA',
+    'HEMODINAMICA', 'IMAGEM', 'LABORATORIO', 'OUTROS_PROCEDIMENTOS',
+)
+
+
+def _criar_tabelas_classificacao(cur):
+    """Classificação dos exames (classificacao_exames.py). Na primeira vez
+    cria as classificações padrão e copia as associações da antiga
+    t_exame_classificacao do sistema hospitalar, se ela existir (registrado em
+    migracao: excluir depois não traz de volta). Depende de migracao."""
+    s = schema()
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.classificacao_exame (
+                       id   SERIAL PRIMARY KEY,
+                       nome TEXT NOT NULL UNIQUE)""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.exame_classificacao (
+                       isn_exame         BIGINT PRIMARY KEY,
+                       classificacao_id  INTEGER NOT NULL REFERENCES {s}.classificacao_exame (id),
+                       dat_classificacao TIMESTAMP NOT NULL DEFAULT now())""")
+    cur.execute(f"SELECT 1 FROM {s}.migracao WHERE tabela = 'exame_classificacao'")
+    if cur.fetchone():
+        return
+    execute_batch(cur, f'INSERT INTO {s}.classificacao_exame (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING',
+                  [(n,) for n in CLASSIFICACOES_EXAME_PADRAO])
+    linhas = 0
+    # tabela antiga, no schema do sistema hospitalar (search_path da conexão)
+    cur.execute("SELECT to_regclass('t_exame_classificacao') IS NOT NULL AS existe")
+    if cur.fetchone()['existe']:
+        cur.execute('SAVEPOINT migra_classificacao')
+        try:
+            cur.execute(f"""INSERT INTO {s}.classificacao_exame (nome)
+                           SELECT DISTINCT classificacao FROM t_exame_classificacao
+                           WHERE classificacao IS NOT NULL
+                           ON CONFLICT (nome) DO NOTHING""")
+            cur.execute(f"""INSERT INTO {s}.exame_classificacao (isn_exame, classificacao_id, dat_classificacao)
+                           SELECT t.isn_exame, c.id, COALESCE(t.dat_classificacao, now())
+                           FROM t_exame_classificacao t
+                           JOIN {s}.classificacao_exame c ON c.nome = t.classificacao
+                           ON CONFLICT (isn_exame) DO NOTHING""")
+            linhas = cur.rowcount
+        except psycopg2.Error as e:  # tabela antiga diferente: segue só com as padrão
+            cur.execute('ROLLBACK TO SAVEPOINT migra_classificacao')
+            print(f'[painel] AVISO: classificações de exames não copiadas de t_exame_classificacao: {e}')
+    cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('exame_classificacao', %s)", [linhas])
+    if linhas:
+        print(f'[painel] exame_classificacao: {linhas} exames classificados (de t_exame_classificacao)')
+
+
 def _criar_controle_migracao(cur):
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS {schema()}.migracao (
@@ -843,6 +894,7 @@ def iniciar(forcar=False):
                     t.criar(cur)
                 _criar_tabelas_unidade(cur)
                 _criar_controle_migracao(cur)
+                _criar_tabelas_classificacao(cur)
             for t in TABELAS:
                 if _migracao_feita(t):
                     continue

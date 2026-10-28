@@ -12,7 +12,7 @@
 </head>
 <body class="pg-exames-por-clinica">
     <div class="main-container">
-        {{ cabecalho('Exames', 'Acompanhamento de exames solicitados, baixados, realizados e cancelados', links=[('/graficos_mensais', 'Gráficos Mensais')], id_voltar='back-button') }}
+        {{ cabecalho('Exames', 'Acompanhamento de exames solicitados, realizados e cancelados', links=[('/graficos_mensais', 'Gráficos Mensais')], id_voltar='back-button') }}
         <div class="page-content">
 
         <form class="filters" method="get" action="/exames_por_clinica" id="form-filtros">
@@ -55,14 +55,9 @@
                 <div class="kpi-label">No período</div>
             </div>
             <div class="kpi-box">
-                <h5>Total Baixados</h5>
-                <p data-kpi="total_baixados">{{ "{:,.0f}".format(kpis['total_baixados']) }}</p>
-                <div class="kpi-label">No período</div>
-            </div>
-            <div class="kpi-box">
                 <h5>Total Realizados</h5>
                 <p data-kpi="total_realizados">{{ "{:,.0f}".format(kpis['total_realizados']) }}</p>
-                <div class="kpi-label">No período</div>
+                <div class="kpi-label">Realizados ou baixados</div>
             </div>
             <div class="kpi-box">
                 <h5>Total Cancelados</h5>
@@ -77,7 +72,7 @@
         </div>
 
         <div class="kpi-container medias">
-            {% for chave, titulo in [('media_solicitados', 'Média Solicitados'), ('media_baixados', 'Média Baixados'),
+            {% for chave, titulo in [('media_solicitados', 'Média Solicitados'),
                                      ('media_realizados', 'Média Realizados'), ('media_cancelados', 'Média Cancelados'),
                                      ('media_sem_agendamento', 'Média sem Agendamento')] %}
             <div class="kpi-box">
@@ -98,16 +93,16 @@
                         <tr>
                             <th rowspan="2">Classificação</th>
                             <th rowspan="2">Exame</th>
-                            <th colspan="4" class="grupo-origem">Externo</th>
-                            <th colspan="4" class="grupo-origem">Emergência</th>
-                            <th colspan="4" class="grupo-origem">Interno</th>
-                            <th colspan="4" class="grupo-origem grupo-total">Total</th>
+                            <th colspan="3" class="grupo-origem">Externo</th>
+                            <th colspan="3" class="grupo-origem">Emergência</th>
+                            <th colspan="3" class="grupo-origem">Interno</th>
+                            <th colspan="3" class="grupo-origem grupo-total">Total</th>
                         </tr>
                         <tr class="sub-origem">
-                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
-                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
-                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
-                            <th>Solicitados</th><th>Baixados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Realizados</th><th>Cancelados</th>
+                            <th>Solicitados</th><th>Realizados</th><th>Cancelados</th>
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -119,7 +114,7 @@
         <div class="content">
             <div class="chart-container">
                 <h4>Tempo até a Realização e até a Baixa (por Classificação e Exame)</h4>
-                <p class="nota-origem">Até a realização: da solicitação até a realização (data e hora), sobre os realizados. Até a baixa: da realização até a baixa, pela diferença entre as datas (a baixa não tem hora), sobre os exames com realização e baixa.</p>
+                <p class="nota-origem">Realizados contam também os exames baixados. Até a realização: da solicitação até a realização (data e hora), sobre os exames com data de realização. Até a baixa: da realização até a baixa, pela diferença entre as datas (a baixa não tem hora), sobre os exames com realização e baixa.</p>
                 <div class="tabela-rolagem">
                 <table id="tabela-tempo-realizacao">
                     <thead>
@@ -130,7 +125,7 @@
                             <th colspan="5" class="grupo-origem">Até a Baixa</th>
                         </tr>
                         <tr class="sub-origem">
-                            <th>Realizados</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th><th>Mais de 4 dias</th>
+                            <th>Com realização</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th><th>Mais de 4 dias</th>
                             <th>Com baixa</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th><th>Mais de 4 dias</th>
                         </tr>
                     </thead>
@@ -167,7 +162,6 @@
                             <th>Clínica</th>
                             <th>Exame</th>
                             <th>Solicitados</th>
-                            <th>Baixados</th>
                             <th>Realizados</th>
                             <th>Cancelados</th>
                         </tr>
@@ -206,7 +200,7 @@
         // Resumo por clínica e exame (junta o antigo resumo por clínica com o
         // detalhamento): cada clínica com o subtotal, que se abre nos exames.
         function atualizarTabelaDetalhe() {
-            const campos = ['solicitados', 'baixados', 'realizados', 'cancelados'];
+            const campos = ['solicitados', 'realizados', 'cancelados'];
             const novo = () => Object.fromEntries(campos.map(k => [k, 0]));
             const grupos = {};
             const geral = novo();
@@ -237,7 +231,7 @@
             if (html) {
                 html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
             } else {
-                html = '<tr><td colspan="6" style="text-align:center;color:#999;">Nenhum dado encontrado para o período selecionado.</td></tr>';
+                html = '<tr><td colspan="5" style="text-align:center;color:#999;">Nenhum dado encontrado para o período selecionado.</td></tr>';
             }
             tbody.innerHTML = html;
         }
@@ -285,7 +279,7 @@
         // Total por exame, agrupado por classificação: soma as clínicas do
         // detalhe (que já vem com os filtros do servidor aplicados), separando
         // cada indicador pela origem da solicitação (externo/emergência/interno).
-        const METRICAS = ['solicitados', 'baixados', 'realizados', 'cancelados'];
+        const METRICAS = ['solicitados', 'realizados', 'cancelados'];
         const ORIGENS = ['externo', 'emergencia', 'interno'];
         function novoAcumulador() {
             const a = {};
@@ -307,7 +301,7 @@
             });
             const totalSolicitados = v => ORIGENS.reduce((s, o) => s + v[`solicitados_${o}`], 0);
             // ordem das colunas: origem (externo, emergência, interno) e, dentro
-            // de cada uma, solicitados / baixados / realizados / cancelados;
+            // de cada uma, solicitados / realizados / cancelados;
             // no fim, o total das três origens
             const celulas = v =>
                 ORIGENS.map(o => METRICAS.map((m, i) =>
@@ -336,7 +330,7 @@
             if (html) {
                 html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
             } else {
-                html = '<tr><td colspan="18" style="text-align:center;color:#999;">Nenhum dado encontrado para o período selecionado.</td></tr>';
+                html = '<tr><td colspan="14" style="text-align:center;color:#999;">Nenhum dado encontrado para o período selecionado.</td></tr>';
             }
             tbody.innerHTML = html;
         }
@@ -345,7 +339,7 @@
         // lado: até a realização (solicitação → realização) e até a baixa
         // (realização → baixa). `base` é a coluna de referência dos percentuais.
         const CATEGORIAS_TEMPO = [
-            { base: 'realizados', faixas: ['tempo_ate_1d', 'tempo_1_2d', 'tempo_2_4d', 'tempo_acima_4d'] },
+            { base: 'com_realizacao', faixas: ['tempo_ate_1d', 'tempo_1_2d', 'tempo_2_4d', 'tempo_acima_4d'] },
             { base: 'com_realizacao_e_baixa', faixas: ['baixa_ate_1d', 'baixa_1_2d', 'baixa_2_4d', 'baixa_acima_4d'] },
         ];
         function atualizarTabelaTempo() {
@@ -367,7 +361,7 @@
                 `<td class="inicio-grupo">${formatarNumero(v[c.base])}</td>` +
                 c.faixas.map(k => `<td>${formatarNumero(v[k])}${pct(v[k], v[c.base])}</td>`).join('')).join('');
             const temDados = v => CATEGORIAS_TEMPO.some(c => v[c.base] > 0);
-            const ordem = v => v.realizados;
+            const ordem = v => v.com_realizacao;
 
             const tbody = document.querySelector('#tabela-tempo-realizacao tbody');
             let html = '';

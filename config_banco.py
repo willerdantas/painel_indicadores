@@ -80,7 +80,7 @@ MODULOS_HOSPITALAR = (
     ('Indicadores LEAN', _TABELAS_INTERNACAO),                    # indicadores_hcasg.py
     ('Indicadores Hospitalares', _TABELAS_INTERNACAO),
     ('Indicadores da Emergência', _TABELAS_INTERNACAO),
-    ('Exames', ('t_clinica', 't_exame', 't_exame_classificacao', 't_exame_solic')),  # painel.py
+    ('Exames', ('t_clinica', 't_exame', 't_exame_solic')),  # painel.py (classificação: schema do painel)
     ('Ambulatório', ('t_especialidade', 't_internacao', 't_marcacao', 't_marcacao_situacao')),  # ambulatorio.py
 )
 TABELAS_USADAS = tuple(sorted({t for _nome, tabelas in MODULOS_HOSPITALAR for t in tabelas}))

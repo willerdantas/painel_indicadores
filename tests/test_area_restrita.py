@@ -430,3 +430,38 @@ def test_com_banco_configurado_senha_em_branco_nao_entra(cliente, admin_id):
     assert 'Banco de dados ainda não configurado' not in cliente.get('/login').get_data(as_text=True)
     assert cliente.post('/login', data={'usuario': 'admin', 'senha': ''}).status_code == 200
     assert usuarios.autenticar('admin', 'SenhaAdmin1') is not None  # senha intacta
+
+
+# ---------------------------------------------------------------- classificação de exames
+
+def test_classificacoes_no_menu_e_por_perfil(cliente, logar, admin_id):
+    assert 'classificacoes' in usuarios.CHAVES_PAGINAS
+    logar(admin_id)
+    assert 'Classificação de Exames' in cliente.get('/admin').get_data(as_text=True)
+    r = cliente.get('/admin/classificacoes')  # sem schema do painel nos testes: mostra o aviso
+    assert r.status_code == 200 and 'Schema dos dados do painel indisponível' in r.get_data(as_text=True)
+
+
+def test_classificacoes_bloqueada_sem_permissao(cliente, logar):
+    _, ids = _perfis_e_usuarios()
+    logar(ids['caio'])  # perfil Amplo: perfis, custos, simaq
+    assert cliente.get('/admin/classificacoes').status_code == 403
+    r = cliente.post('/admin/classificacoes/associar', json={'mudancas': {}}, headers={'X-CSRF-Token': 'tok'})
+    assert r.status_code == 403
+
+
+def test_associar_rejeita_dados_invalidos(cliente, logar, admin_id):
+    logar(admin_id)
+    r = cliente.post('/admin/classificacoes/associar', json={'mudancas': [1, 2]}, headers={'X-CSRF-Token': 'tok'})
+    assert r.status_code == 400
+
+
+def test_exames_sem_schema_do_painel_ficam_sem_classificacao():
+    import classificacao_exames
+    assert 'WHERE false' in classificacao_exames.subconsulta_sql()
+    assert classificacao_exames.nomes() == []
+
+
+def test_classificacao_saiu_do_banco_hospitalar():
+    import config_banco
+    assert 't_exame_classificacao' not in config_banco.TABELAS_USADAS

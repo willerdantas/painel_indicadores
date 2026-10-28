@@ -72,7 +72,9 @@ img { max-width: 100%; }
 }
 .cabecalho-marca { display: flex; flex-shrink: 0; }
 .cabecalho-logo { height: 68px; width: auto; object-fit: contain; }
-.cabecalho-titulo { display: flex; flex-direction: column; min-width: 0; padding-left: 1.25rem; border-left: 1px solid var(--border); }
+/* título longo: os botões descem para a linha de baixo em vez de sobrepor o título */
+.cabecalho { flex-wrap: wrap; row-gap: .5rem; }
+.cabecalho-titulo { display: flex; flex-direction: column; flex: 1 1 14rem; min-width: 0; padding-left: 1.25rem; border-left: 1px solid var(--border); }
 .cabecalho-titulo h1 {
     font-family: var(--fonte-titulo);
     font-size: 1.15rem;
@@ -719,6 +721,41 @@ img { max-width: 100%; }
 }
 
 /* ---------- página: admin_cadastros ---------- */
+/* ---------- página: admin_classificacoes ---------- */
+.pg-admin-classificacoes .dica.intro { position: relative; color: #fff; opacity: .9; margin: -12px 0 10px; font-size: 13px; }
+.pg-admin-classificacoes .grade-classificacao { position: relative; display: grid; grid-template-columns: minmax(340px, 460px) minmax(0, 1fr); gap: 20px; align-items: start; }
+.pg-admin-classificacoes h2 { display: flex; justify-content: space-between; align-items: baseline; }
+.pg-admin-classificacoes h2 .qtd { font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); }
+.pg-admin-classificacoes .form-novo, .pg-admin-classificacoes .lote, .pg-admin-classificacoes .filtros-exames { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
+.pg-admin-classificacoes .form-novo, .pg-admin-classificacoes .lote { padding: 10px 12px; background: var(--bg); border-radius: 10px; }
+.pg-admin-classificacoes .form-novo input[type=text], .pg-admin-classificacoes .lote select, .pg-admin-classificacoes .filtros-exames input, .pg-admin-classificacoes .filtros-exames select { width: auto; flex: 1 1 180px; font-size: 14px; padding: 8px 10px; background: #fff; }
+.pg-admin-classificacoes .lote span { font-size: 13px; color: var(--muted); }
+.pg-admin-classificacoes td input[type=text], .pg-admin-classificacoes td select { font-size: 13px; padding: 6px 8px; background: #fff; border-color: transparent; }
+.pg-admin-classificacoes td input[type=text]:hover, .pg-admin-classificacoes td select:hover { border-color: var(--border); }
+.pg-admin-classificacoes .num { text-align: right; width: 70px; color: var(--muted); }
+.pg-admin-classificacoes .grade-classificacao > .painel:first-child td:first-child { width: 100%; }
+.pg-admin-classificacoes .grade-classificacao > .painel:first-child td input[type=text] { min-width: 150px; }
+.pg-admin-classificacoes #tabela-exames td:last-child select { min-width: 210px; }
+.pg-admin-classificacoes .btn[disabled] { opacity: .35; cursor: not-allowed; }
+.pg-admin-classificacoes .rolagem { max-height: 520px; overflow-y: auto; border: 1px solid var(--linha); border-radius: 8px; }
+.pg-admin-classificacoes .rolagem table { font-size: 13px; }
+.pg-admin-classificacoes .rolagem thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.pg-admin-classificacoes .rolagem td { padding: 4px 8px; }
+.pg-admin-classificacoes .rolagem td small { color: var(--muted); }
+.pg-admin-classificacoes .sel { width: 34px; text-align: center; }
+.pg-admin-classificacoes .sel input { accent-color: var(--primaria); width: 16px; height: 16px; }
+.pg-admin-classificacoes tr.alterado td { background: var(--aviso-fundo); }
+.pg-admin-classificacoes .vazio { padding: 14px; color: var(--muted); font-size: 13px; text-align: center; }
+.pg-admin-classificacoes .rodape-exames { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-top: 14px; font-size: 13px; color: var(--muted); }
+.pg-admin-classificacoes .resultado { display: none; margin-top: 12px; border-radius: 10px; padding: 10px 14px; font-size: 14px; }
+.pg-admin-classificacoes .resultado.info { display: block; background: var(--linha); border: 1px solid var(--border); }
+.pg-admin-classificacoes .resultado.aviso { display: block; background: var(--aviso-fundo); border: 1px solid var(--amber); color: var(--orange); }
+.pg-admin-classificacoes .resultado.erro { display: block; background: var(--erro-fundo); border: 1px solid var(--peach); color: var(--orange); }
+.pg-admin-classificacoes pre.sql { background: var(--bg); border-radius: 8px; padding: 12px 14px; font-size: 14px; margin: 12px 0; white-space: pre-wrap; }
+@media (max-width: 900px) {
+  .pg-admin-classificacoes .grade-classificacao { grid-template-columns: 1fr; }
+}
+
 .pg-admin-cadastros .grupo-titulo { position: relative; color: #fff; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin: 26px 0 12px; }
 .pg-admin-cadastros .cadastros { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; align-items: start; }
 .pg-admin-cadastros .cadastro { scroll-margin-top: 20px; }

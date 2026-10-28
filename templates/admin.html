@@ -37,8 +37,9 @@
             {% if pode('producao') %}<a href="{{ url_for('admin_producao') }}" class="card">Lançar Dados de Produção</a>{% endif %}
             {% if pode('simaq') %}<a href="{{ url_for('admin_simaq') }}" class="card">Lançar Dados do SIMAQ</a>{% endif %}
             {% if pode('cadastros') %}<a href="{{ url_for('admin_cadastros') }}" class="card">Cadastros</a>{% endif %}
+            {% if pode('classificacoes') %}<a href="{{ url_for('admin_classificacoes') }}" class="card">Classificação de Exames</a>{% endif %}
             {% if eh_admin %}<a href="{{ url_for('admin_banco') }}" class="card">Configuração do Banco</a>{% endif %}
-            {% if not pode('usuarios') and not pode('perfis') and not pode('custos') and not pode('producao') and not pode('simaq') and not pode('cadastros') and not eh_admin %}
+            {% if not pode('usuarios') and not pode('perfis') and not pode('custos') and not pode('producao') and not pode('simaq') and not pode('cadastros') and not pode('classificacoes') and not eh_admin %}
             <p style="color:#fff;font-size:17px;position:relative;">Seu perfil ainda não tem áreas liberadas. Fale com o administrador.</p>
             {% endif %}
         </div>

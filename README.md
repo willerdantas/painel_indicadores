@@ -25,6 +25,7 @@ planilhas da pasta `dados/` e dos lançamentos feitos na área restrita.
 - Lançamento de custos por unidade, de produção hospitalar e do SIMAQ.
 - Importação da planilha mensal de custos (aba GERAL), com pré-visualização antes de gravar.
 - Cadastros: unidades, grupos de unidades e itens.
+- Classificação de Exames: cadastro das classificações e associação de cada exame a uma delas (usada no painel Exames).
 - Usuários e perfis de acesso: cada perfil libera só algumas telas.
 - Configuração do Banco (só administrador):
   - dados de conexão, guardados criptografados;
@@ -45,6 +46,7 @@ area_restrita.py       login, permissões e telas de /admin
 indicadores_hcasg.py   consultas dos indicadores hospitalares e da emergência
 ambulatorio.py         consultas do ambulatório
 custos.py              painel de custos
+classificacao_exames.py classificação dos exames (schema painel)
 banco_painel.py        schema "painel" (lançamentos) e migração das planilhas
 lancamento_custos.py   lançamento de custos por unidade
 importacao_custos.py   importação da planilha mensal de custos

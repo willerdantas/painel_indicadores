@@ -41,6 +41,7 @@ PAGINAS = [
     ('producao', 'Lançar Dados de Produção', ['/admin/producao']),
     ('simaq', 'Lançar Dados do SIMAQ', ['/admin/simaq']),
     ('cadastros', 'Cadastros', ['/admin/cadastros']),
+    ('classificacoes', 'Classificação de Exames', ['/admin/classificacoes']),
 ]
 CHAVES_PAGINAS = [p[0] for p in PAGINAS]
 

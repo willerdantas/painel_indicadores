@@ -66,14 +66,9 @@
                 <div class="kpi-label">No período</div>
             </div>
             <div class="kpi-box">
-                <h5>Total Baixados</h5>
-                <p data-kpi="total_baixados">{{ "{:,.0f}".format(kpis['total_baixados']) }}</p>
-                <div class="kpi-label">No período</div>
-            </div>
-            <div class="kpi-box">
                 <h5>Total Realizados</h5>
                 <p data-kpi="total_realizados">{{ "{:,.0f}".format(kpis['total_realizados']) }}</p>
-                <div class="kpi-label">No período</div>
+                <div class="kpi-label">Realizados ou baixados</div>
             </div>
             <div class="kpi-box">
                 <h5>Total Cancelados</h5>
@@ -88,7 +83,7 @@
         </div>
 
         <div class="kpi-container medias">
-            {% for chave, titulo in [('media_solicitados', 'Média Solicitados'), ('media_baixados', 'Média Baixados'),
+            {% for chave, titulo in [('media_solicitados', 'Média Solicitados'),
                                      ('media_realizados', 'Média Realizados'), ('media_cancelados', 'Média Cancelados'),
                                      ('media_sem_agendamento', 'Média sem Agendamento')] %}
             <div class="kpi-box">
@@ -101,7 +96,6 @@
 
         {% for id, titulo in [('solicitados', 'Exames Solicitados por Mês'),
                               ('realizados', 'Exames Realizados por Mês'),
-                              ('baixados', 'Exames Baixados por Mês'),
                               ('cancelados', 'Exames Cancelados por Mês'),
                               ('sem_agendamento', 'Exames Solicitados sem Agendamento por Mês')] %}
         <div class="content">
@@ -137,7 +131,6 @@
         const GRAFICOS = [
             { id: 'solicitados', nome: 'Solicitados' },
             { id: 'realizados', nome: 'Realizados' },
-            { id: 'baixados', nome: 'Baixados' },
             { id: 'cancelados', nome: 'Cancelados' },
             { id: 'sem_agendamento', nome: 'Sem agendamento' },
         ];

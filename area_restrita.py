@@ -23,6 +23,7 @@ import psycopg2
 from flask import abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
 
 import banco_painel
+import classificacao_exames
 import config_banco
 import importacao_custos
 import lancamento_custos
@@ -903,6 +904,47 @@ def admin_cadastros_excluir(tabela, registro_id):
     erro = cad.excluir(registro_id)
     flash(f'{cad.titulo}: {erro}' if erro else f'{cad.titulo}: registro excluído.', 'erro' if erro else 'ok')
     return redirect(url_for('admin_cadastros', _anchor=tabela))
+
+
+# ---------------------------------------------------------------- classificação dos exames
+
+@_rota('/admin/classificacoes')
+def admin_classificacoes():
+    if not banco_painel.pronto():
+        return render_template('admin_classificacoes.html', indisponivel=banco_painel.erro()
+                               or 'Banco de dados dos lançamentos indisponível.', sql=banco_painel.sql_criar_schema())
+    return render_template('admin_classificacoes.html', classificacoes=classificacao_exames.listar(),
+                           exames=classificacao_exames.exames())
+
+
+@_rota('/admin/classificacoes/salvar', methods=['POST'])
+def admin_classificacoes_salvar():
+    nome = request.form.get('nome')
+    erro = classificacao_exames.salvar(request.form.get('id', type=int), nome)
+    flash(erro or f'Classificação "{" ".join((nome or "").split())}" salva.', 'erro' if erro else 'ok')
+    return redirect(url_for('admin_classificacoes'))
+
+
+@_rota('/admin/classificacoes/<int:classificacao_id>/excluir', methods=['POST'])
+def admin_classificacoes_excluir(classificacao_id):
+    if not usuarios.eh_admin(g.usuario):
+        flash('Só o administrador pode excluir classificações.', 'erro')
+        return redirect(url_for('admin_classificacoes'))
+    erro = classificacao_exames.excluir(classificacao_id)
+    flash(erro or 'Classificação excluída.', 'erro' if erro else 'ok')
+    return redirect(url_for('admin_classificacoes'))
+
+
+@_rota('/admin/classificacoes/associar', methods=['POST'])
+def admin_classificacoes_associar():
+    """Recebe {"mudancas": {isn_exame: classificacao_id ou null}}."""
+    mudancas = (request.get_json(silent=True) or {}).get('mudancas')
+    if not isinstance(mudancas, dict):
+        return jsonify({'ok': False, 'erro': 'Dados inválidos.'}), 400
+    qtd, erro = classificacao_exames.associar(mudancas)
+    if erro:
+        return jsonify({'ok': False, 'erro': erro}), 400
+    return jsonify({'ok': True, 'alterados': qtd})
 
 
 def registrar(app):

@@ -1,0 +1,215 @@
+{% extends 'admin_base.html' %}
+{% block classe_pagina %}pg-admin-classificacoes{% endblock %}
+{% block titulo %}Classificação de Exames{% endblock %}
+{% block cabecalho %}Classificação de Exames{% endblock %}
+{% block conteudo %}
+
+{% if indisponivel %}
+<div class="painel" style="position:relative; max-width:820px;">
+    <h2>Schema dos dados do painel indisponível</h2>
+    <p>{{ indisponivel }}</p>
+    <pre class="sql">{{ sql }}</pre>
+</div>
+{% else %}
+<div class="dica intro">
+    As classificações agrupam os exames no painel Exames. Exame sem classificação aparece como "SEM CLASSIFICAÇÃO".
+</div>
+
+<div class="grade-classificacao">
+    {# ---------------------------------------------------------------- classificações #}
+    <section class="painel">
+        <h2>Classificações <span class="qtd">{{ classificacoes | length }}</span></h2>
+        <form class="form-novo" method="post" action="{{ url_for('admin_classificacoes_salvar') }}">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="text" name="nome" placeholder="Nova classificação" required aria-label="Nova classificação">
+            <button type="submit" class="btn pequeno">Incluir</button>
+        </form>
+        <table>
+            <thead><tr><th>Nome</th><th class="num">Exames</th><th></th></tr></thead>
+            <tbody>
+            {% for c in classificacoes %}
+            {% set fid = 'f-classificacao-' ~ c.id %}
+            <tr>
+                <td><input type="text" name="nome" value="{{ c.nome }}" form="{{ fid }}" required aria-label="Nome"></td>
+                <td class="num">{{ c.exames }}</td>
+                <td class="acoes-linha">
+                    <form id="{{ fid }}" method="post" action="{{ url_for('admin_classificacoes_salvar') }}">
+                        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                        <input type="hidden" name="id" value="{{ c.id }}">
+                        <button type="submit" class="btn pequeno secundario">Salvar</button>
+                    </form>
+                    {% if eh_admin %}
+                    <form method="post" action="{{ url_for('admin_classificacoes_excluir', classificacao_id=c.id) }}"
+                          onsubmit="return confirm('Excluir esta classificação?')">
+                        <input type="hidden" name="csrf" value="{{ csrf_token }}">
+                        <button type="submit" class="btn pequeno secundario"
+                                {% if c.exames %}disabled title="Tem exames associados"{% endif %}>Excluir</button>
+                    </form>
+                    {% endif %}
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="3" class="vazio">Nenhuma classificação cadastrada.</td></tr>
+            {% endfor %}
+            </tbody>
+        </table>
+    </section>
+
+    {# ---------------------------------------------------------------- exames #}
+    <section class="painel">
+        <h2>Exames <span class="qtd" id="qtd-exames"></span></h2>
+        <div class="filtros-exames">
+            <input type="text" id="filtro-texto" placeholder="Buscar exame…" aria-label="Buscar exame">
+            <select id="filtro-classificacao" aria-label="Filtrar por classificação">
+                <option value="">Todas as classificações</option>
+                <option value="sem">Sem classificação</option>
+                {% for c in classificacoes %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}
+            </select>
+        </div>
+        <div class="lote">
+            <span id="qtd-selecionados">0 selecionado(s)</span>
+            <select id="lote-classificacao" aria-label="Classificação para os selecionados">
+                <option value="">Sem classificação</option>
+                {% for c in classificacoes %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}
+            </select>
+            <button type="button" class="btn pequeno secundario" id="btn-lote">Aplicar aos selecionados</button>
+        </div>
+        <div class="rolagem">
+            <table id="tabela-exames">
+                <thead><tr>
+                    <th class="sel"><input type="checkbox" id="sel-todos" aria-label="Selecionar os exames filtrados"></th>
+                    <th>Exame</th><th>Classificação</th>
+                </tr></thead>
+                <tbody></tbody>
+            </table>
+        </div>
+        <div class="rodape-exames">
+            <span id="pendentes">Nenhuma alteração.</span>
+            <button type="button" class="btn" id="btn-salvar" disabled>Salvar alterações</button>
+        </div>
+        <div class="resultado" id="resultado" role="status" aria-live="polite"></div>
+    </section>
+</div>
+
+<script>
+    const EXAMES = {{ exames | tojson }};
+    const CLASSIFICACOES = {{ classificacoes | tojson }};
+    const original = Object.fromEntries(EXAMES.map(e => [e.isn_exame, e.classificacao_id]));
+    const atual = { ...original };
+    const selecionados = new Set();
+
+    const tbody = document.querySelector('#tabela-exames tbody');
+    const filtroTexto = document.getElementById('filtro-texto');
+    const filtroClass = document.getElementById('filtro-classificacao');
+    const btnSalvar = document.getElementById('btn-salvar');
+    const resultado = document.getElementById('resultado');
+
+    const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+    const normalizar = s => s.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+    const opcoes = '<option value="">Sem classificação</option>' +
+        CLASSIFICACOES.map(c => `<option value="${c.id}">${esc(c.nome)}</option>`).join('');
+    const mudancas = () => Object.keys(atual).filter(k => atual[k] !== original[k]);
+
+    function visiveis() {
+        const texto = normalizar(filtroTexto.value.trim());
+        const cls = filtroClass.value;
+        return EXAMES.filter(e => {
+            if (texto && !normalizar(e.exame).includes(texto) && String(e.isn_exame) !== texto) return false;
+            const c = atual[e.isn_exame];
+            if (cls === 'sem') return c == null;
+            if (cls) return String(c) === cls;
+            return true;
+        });
+    }
+
+    function desenhar() {
+        const lista = visiveis();
+        tbody.innerHTML = lista.map(e => `
+            <tr data-isn="${e.isn_exame}" class="${atual[e.isn_exame] !== original[e.isn_exame] ? 'alterado' : ''}">
+                <td class="sel"><input type="checkbox" class="sel-exame" ${selecionados.has(e.isn_exame) ? 'checked' : ''} aria-label="Selecionar"></td>
+                <td>${esc(e.exame)} <small>#${e.isn_exame}</small></td>
+                <td><select class="class-exame" aria-label="Classificação de ${esc(e.exame)}">${opcoes}</select></td>
+            </tr>`).join('') || '<tr><td colspan="3" class="vazio">Nenhum exame encontrado.</td></tr>';
+        tbody.querySelectorAll('tr[data-isn]').forEach(tr => {
+            tr.querySelector('select').value = atual[tr.dataset.isn] ?? '';
+        });
+        document.getElementById('qtd-exames').textContent = `${lista.length} de ${EXAMES.length}`;
+        document.getElementById('sel-todos').checked = lista.length > 0 && lista.every(e => selecionados.has(e.isn_exame));
+        atualizarContadores();
+    }
+
+    function atualizarContadores() {
+        const n = mudancas().length;
+        document.getElementById('pendentes').textContent = n ? `${n} alteração(ões) não salva(s).` : 'Nenhuma alteração.';
+        btnSalvar.disabled = n === 0;
+        document.getElementById('qtd-selecionados').textContent = `${selecionados.size} selecionado(s)`;
+    }
+
+    function definir(isn, valor) {
+        atual[isn] = valor === '' || valor == null ? null : Number(valor);
+    }
+
+    tbody.addEventListener('change', ev => {
+        const tr = ev.target.closest('tr[data-isn]');
+        if (!tr) return;
+        const isn = Number(tr.dataset.isn);
+        if (ev.target.classList.contains('class-exame')) {
+            definir(isn, ev.target.value);
+            tr.classList.toggle('alterado', atual[isn] !== original[isn]);
+            atualizarContadores();
+        } else if (ev.target.classList.contains('sel-exame')) {
+            ev.target.checked ? selecionados.add(isn) : selecionados.delete(isn);
+            atualizarContadores();
+        }
+    });
+    document.getElementById('sel-todos').addEventListener('change', ev => {
+        visiveis().forEach(e => ev.target.checked ? selecionados.add(e.isn_exame) : selecionados.delete(e.isn_exame));
+        desenhar();
+    });
+    document.getElementById('btn-lote').addEventListener('click', () => {
+        if (!selecionados.size) {
+            resultado.className = 'resultado aviso';
+            resultado.textContent = 'Selecione os exames na lista.';
+            return;
+        }
+        const valor = document.getElementById('lote-classificacao').value;
+        selecionados.forEach(isn => definir(isn, valor));
+        selecionados.clear();
+        desenhar();
+    });
+    filtroTexto.addEventListener('input', desenhar);
+    filtroClass.addEventListener('change', desenhar);
+
+    btnSalvar.addEventListener('click', async () => {
+        const dados = Object.fromEntries(mudancas().map(k => [k, atual[k]]));
+        btnSalvar.disabled = true;
+        resultado.className = 'resultado info';
+        resultado.textContent = 'Salvando…';
+        try {
+            const r = await fetch('{{ url_for("admin_classificacoes_associar") }}', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'X-CSRF-Token': '{{ csrf_token }}' },
+                body: JSON.stringify({ mudancas: dados }),
+            });
+            if (r.status === 401) {
+                window.location.href = '{{ url_for("login") }}?proximo=' + encodeURIComponent(location.pathname);
+                return;
+            }
+            const d = await r.json();
+            if (!d.ok) throw new Error(d.erro || 'Falha ao salvar.');
+            Object.assign(original, atual);
+            window.location.reload();  // atualiza as quantidades por classificação
+        } catch (e) {
+            resultado.className = 'resultado erro';
+            resultado.textContent = 'Não foi salvo: ' + e.message;
+            atualizarContadores();
+        }
+    });
+    window.addEventListener('beforeunload', ev => {
+        if (mudancas().length) { ev.preventDefault(); ev.returnValue = ''; }
+    });
+
+    desenhar();
+</script>
+{% endif %}
+{% endblock %}

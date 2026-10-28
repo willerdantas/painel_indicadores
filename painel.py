@@ -14,6 +14,7 @@ import banco_painel
 import custos
 import area_restrita
 import paginas_visiveis
+import classificacao_exames
 
 app = Flask(__name__)
 
@@ -680,11 +681,8 @@ def exames_por_clinica():
         cur.execute("SELECT dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
         clinicas = [r['dsc_clinica'] for r in cur.fetchall()]
 
-        cur.execute("""
-            SELECT DISTINCT classificacao FROM t_exame_classificacao
-            WHERE classificacao IS NOT NULL ORDER BY classificacao
-        """)
-        classificacoes = [r['classificacao'] for r in cur.fetchall()]
+        # classificação dos exames: schema do painel (Administração > Classificação de Exames)
+        classificacoes = classificacao_exames.nomes()
 
         id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial, data_final)
         params = [data_inicial, data_final, id_ini, id_fim]
@@ -709,9 +707,11 @@ def exames_por_clinica():
                 te.dsc_exame AS exame,
                 COALESCE(tec.classificacao, 'SEM CLASSIFICAÇÃO') AS classificacao,
                 COUNT(*) AS solicitados,
-                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL) AS baixados,
-                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS realizados,
+                -- realizados: com realização ou com baixa (os baixados contam como realizados)
+                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
+                -- base do tempo até a realização: só quem tem data/hora de realização
+                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS com_realizacao,
                 -- tempo da solicitação até a realização (a baixa, dat_agendamento,
                 -- só tem data). Faixas sem sobreposição; realização registrada
                 -- antes da solicitação não entra em nenhuma.
@@ -734,7 +734,7 @@ def exames_por_clinica():
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame
-            LEFT JOIN t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
+            LEFT JOIN {classificacao_exames.subconsulta_sql()} tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
               AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
               {filtro_clinica_sql}
@@ -756,9 +756,9 @@ def exames_por_clinica():
             'exame': r['exame'],
             'classificacao': r['classificacao'],
             'solicitados': int(r['solicitados']),
-            'baixados': int(r['baixados']),
             'realizados': int(r['realizados']),
             'cancelados': int(r['cancelados']),
+            'com_realizacao': int(r['com_realizacao']),
             'tempo_ate_1d': int(r['tempo_ate_1d']),
             'tempo_1_2d': int(r['tempo_1_2d']),
             'tempo_2_4d': int(r['tempo_2_4d']),
@@ -776,10 +776,9 @@ def exames_por_clinica():
     resumo_por_clinica = {}
     for r in dados_json:
         acc = resumo_por_clinica.setdefault(r['clinica'], {
-            'clinica': r['clinica'], 'solicitados': 0, 'baixados': 0, 'realizados': 0, 'cancelados': 0
+            'clinica': r['clinica'], 'solicitados': 0, 'realizados': 0, 'cancelados': 0
         })
         acc['solicitados'] += r['solicitados']
-        acc['baixados'] += r['baixados']
         acc['realizados'] += r['realizados']
         acc['cancelados'] += r['cancelados']
 
@@ -788,7 +787,6 @@ def exames_por_clinica():
     total_geral = {
         'clinica': 'TOTAL GERAL',
         'solicitados': sum(r['solicitados'] for r in resumo_json),
-        'baixados': sum(r['baixados'] for r in resumo_json),
         'realizados': sum(r['realizados'] for r in resumo_json),
         'cancelados': sum(r['cancelados'] for r in resumo_json),
     }
@@ -797,10 +795,9 @@ def exames_por_clinica():
     resumo_por_classificacao = {}
     for r in dados_json:
         acc = resumo_por_classificacao.setdefault(r['classificacao'], {
-            'classificacao': r['classificacao'], 'solicitados': 0, 'baixados': 0, 'realizados': 0, 'cancelados': 0
+            'classificacao': r['classificacao'], 'solicitados': 0, 'realizados': 0, 'cancelados': 0
         })
         acc['solicitados'] += r['solicitados']
-        acc['baixados'] += r['baixados']
         acc['realizados'] += r['realizados']
         acc['cancelados'] += r['cancelados']
 
@@ -808,14 +805,12 @@ def exames_por_clinica():
     resumo_classificacao_json.append({
         'classificacao': 'TOTAL GERAL',
         'solicitados': total_geral['solicitados'],
-        'baixados': total_geral['baixados'],
         'realizados': total_geral['realizados'],
         'cancelados': total_geral['cancelados'],
     })
 
     kpis = {
         'total_solicitados': total_geral['solicitados'],
-        'total_baixados': total_geral['baixados'],
         'total_realizados': total_geral['realizados'],
         'total_cancelados': total_geral['cancelados'],
         'total_sem_agendamento': sum(r['sem_agendamento'] for r in dados_json),
@@ -872,11 +867,8 @@ def graficos_mensais():
         cur.execute("SELECT dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
         clinicas = [r['dsc_clinica'] for r in cur.fetchall()]
 
-        cur.execute("""
-            SELECT DISTINCT classificacao FROM t_exame_classificacao
-            WHERE classificacao IS NOT NULL ORDER BY classificacao
-        """)
-        classificacoes = [r['classificacao'] for r in cur.fetchall()]
+        # classificação dos exames: schema do painel (Administração > Classificação de Exames)
+        classificacoes = classificacao_exames.nomes()
 
         cur.execute("""
             SELECT DISTINCT dsc_exame FROM t_exame ORDER BY dsc_exame
@@ -906,14 +898,14 @@ def graficos_mensais():
                 DATE_TRUNC('month', tes.dat_solicitacao)::date AS mes,
                 COALESCE(tec.classificacao, 'SEM CLASSIFICAÇÃO') AS classificacao,
                 COUNT(*) AS solicitados,
-                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL) AS baixados,
-                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS realizados,
+                -- realizados: com realização ou com baixa (os baixados contam como realizados)
+                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame
-            LEFT JOIN t_exame_classificacao tec ON tec.isn_exame = tes.isn_exame
+            LEFT JOIN {classificacao_exames.subconsulta_sql()} tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
               {filtros_sql}
             GROUP BY 1, 2
@@ -925,7 +917,7 @@ def graficos_mensais():
     except Exception as e:
         return render_template('error.html', message=f"Erro ao carregar dados dos gráficos mensais: {e}")
 
-    metricas = ['solicitados', 'baixados', 'realizados', 'cancelados', 'sem_agendamento']
+    metricas = ['solicitados', 'realizados', 'cancelados', 'sem_agendamento']
 
     # Todos os meses do período (inclusive os sem nenhum exame), em ordem.
     meses = []
@@ -948,7 +940,6 @@ def graficos_mensais():
 
     kpis = {
         'total_solicitados': total_geral['solicitados'],
-        'total_baixados': total_geral['baixados'],
         'total_realizados': total_geral['realizados'],
         'total_cancelados': total_geral['cancelados'],
         'total_sem_agendamento': total_geral['sem_agendamento'],
