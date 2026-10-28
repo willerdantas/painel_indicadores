@@ -36,7 +36,7 @@
                     {% if (d.total_custos - d.custo_total_planilha) | abs > 1 %}<span class="difere">planilha: R$ {{ d.custo_total_planilha | moeda_br }}</span>
                     {% else %}confere com o CUSTO TOTAL da planilha{% endif %}{% endif %}</div></div>
             <div class="card"><div class="rotulo">Itens de custo</div><div class="valor">{{ d.custos | length }}</div>
-                <div class="sub">{{ d.tipos | length }} tipos{% if d.novos.itens %} · {{ d.novos.itens }} novos{% endif %}</div></div>
+                <div class="sub">{{ d.tipos | length }} categorias{% if d.novos.itens %} · {{ d.novos.itens }} novos{% endif %}</div></div>
             <div class="card"><div class="rotulo">Unidades</div><div class="valor">{{ d.unidades | length }}</div>
                 <div class="sub">{{ d.grupos | length }} grupos{% if d.novos.unidades %} · {{ d.novos.unidades }} novas{% endif %}</div></div>
             <div class="card"><div class="rotulo">Itens de rateio</div><div class="valor">{{ d.rateios | length }}</div>
@@ -59,7 +59,7 @@
         <div class="alerta info">
             Serão cadastrados na confirmação (marcados como <span class="etiqueta novo">novo</span> abaixo):
             {% set partes = [] %}
-            {% if d.novos.tipos %}{% set _ = partes.append(d.novos.tipos ~ ' tipos de custo') %}{% endif %}
+            {% if d.novos.tipos %}{% set _ = partes.append(d.novos.tipos ~ ' categorias de custo') %}{% endif %}
             {% if d.novos.itens %}{% set _ = partes.append(d.novos.itens ~ ' itens de custo') %}{% endif %}
             {% if d.novos.grupos %}{% set _ = partes.append(d.novos.grupos ~ ' grupos de unidade') %}{% endif %}
             {% if d.novos.unidades %}{% set _ = partes.append(d.novos.unidades ~ ' unidades') %}{% endif %}

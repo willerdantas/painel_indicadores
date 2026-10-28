@@ -874,7 +874,8 @@ def admin_cadastros_salvar(tabela):
             flash(f'{cad.titulo}: {c.rotulo} inválido.', 'erro')
             return redirect(url_for('admin_cadastros', _anchor=tabela))
     erro = cad.salvar(request.form.get('id', type=int), nome,
-                      {tab: request.form.get(f'{tab}_id', type=int) for tab, _ in cad.pais}, extras)
+                      {tab: request.form.get(f'{tab}_id', type=int) for tab, _ in cad.pais}, extras,
+                      {tab: request.form.get(f'{tab}_id', type=int) for tab, *_ in cad.opcionais})
     flash(f'{cad.titulo}: {erro}' if erro else f'{cad.titulo}: "{nome}" salvo.', 'erro' if erro else 'ok')
     return redirect(url_for('admin_cadastros', _anchor=tabela))
 

@@ -128,3 +128,18 @@ def test_paginas_sem_dados_nao_quebram(cliente, tmp_path, monkeypatch):
     r = cliente.get('/financeiro')
     assert r.status_code == 404 and 'Sem dados' in r.get_data(as_text=True)
     assert cliente.get('/faturamento').status_code == 404
+
+
+def test_subcategoria_cooperativa_pelos_nomes_dos_itens():
+    """Só os itens citados entram em Cooperativa; os demais ficam sem subcategoria."""
+    nomes = ['CEMERG', 'CCÁRDIO', 'COAPH (Enfermeiros)', 'COAPH (Médicos Generalistas)', 'COMINT',
+             'COOPANEST', 'COOPCARDIO', 'COOPCLÍNIC', 'HEMOCOOP', 'Cooperativas', 'Salário / SESA']
+    dentro = [n for n in nomes if banco_painel._chave_nome(n).startswith(banco_painel.SUBCATEGORIA_COOPERATIVA)]
+    assert dentro == nomes[:6]
+
+
+def test_cadastro_item_custo_tem_subcategoria_opcional():
+    item = banco_painel.CADASTROS_POR_TABELA['item_custo']
+    assert item.pais == [('tipo_custo', 'Categoria')]
+    assert item.opcionais == [('subcategoria_custo', 'Subcategoria', 'Sem subcategoria', 'tipo_custo')]
+    assert banco_painel.CADASTROS_POR_TABELA['tipo_custo'].titulo == 'Categorias de Custo'

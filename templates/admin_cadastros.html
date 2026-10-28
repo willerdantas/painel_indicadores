@@ -34,6 +34,12 @@
                 {% for p in registros[tab] if p.ativo %}<option value="{{ p.id }}">{{ p.nome }}</option>{% endfor %}
             </select>
             {% endfor %}
+            {% for tab, rotulo, vazio, pai in cad.opcionais %}
+            <select name="{{ tab }}_id" class="opcional" data-pai="{{ pai }}_id" aria-label="{{ rotulo }}">
+                <option value="">{{ vazio }}</option>
+                {% for p in registros[tab] if p.ativo %}<option value="{{ p.id }}" data-pai="{{ p[pai ~ '_id'] }}">{{ p.nome }}</option>{% endfor %}
+            </select>
+            {% endfor %}
             <input type="text" name="nome" placeholder="Nome" required aria-label="Nome">
             {% for c in cad.extras %}
             <input type="text" name="{{ c.nome }}" class="curto" {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
@@ -50,6 +56,7 @@
             <table id="tb-{{ cad.tabela }}">
                 <thead><tr>
                     {% for tab, rotulo in cad.pais %}<th>{{ rotulo }}</th>{% endfor %}
+                    {% for tab, rotulo, vazio, pai in cad.opcionais %}<th>{{ rotulo }}</th>{% endfor %}
                     <th>Nome</th>
                     {% for c in cad.extras %}<th style="text-align:right;">{{ c.rotulo }}</th>{% endfor %}
                     {% if cad.uso %}<th style="text-align:right;">{{ cad.uso[2] | capitalize }}</th>{% endif %}
@@ -63,6 +70,14 @@
                     <td>
                         <select name="{{ tab }}_id" form="{{ fid }}" aria-label="{{ rotulo }}">
                             {% for p in registros[tab] %}<option value="{{ p.id }}" {{ 'selected' if p.id == r[tab ~ '_id'] }}>{{ p.nome }}{{ '' if p.ativo else ' (inativo)' }}</option>{% endfor %}
+                        </select>
+                    </td>
+                    {% endfor %}
+                    {% for tab, rotulo, vazio, pai in cad.opcionais %}
+                    <td>
+                        <select name="{{ tab }}_id" form="{{ fid }}" class="opcional" data-pai="{{ pai }}_id" aria-label="{{ rotulo }}">
+                            <option value="">{{ vazio }}</option>
+                            {% for p in registros[tab] if p.ativo or p.id == r[tab ~ '_id'] %}<option value="{{ p.id }}" data-pai="{{ p[pai ~ '_id'] }}" {{ 'selected' if p.id == r[tab ~ '_id'] }}>{{ p.nome }}{{ '' if p.ativo else ' (inativo)' }}</option>{% endfor %}
                         </select>
                     </td>
                     {% endfor %}
@@ -106,6 +121,21 @@
 {% endfor %}
 
 <script>
+    // cadastro opcional (ex.: subcategoria): só as opções da categoria escolhida na mesma linha
+    document.querySelectorAll('select.opcional').forEach(sel => {
+        const campo = sel.dataset.pai;
+        const pai = sel.form && sel.getAttribute('form')
+            ? document.querySelector(`select[name="${campo}"][form="${sel.getAttribute('form')}"]`)
+            : sel.closest('form').querySelector(`select[name="${campo}"]`);
+        if (!pai) return;
+        const filtrar = () => {
+            [...sel.options].forEach(o => { if (o.value) o.hidden = o.dataset.pai !== pai.value; });
+            if (sel.selectedOptions[0] && sel.selectedOptions[0].hidden) sel.value = '';
+        };
+        pai.addEventListener('change', filtrar);
+        filtrar();
+    });
+
     // filtro de cada seção: esconde as linhas que não contêm o texto
     document.querySelectorAll('.filtro').forEach(campo => {
         const linhas = document.querySelectorAll('#' + campo.dataset.alvo + ' tbody tr');

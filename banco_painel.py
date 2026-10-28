@@ -25,6 +25,7 @@ import sqlite3
 import statistics
 import threading
 import time
+import unicodedata
 from contextlib import contextmanager
 from decimal import Decimal
 
@@ -489,7 +490,7 @@ class TabelaNormalizada(TabelaMensal):
 
 CUSTOS = TabelaNormalizada(
     'custos',
-    [('tipo', 'Tipo de custo'), ('item', 'Item de custo')],
+    [('tipo', 'Categoria de custo'), ('item', 'Item de custo')],
     [Coluna('valor', 'Valor (R$)', 'moeda', total=True)],
     'CUSTO.xlsx', ['mes', 'tipo', 'item', 'valor'],
     cadastros=[('tipo_custo', 'tipo')], item=('item_custo', 'item'),
@@ -584,13 +585,18 @@ class Cadastro:
 
     pais:   [(tabela, rótulo)] cadastros a que o registro pertence
             (ex.: procedimento -> servico e tipo_servico)
+    opcionais: [(tabela, rótulo, texto do vazio, pai comum)] cadastros
+            opcionais (coluna <tabela>_id pode ficar nula); o escolhido tem
+            de ser do mesmo pai comum que o registro (ex.: item_custo ->
+            subcategoria_custo da mesma categoria tipo_custo)
     extras: [Coluna] atributos do registro (ex.: fator do indicador)
     uso:    (tabela, coluna, rótulo) que referencia o registro - um registro
             em uso não pode ser excluído"""
 
-    def __init__(self, tabela, titulo, grupo, pais=(), extras=(), uso=None):
+    def __init__(self, tabela, titulo, grupo, pais=(), extras=(), uso=None, opcionais=()):
         self.tabela, self.titulo, self.grupo = tabela, titulo, grupo
         self.pais, self.extras, self.uso = list(pais), list(extras), uso
+        self.opcionais = list(opcionais)
 
     @property
     def nome_sql(self):
@@ -599,6 +605,9 @@ class Cadastro:
     def listar(self):
         pais = ''.join(f', p{n}.nome AS {tab}_nome, r.{tab}_id' for n, (tab, _) in enumerate(self.pais))
         joins = ' '.join(f'JOIN {schema()}.{tab} p{n} ON p{n}.id = r.{tab}_id' for n, (tab, _) in enumerate(self.pais))
+        pais += ''.join(f', o{n}.nome AS {tab}_nome, r.{tab}_id' for n, (tab, *_) in enumerate(self.opcionais))
+        joins += ''.join(f' LEFT JOIN {schema()}.{tab} o{n} ON o{n}.id = r.{tab}_id'
+                         for n, (tab, *_) in enumerate(self.opcionais))
         extras = ''.join(f', r.{c.nome}' for c in self.extras)
         uso = (f', (SELECT count(*) FROM {schema()}.{self.uso[0]} u WHERE u.{self.uso[1]} = r.id) AS uso'
                if self.uso else ', 0 AS uso')
@@ -615,19 +624,31 @@ class Cadastro:
             r = cur.fetchone()
         return r['nome'] if r else None
 
-    def salvar(self, registro_id, nome, pais, extras):
+    def salvar(self, registro_id, nome, pais, extras, opcionais=None):
         """Cria (registro_id None) ou altera. pais = {tabela: id}; extras = {coluna: valor}
-        (valor None mantém o atual / usa o padrão). Retorna mensagem de erro ou None."""
+        (valor None mantém o atual / usa o padrão); opcionais = {tabela: id ou None}.
+        Retorna mensagem de erro ou None."""
         nome = (nome or '').strip()
         if not nome:
             return 'Informe o nome.'
         for tab, rotulo in self.pais:
             if not pais.get(tab):
                 return f'Escolha: {rotulo}.'
+        opcionais = opcionais or {}
         valores = {'nome': nome, **{f'{tab}_id': pais[tab] for tab, _ in self.pais},
+                   **{f'{tab}_id': opcionais.get(tab) for tab, *_ in self.opcionais},
                    **{c: v for c, v in extras.items() if v is not None}}
         try:
             with _cursor() as cur:
+                for tab, rotulo, _, pai in self.opcionais:
+                    if opcionais.get(tab) is None:
+                        continue
+                    cur.execute(f'SELECT {pai}_id AS pai FROM {schema()}.{tab} WHERE id = %s', [opcionais[tab]])
+                    r = cur.fetchone()
+                    if r is None:
+                        return 'Registro relacionado não encontrado; recarregue a página.'
+                    if r['pai'] != pais.get(pai):
+                        return f'{rotulo} de outra {dict(self.pais)[pai].lower()}; escolha uma da mesma ou deixe vazia.'
                 if registro_id is None:
                     cur.execute(f"INSERT INTO {self.nome_sql} ({', '.join(valores)}) "
                                 f"VALUES ({', '.join(['%s'] * len(valores))})", list(valores.values()))
@@ -653,8 +674,12 @@ class Cadastro:
 
 
 CADASTROS = [
-    Cadastro('tipo_custo', 'Tipos de Custo', 'Custos', uso=('item_custo', 'tipo_custo_id', 'itens')),
-    Cadastro('item_custo', 'Itens de Custo', 'Custos', pais=[('tipo_custo', 'Tipo de custo')],
+    # categoria de custo: tabela tipo_custo (nome antigo, mantido no banco)
+    Cadastro('tipo_custo', 'Categorias de Custo', 'Custos', uso=('item_custo', 'tipo_custo_id', 'itens')),
+    Cadastro('subcategoria_custo', 'Subcategorias de Custo', 'Custos', pais=[('tipo_custo', 'Categoria')],
+             uso=('item_custo', 'subcategoria_custo_id', 'itens')),
+    Cadastro('item_custo', 'Itens de Custo', 'Custos', pais=[('tipo_custo', 'Categoria')],
+             opcionais=[('subcategoria_custo', 'Subcategoria', 'Sem subcategoria', 'tipo_custo')],
              uso=('custos', 'item_custo_id', 'lançamentos')),
     Cadastro('tipo_servico', 'Tipos de Serviço', 'Produção Hospitalar',
              uso=('procedimento', 'tipo_servico_id', 'procedimentos')),
@@ -840,6 +865,51 @@ def _criar_tabelas_classificacao(cur):
         print(f'[painel] exame_classificacao: {linhas} exames classificados (de t_exame_classificacao)')
 
 
+# Subcategoria inicial: Cooperativa (categoria Pessoal) com os itens que
+# começam por estes nomes; os demais itens ficam sem subcategoria até
+# serem associados na tela Cadastros.
+SUBCATEGORIA_COOPERATIVA = ('CEMERG', 'CCARDIO', 'COAPH', 'COMINT', 'COOPANEST')
+
+
+def _chave_nome(nome):
+    sem_acento = unicodedata.normalize('NFKD', nome or '').encode('ascii', 'ignore').decode()
+    return ' '.join(sem_acento.upper().split())
+
+
+def _criar_subcategorias_custo(cur):
+    """subcategoria_custo (dentro de uma categoria tipo_custo) e a coluna
+    opcional item_custo.subcategoria_custo_id. Na primeira vez cria a
+    Cooperativa em Pessoal (registrado em migracao). Depende de migracao."""
+    s = schema()
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.subcategoria_custo (
+                       id            SERIAL PRIMARY KEY,
+                       tipo_custo_id INTEGER NOT NULL REFERENCES {s}.tipo_custo (id),
+                       nome          TEXT NOT NULL,
+                       ativo         BOOLEAN NOT NULL DEFAULT true,
+                       UNIQUE (tipo_custo_id, nome))""")
+    cur.execute(f'ALTER TABLE {s}.item_custo ADD COLUMN IF NOT EXISTS '
+                f'subcategoria_custo_id INTEGER REFERENCES {s}.subcategoria_custo (id)')
+    cur.execute(f"SELECT 1 FROM {s}.migracao WHERE tabela = 'subcategoria_custo'")
+    if cur.fetchone():
+        return
+    linhas = 0
+    cur.execute(f'SELECT id, nome FROM {s}.tipo_custo')
+    pessoal = next((r['id'] for r in cur.fetchall() if _chave_nome(r['nome']) == 'PESSOAL'), None)
+    if pessoal is not None:
+        cur.execute(f"""INSERT INTO {s}.subcategoria_custo (tipo_custo_id, nome) VALUES (%s, 'Cooperativa')
+                        ON CONFLICT (tipo_custo_id, nome) DO UPDATE SET nome = EXCLUDED.nome RETURNING id""",
+                    [pessoal])
+        cooperativa = cur.fetchone()['id']
+        cur.execute(f'SELECT id, nome FROM {s}.item_custo WHERE tipo_custo_id = %s AND subcategoria_custo_id IS NULL',
+                    [pessoal])
+        ids = [r['id'] for r in cur.fetchall() if _chave_nome(r['nome']).startswith(SUBCATEGORIA_COOPERATIVA)]
+        if ids:
+            cur.execute(f'UPDATE {s}.item_custo SET subcategoria_custo_id = %s WHERE id = ANY(%s)', [cooperativa, ids])
+            linhas = len(ids)
+            print(f'[painel] subcategoria Cooperativa (Pessoal): {linhas} itens')
+    cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('subcategoria_custo', %s)", [linhas])
+
+
 def _criar_controle_migracao(cur):
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS {schema()}.migracao (
@@ -895,6 +965,7 @@ def iniciar(forcar=False):
                 _criar_tabelas_unidade(cur)
                 _criar_controle_migracao(cur)
                 _criar_tabelas_classificacao(cur)
+                _criar_subcategorias_custo(cur)
             for t in TABELAS:
                 if _migracao_feita(t):
                     continue
