@@ -197,6 +197,27 @@ def test_ambulatorio_consultas_por_status_por_sala(monkeypatch):
     assert d['salas'] == ['SL-01']
 
 
+def test_ambulatorio_pedidos_simultaneos_fazem_uma_consulta():
+    import threading
+    import time
+    import ambulatorio
+    chamadas = []
+
+    def calcular():
+        chamadas.append(1)
+        time.sleep(0.2)  # consulta demorada no banco
+        return ['ok']
+    chave = ('teste-simultaneo', time.monotonic())
+    resultados = []
+    fios = [threading.Thread(target=lambda: resultados.append(ambulatorio._em_cache(chave, calcular)))
+            for _ in range(5)]
+    for f in fios:
+        f.start()
+    for f in fios:
+        f.join()
+    assert chamadas == [1] and resultados == [['ok']] * 5
+
+
 def test_ambulatorio_filtro_sexo_municipio_macrorregiao():
     import ambulatorio
     mapa = {'FORTALEZA': '1ª Fortaleza', 'SOBRAL': '2ª Sobral'}

@@ -17,19 +17,22 @@ criados no banco hospitalar:
 
 (um ano em ~2 s). O filtro de data fica na própria coluna (sem ::date) para
 usar o índice. Num servidor novo, sem esses índices, a página volta a ficar lenta.
-A consulta busca, uma vez por período, um resumo agrupado (dia ×
-especialidade × status) que fica em memória por alguns minutos; os filtros
-de especialidade, status, sexo, município e macrorregião são aplicados
-sobre esse resumo, sem nova consulta ao banco.
+t_internacao e t_marcacao são lidas uma única vez por período
+(_visitas_periodo, um registro por atendimento, em memória por alguns
+minutos); o resumo por dia, as consultas e as salas partem desses registros,
+e os filtros de especialidade, status, sexo, município e macrorregião são
+aplicados neles, sem nova consulta ao banco. Pedidos simultâneos do mesmo
+período esperam a mesma consulta (_em_cache). Consulta acima de 5 s deixa
+um aviso no log ("[ambulatorio] consulta ... levou").
 
 Horário e tempo das consultas: vêm do registro do atendimento médico
 (t_internacao_atendimento), com a data (dat_ini/dat_fim) e a hora em texto
 "HH:MM" (dsc_hor_ini/dsc_hor_fim) de início e de fim. Só a consulta realizada
 tem esse registro (falta e cancelamento não). A tabela não tem índice em
-dat_ini nem em isn_internacao (leitura inteira, ~1 s); a marcação de cada
-consulta é buscada com LATERAL pelo índice de t_marcacao.isn_internacao,
-porque o planejador subestima o período em dat_ini e, juntando as CTEs,
-caía num laço de milhões de comparações.
+dat_ini nem em isn_internacao (leitura inteira, ~1 s). A especialidade de
+cada consulta vem dos atendimentos já lidos; não buscar a marcação consulta
+a consulta no banco: sem o índice em t_marcacao.isn_internacao, isso lia a
+tabela inteira uma vez por consulta (minutos).
 """
 
 import statistics
@@ -63,15 +66,43 @@ def _guardar(chave, valor):
     return valor
 
 
-# atendimentos do período e a marcação de cada um (especialidade e status)
-_CTE_ATENDIMENTOS = """
-        WITH atend AS MATERIALIZED (
-            SELECT ti.isn_internacao, ti.dat_cadastro, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
-            FROM t_internacao ti
-            WHERE ti.isn_tipo_atendimento = 4
-              -- intervalo na própria coluna (sem ::date) para poder usar índice em dat_cadastro
-              AND ti.dat_cadastro >= %s AND ti.dat_cadastro < %s
-        ),
+_travas = {}  # uma trava por chave em cálculo
+
+
+def _em_cache(chave, calcular):
+    """Valor do cache ou calcular(). Pedidos simultâneos da mesma chave (a
+    página e as salas, ou filtros trocados enquanto o banco responde) esperam
+    o primeiro cálculo em vez de repetir a mesma consulta pesada no banco."""
+    valor = _do_cache(chave)
+    if valor is not None:
+        return valor
+    with _cache_lock:
+        trava = _travas.setdefault(chave, threading.Lock())
+    with trava:
+        valor = _do_cache(chave)
+        if valor is None:
+            valor = _guardar(chave, calcular())
+        with _cache_lock:
+            _travas.pop(chave, None)
+    return valor
+
+
+_AVISO_LENTO = 5  # segundos
+
+
+def _consultar(nome, sql, params):
+    """fetch_all com aviso no log quando a consulta demora (diagnóstico no servidor)."""
+    inicio = time.monotonic()
+    rows = fetch_all(sql, params) or []
+    duracao = time.monotonic() - inicio
+    if duracao > _AVISO_LENTO:
+        print(f'[ambulatorio] consulta {nome} levou {duracao:.1f} s ({len(rows)} linhas); '
+              'confira os índices citados no início de ambulatorio.py')
+    return rows
+
+
+# marcação de cada atendimento de "atend" (especialidade e status)
+_CTE_MARCACAO = """
         marcacao AS MATERIALIZED (
             -- uma marcação por atendimento (a mais recente, se houver mais)
             SELECT DISTINCT ON (tm.isn_internacao)
@@ -102,81 +133,87 @@ _JOINS_MUNICIPIO_SEXO = """
         LEFT JOIN t_municipio tmu ON tmu.isn_municipio = a.isn_municipio
         LEFT JOIN t_uf tuf ON tuf.isn_uf = a.isn_uf
         LEFT JOIN t_paciente tp ON tp.isn_paciente = a.isn_paciente"""
+# atendimentos do período e a marcação de cada um
+_ATEND_PERIODO = """
+            SELECT ti.isn_internacao, ti.dat_cadastro, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 4
+              -- intervalo na própria coluna (sem ::date) para poder usar índice em dat_cadastro
+              AND ti.dat_cadastro >= %s AND ti.dat_cadastro < %s"""
+_CTE_ATENDIMENTOS = f"""
+        WITH atend AS MATERIALIZED ({_ATEND_PERIODO}
+        ),{_CTE_MARCACAO}"""
 
 
 def _resumo_periodo(dt_ini, dt_fim):
-    """Linhas agrupadas do período (com cache em memória)."""
-    chave = (dt_ini, dt_fim)
-    resumo = _do_cache(chave)
-    if resumo is not None:
-        return resumo
-
-    rows = fetch_all(f"""{_CTE_ATENDIMENTOS}
-        SELECT
-            a.dat_cadastro::date                          AS dia,{_ESPECIALIDADE_STATUS}{_MUNICIPIO_SEXO},
-            COUNT(*)                                      AS qtd
-        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
-        GROUP BY 1, 2, 3, 4, 5
-    """, [dt_ini, dt_fim + timedelta(days=1)])
-    return _guardar(chave, [
-        {
-            "dia": r["dia"],
-            "especialidade": r["especialidade"].strip(),
-            "status": r["status"].strip(),
-            "municipio": r["municipio"].strip(),
-            "sexo": r["sexo"].strip(),
-            "qtd": int(r["qtd"]),
-        }
-        for r in rows or []
-    ])
+    """Atendimentos agrupados por dia × especialidade × status × município ×
+    sexo, montados dos atendimentos do período (sem outra consulta ao banco)."""
+    grupos = {}
+    for _, esp, st, dia, municipio, sexo, *_ in _visitas_periodo(dt_ini, dt_fim):
+        chave = (dia, esp, st, municipio, sexo)
+        grupos[chave] = grupos.get(chave, 0) + 1
+    return [{"dia": d, "especialidade": e, "status": s, "municipio": m, "sexo": x, "qtd": q}
+            for (d, e, s, m, x), q in grupos.items()]
 
 
 _HORA_VALIDA = "'^([01]?[0-9]|2[0-3]):[0-5][0-9]$'"
 _MINUTOS_MAXIMO = 12 * 60  # consulta mais longa que isso é erro de digitação da hora
+_SEM_PERFIL = ('Sem especialidade', 'Sem marcação', 'Não informado', 'Sem município')
+
+
+def _perfil_atendimentos(internacoes):
+    """{isn_internacao: (especialidade, status, sexo, município)} de
+    atendimentos avulsos (consultas cujo atendimento foi cadastrado fora do
+    período). Uma leitura de t_marcacao para todos, não uma por atendimento."""
+    rows = _consultar('perfil', f"""
+        WITH atend AS MATERIALIZED (
+            SELECT ti.isn_internacao, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
+            FROM t_internacao ti
+            WHERE ti.isn_internacao = ANY(%s)
+        ),{_CTE_MARCACAO}
+        SELECT a.isn_internacao AS internacao,{_ESPECIALIDADE_STATUS}{_MUNICIPIO_SEXO}
+        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
+    """, [list(internacoes)])
+    return {r["internacao"]: (r["especialidade"].strip(), r["status"].strip(), r["sexo"].strip(),
+                              r["municipio"].strip()) for r in rows}
 
 
 def _consultas_periodo(dt_ini, dt_fim):
     """Um registro por consulta realizada no período (data de início em
     t_internacao_atendimento.dat_ini): (especialidade, status, hora de início,
-    duração em minutos, sexo, município). Hora fora do formato HH:MM, sem fim ou duração fora
-    de 0 a 12 h: None (com cache em memória)."""
-    chave = ('consultas', dt_ini, dt_fim)
-    consultas = _do_cache(chave)
-    if consultas is not None:
-        return consultas
+    duração em minutos, sexo, município). Hora fora do formato HH:MM, sem fim
+    ou duração fora de 0 a 12 h: None (com cache em memória).
 
-    rows = fetch_all(f"""
-        WITH atend AS MATERIALIZED (
-            SELECT x.isn_internacao, x.dat_ini, x.dsc_hor_ini, x.dat_fim, x.dsc_hor_fim,
-                   ti.isn_paciente, ti.isn_municipio, ti.isn_uf
+    Especialidade, status, sexo e município vêm dos atendimentos do período
+    (_visitas_periodo, já em memória); só a consulta de atendimento
+    cadastrado noutro dia vai ao banco. Assim a busca da marcação não depende
+    de índice em t_marcacao.isn_internacao (sem ele, buscar a marcação de
+    cada consulta lia a tabela inteira uma vez por consulta)."""
+    def calcular():
+        rows = _consultar('consultas', f"""
+            SELECT x.isn_internacao AS internacao,
+                CASE WHEN x.dsc_hor_ini ~ {_HORA_VALIDA}
+                     THEN split_part(x.dsc_hor_ini, ':', 1)::int END AS hora,
+                CASE WHEN x.dsc_hor_ini ~ {_HORA_VALIDA} AND x.dsc_hor_fim ~ {_HORA_VALIDA} AND x.dat_fim IS NOT NULL
+                     THEN EXTRACT(EPOCH FROM (x.dat_fim::date + x.dsc_hor_fim::time)
+                                           - (x.dat_ini::date + x.dsc_hor_ini::time)) / 60 END AS minutos
             FROM t_internacao_atendimento x
             JOIN t_internacao ti ON ti.isn_internacao = x.isn_internacao AND ti.isn_tipo_atendimento = 4
             WHERE x.dat_ini >= %s AND x.dat_ini < %s
-        )
-        SELECT{_ESPECIALIDADE_STATUS}
-            CASE WHEN a.dsc_hor_ini ~ {_HORA_VALIDA}
-                 THEN split_part(a.dsc_hor_ini, ':', 1)::int END AS hora,
-            CASE WHEN a.dsc_hor_ini ~ {_HORA_VALIDA} AND a.dsc_hor_fim ~ {_HORA_VALIDA} AND a.dat_fim IS NOT NULL
-                 THEN EXTRACT(EPOCH FROM (a.dat_fim::date + a.dsc_hor_fim::time)
-                                       - (a.dat_ini::date + a.dsc_hor_ini::time)) / 60 END AS minutos,{_MUNICIPIO_SEXO}
-        FROM atend a
-        LEFT JOIN LATERAL (
-            -- a marcação mais recente da consulta, pelo índice de t_marcacao.isn_internacao
-            SELECT tm.isn_especialidade, tm.dsc_especialidade, tm.isn_marcacao_situacao
-            FROM t_marcacao tm
-            WHERE tm.isn_internacao = a.isn_internacao
-            ORDER BY tm.isn_marcacao DESC
-            LIMIT 1
-        ) m ON TRUE
-        LEFT JOIN t_especialidade te ON te.isn_especialidade = m.isn_especialidade
-        LEFT JOIN t_marcacao_situacao tms ON tms.isn_marcacao_situacao = m.isn_marcacao_situacao{_JOINS_MUNICIPIO_SEXO}
-    """, [dt_ini, dt_fim + timedelta(days=1)])
-    return _guardar(chave, [
-        (r["especialidade"].strip(), r["status"].strip(), r["hora"],
-         float(r["minutos"]) if r["minutos"] is not None and 0 <= r["minutos"] <= _MINUTOS_MAXIMO else None,
-         r["sexo"].strip(), r["municipio"].strip())
-        for r in rows or []
-    ])
+        """, [dt_ini, dt_fim + timedelta(days=1)])
+        perfil = {v[7]: (v[1], v[2], v[5], v[4]) for v in _visitas_periodo(dt_ini, dt_fim)}
+        faltam = {r["internacao"] for r in rows} - perfil.keys()
+        if faltam:
+            perfil.update(_perfil_atendimentos(sorted(faltam)))
+        consultas = []
+        for r in rows:
+            esp, st, sexo, municipio = perfil.get(r["internacao"], _SEM_PERFIL)
+            minutos = r["minutos"]
+            consultas.append((esp, st, r["hora"],
+                              float(minutos) if minutos is not None and 0 <= minutos <= _MINUTOS_MAXIMO else None,
+                              sexo, municipio))
+        return consultas
+    return _em_cache(('consultas', dt_ini, dt_fim), calcular)
 
 
 def tempo_consulta(consultas, especialidade=None, status=None):
@@ -203,28 +240,27 @@ def tempo_consulta(consultas, especialidade=None, status=None):
 
 def _visitas_periodo(dt_ini, dt_fim):
     """Um registro por atendimento: (paciente, especialidade, status, dia,
-    município, sexo, idade), para a tabela por prontuário e os atendimentos
-    por município, sexo e idade (com cache em memória). O município é o do atendimento
+    município, sexo, idade, isn_internacao). É a única leitura de
+    t_internacao e t_marcacao da página: o resumo, as consultas e as salas
+    partem daqui (com cache em memória). O município é o do atendimento
     (t_internacao.isn_municipio), com a UF: há nomes iguais em estados diferentes.
     O sexo vem do cadastro do paciente (t_paciente.dsc_sexo); a idade, em anos
     completos na data do atendimento, de t_paciente.dat_nascimento (sem data
     ou fora de 0 a 120 anos: None)."""
-    chave = ('visitas', dt_ini, dt_fim)
-    visitas = _do_cache(chave)
-    if visitas is not None:
-        return visitas
-
-    rows = fetch_all(f"""{_CTE_ATENDIMENTOS}
-        SELECT a.isn_paciente AS paciente,{_ESPECIALIDADE_STATUS}
-            a.dat_cadastro::date AS dia,{_MUNICIPIO_SEXO},
-            date_part('year', age(a.dat_cadastro::date, tp.dat_nascimento::date))::int AS idade
-        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
-    """, [dt_ini, dt_fim + timedelta(days=1)])
-    return _guardar(chave, [
-        (r["paciente"], r["especialidade"].strip(), r["status"].strip(), r["dia"], r["municipio"].strip(),
-         r["sexo"].strip(), r["idade"] if r["idade"] is not None and 0 <= r["idade"] <= _IDADE_MAXIMA else None)
-        for r in rows or []
-    ])
+    def calcular():
+        rows = _consultar('atendimentos', f"""{_CTE_ATENDIMENTOS}
+            SELECT a.isn_internacao AS internacao, a.isn_paciente AS paciente,{_ESPECIALIDADE_STATUS}
+                a.dat_cadastro::date AS dia,{_MUNICIPIO_SEXO},
+                date_part('year', age(a.dat_cadastro::date, tp.dat_nascimento::date))::int AS idade
+            FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
+        """, [dt_ini, dt_fim + timedelta(days=1)])
+        return [
+            (r["paciente"], r["especialidade"].strip(), r["status"].strip(), r["dia"], r["municipio"].strip(),
+             r["sexo"].strip(), r["idade"] if r["idade"] is not None and 0 <= r["idade"] <= _IDADE_MAXIMA else None,
+             r["internacao"])
+            for r in rows
+        ]
+    return _em_cache(('visitas', dt_ini, dt_fim), calcular)
 
 
 def por_municipio(visitas, especialidade=None, status=None):
@@ -394,34 +430,32 @@ def _salas_periodo(dt_ini, dt_fim):
     t_leito.dsc_leito (SL-01, TRANSPLANTE CARDÍACO 5...; todos na enfermaria
     "Consultórios" da clínica AMBULATORIO). t_internacao_leito não tem índice
     em isn_internacao: esta consulta lê a tabela inteira (~280 MB), por isso
-    é separada da principal e a página a carrega depois dos outros gráficos."""
-    chave = ('salas', dt_ini, dt_fim)
-    salas = _do_cache(chave)
-    if salas is not None:
-        return salas
-
-    rows = fetch_all(f"""{_CTE_ATENDIMENTOS},
-        leito AS MATERIALIZED (
-            -- um leito por atendimento (o último, se houver mais)
-            SELECT DISTINCT ON (il.isn_internacao) il.isn_internacao, il.isn_leito
-            FROM t_internacao_leito il
-            WHERE il.isn_internacao IN (SELECT isn_internacao FROM atend)
-            ORDER BY il.isn_internacao, il.isn_internacao_leito DESC
-        )
-        SELECT
-            COALESCE(NULLIF(TRIM(tl.dsc_leito), ''), 'Sem sala') AS sala,{_ESPECIALIDADE_STATUS}{_MUNICIPIO_SEXO},
-            COUNT(*)                                      AS qtd
-        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
-        LEFT JOIN leito l ON l.isn_internacao = a.isn_internacao
-        LEFT JOIN t_leito tl ON tl.isn_leito = l.isn_leito
-        GROUP BY 1, 2, 3, 4, 5
-    """, [dt_ini, dt_fim + timedelta(days=1)])
-    return _guardar(chave, [
-        {"sala": r["sala"].strip(), "especialidade": r["especialidade"].strip(),
-         "status": r["status"].strip(), "municipio": r["municipio"].strip(), "sexo": r["sexo"].strip(),
-         "qtd": int(r["qtd"])}
-        for r in rows or []
-    ])
+    é separada da principal e a página a carrega depois dos outros gráficos.
+    Do banco vem só a sala de cada atendimento; especialidade, status, sexo e
+    município vêm de _visitas_periodo (sem ler t_marcacao de novo)."""
+    def calcular():
+        rows = _consultar('salas', f"""
+            WITH atend AS MATERIALIZED ({_ATEND_PERIODO}
+            ),
+            leito AS MATERIALIZED (
+                -- um leito por atendimento (o último, se houver mais)
+                SELECT DISTINCT ON (il.isn_internacao) il.isn_internacao, il.isn_leito
+                FROM t_internacao_leito il
+                WHERE il.isn_internacao IN (SELECT isn_internacao FROM atend)
+                ORDER BY il.isn_internacao, il.isn_internacao_leito DESC
+            )
+            SELECT l.isn_internacao AS internacao, NULLIF(TRIM(tl.dsc_leito), '') AS sala
+            FROM leito l
+            LEFT JOIN t_leito tl ON tl.isn_leito = l.isn_leito
+        """, [dt_ini, dt_fim + timedelta(days=1)])
+        sala_de = {r["internacao"]: r["sala"] for r in rows}
+        grupos = {}
+        for _, esp, st, _, municipio, sexo, _, internacao in _visitas_periodo(dt_ini, dt_fim):
+            chave = ((sala_de.get(internacao) or 'Sem sala').strip(), esp, st, municipio, sexo)
+            grupos[chave] = grupos.get(chave, 0) + 1
+        return [{"sala": s, "especialidade": e, "status": st, "municipio": m, "sexo": x, "qtd": q}
+                for (s, e, st, m, x), q in grupos.items()]
+    return _em_cache(('salas', dt_ini, dt_fim), calcular)
 
 
 def get_salas(data_ini, data_fim, especialidade=None, status=None, sexo=None, municipio=None, macrorregiao=None):
