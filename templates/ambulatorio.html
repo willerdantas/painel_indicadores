@@ -73,6 +73,12 @@
         <div class="unit">concluído + alta ambulatorial</div>
         <div class="icon">✅</div>
       </div>
+      <div class="kpi c5">
+        <div class="label">Alta Ambulatorial</div>
+        <div class="value" id="k_altas">—</div>
+        <div class="unit" id="k_taxa_alta">—</div>
+        <div class="icon">🏁</div>
+      </div>
       <div class="kpi c9">
         <div class="label">Faltas</div>
         <div class="value" id="k_faltas">—</div>
@@ -97,7 +103,71 @@
       </div>
       <div class="graf-card full">
         <h3>Atendimentos por especialidade</h3>
-        <div class="chart-box" id="box_especialidade"><canvas id="chart_especialidade"></canvas></div>
+        <div class="rolagem-grafico"><div class="chart-box" id="box_especialidade"><canvas id="chart_especialidade"></canvas></div></div>
+      </div>
+      <div class="graf-card full">
+        <h3>Atendimentos por sexo e por especialidade</h3>
+        <div class="nota" id="sexo_resumo"></div>
+        <div class="por-sexo">
+          <div class="chart-box" style="height:260px;"><canvas id="chart_sexo"></canvas></div>
+          <div class="rolagem-grafico"><div class="chart-box" id="box_sexo_esp"><canvas id="chart_sexo_esp"></canvas></div></div>
+        </div>
+      </div>
+      <div class="graf-card full">
+        <h3>Atendimentos por idade</h3>
+        <div class="nota" id="idade_resumo"></div>
+        <div class="chart-box" style="height:340px;"><canvas id="chart_idade"></canvas></div>
+      </div>
+      <div class="graf-card full">
+        <h3>Atendimentos por prontuário único, por especialidade</h3>
+        <div class="tabela-info tabela-prontuario">
+          <table class="tabela">
+            <thead><tr>
+              <th>Especialidade</th>
+              <th class="num">Atendimentos</th>
+              <th class="num">Prontuários únicos</th>
+              <th class="num" title="Atendimentos ÷ prontuários únicos">Atend. por prontuário</th>
+              <th class="num" title="Prontuários com mais de um atendimento na especialidade no período">Prontuários com retorno</th>
+              <th class="num" title="Média, em meses, entre atendimentos seguidos do mesmo paciente na especialidade">Intervalo médio (meses)</th>
+            </tr></thead>
+            <tbody id="tb_prontuario"></tbody>
+          </table>
+        </div>
+        <div class="nota">Intervalo médio: tempo entre atendimentos seguidos do mesmo paciente na mesma especialidade, só dentro
+          do período escolhido (períodos curtos mostram poucos retornos). No total, o prontuário que passou em mais de uma
+          especialidade conta uma vez.</div>
+      </div>
+      <div class="graf-card full">
+        <h3>Atendimentos por macrorregião de saúde</h3>
+        <div class="nota">Municípios agrupados pelo cadastro Regiões de Saúde (Ceará), na área restrita.</div>
+        <div class="municipios">
+          <div class="chart-box" id="box_macro" style="height:240px;"><canvas id="chart_macro"></canvas></div>
+          <div class="tabela-info tabela-municipio">
+            <table class="tabela">
+              <thead><tr>
+                <th>Macrorregião</th><th class="num">Atendimentos</th><th class="num">%</th>
+                <th class="num" title="Prontuários únicos">Prontuários</th>
+              </tr></thead>
+              <tbody id="tb_macro"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="graf-card full">
+        <h3>Atendimentos por município</h3>
+        <div class="nota" id="municipio_resumo"></div>
+        <div class="municipios">
+          <div class="chart-box" id="box_municipio"><canvas id="chart_municipio"></canvas></div>
+          <div class="tabela-info tabela-municipio">
+            <table class="tabela">
+              <thead><tr>
+                <th>Município</th><th class="num">Atendimentos</th><th class="num">%</th>
+                <th class="num" title="Prontuários únicos">Prontuários</th>
+              </tr></thead>
+              <tbody id="tb_municipio"></tbody>
+            </table>
+          </div>
+        </div>
       </div>
       <div class="graf-card">
         <h3>Atendimentos por status</h3>
@@ -107,9 +177,22 @@
         <h3>Atendimentos por dia da semana</h3>
         <div class="chart-box"><canvas id="chart_semana"></canvas></div>
       </div>
+      {# carregado à parte (consulta mais pesada), depois dos demais gráficos #}
+      <div class="graf-card full" id="card_salas">
+        <h3>Consultas por status por sala</h3>
+        <div class="nota" id="salas_aviso">Carregando salas…</div>
+        <div class="rolagem-grafico"><div class="chart-box" id="box_salas"><canvas id="chart_salas"></canvas></div></div>
+      </div>
       <div class="graf-card full">
-        <h3>Atendimentos por horário (cadastro)</h3>
+        <h3>Consultas por horário de início</h3>
+        <div class="nota">Hora de início registrada no atendimento médico. Só a consulta realizada tem esse registro
+          (falta e cancelamento não entram).</div>
         <div class="chart-box"><canvas id="chart_hora"></canvas></div>
+      </div>
+      <div class="graf-card full">
+        <h3>Tempo médio por consulta, por especialidade</h3>
+        <div class="nota" id="tempo_resumo"></div>
+        <div class="rolagem-grafico"><div class="chart-box" id="box_tempo"><canvas id="chart_tempo"></canvas></div></div>
       </div>
     </div>
   </div>
@@ -152,6 +235,57 @@ function preencherSelect(id, opcoes, rotuloTodos) {
   sel.value = opcoes.includes(atual) ? atual : '';
 }
 
+// Escreve o valor na ponta de cada barra (gráficos com options.plugins.valores.mostrar).
+// total: true escreve só o total da pilha (barras empilhadas); vertical: true
+// escreve o valor de pé (barras finas, como a de cada idade); valor negativo
+// (lado esquerdo da pirâmide por sexo) sai à esquerda da barra, sem o sinal.
+Chart.register({
+  id: 'valores',
+  afterDatasetsDraw(chart, _, opts) {
+    if (!opts.mostrar) return;
+    const { ctx } = chart;
+    const horizontal = chart.options.indexAxis === 'y';
+    const escrever = (valor, el) => {
+      const negativo = valor < 0;
+      if (horizontal) {
+        ctx.textAlign = negativo ? 'right' : 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fmt(Math.abs(valor)), el.x + (negativo ? -4 : 4), el.y);
+      } else if (opts.vertical) {
+        ctx.save();
+        ctx.translate(el.x, el.y - 3);
+        ctx.rotate(-Math.PI / 2);
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'middle';
+        ctx.fillText(fmt(valor), 0, 0);
+        ctx.restore();
+      } else {
+        ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(fmt(valor), el.x, el.y - 3);
+      }
+    };
+    const visiveis = chart.data.datasets.map((_, i) => i).filter(i => chart.isDatasetVisible(i));
+    ctx.save();
+    ctx.font = '600 10px "DM Sans", sans-serif';
+    ctx.fillStyle = '#3d4f55';
+    if (opts.total) {
+      // a barra da última série visível termina onde a pilha termina
+      const ultima = chart.getDatasetMeta(visiveis[visiveis.length - 1] ?? 0).data;
+      chart.data.labels.forEach((_, j) => {
+        const soma = visiveis.reduce((t, i) => t + (chart.data.datasets[i].data[j] || 0), 0);
+        if (soma && ultima[j]) escrever(soma, ultima[j]);
+      });
+    } else {
+      visiveis.forEach(i => chart.getDatasetMeta(i).data.forEach((el, j) => {
+        const v = chart.data.datasets[i].data[j];
+        if (v) escrever(v, el);
+      }));
+    }
+    ctx.restore();
+  }
+});
+
 function barrasHorizontais(id, itens, cor) {
   novoGrafico(id, {
     type: 'bar',
@@ -165,8 +299,173 @@ function barrasHorizontais(id, itens, cor) {
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false } },
+      layout: { padding: { right: 44 } },
+      plugins: { legend: { display: false }, valores: { mostrar: true } },
       scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { ticks: { autoSkip: false, font: { size: 11 } } } }
+    }
+  });
+}
+
+const CORES_SEXO = { 'Feminino': '#C9577F', 'Masculino': '#2E758C' };
+const corSexo = s => CORES_SEXO[s] || '#9aa7ab';
+const pct = p => (p * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+
+// Escreve o percentual em cada fatia da rosca (só nas que têm espaço)
+const pluginPercentual = {
+  id: 'percentual',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const ds = chart.data.datasets[0];
+    const total = ds.data.reduce((s, x) => s + x, 0);
+    if (!total) return;
+    ctx.save();
+    ctx.font = 'bold 12px "DM Sans", sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    chart.getDatasetMeta(0).data.forEach((arco, i) => {
+      const p = ds.data[i] / total;
+      if (p < 0.04 || !chart.getDataVisibility(i)) return;
+      const { x, y } = arco.tooltipPosition();
+      ctx.fillText(pct(p), x, y);
+    });
+    ctx.restore();
+  }
+};
+
+// por sexo: rosca do total (com %) e barras empilhadas por especialidade
+function renderSexo(s) {
+  const total = s.total.reduce((t, x) => t + x.qtd, 0);
+  document.getElementById('sexo_resumo').textContent = total
+    ? s.total.map(x => `${x.nome}: ${fmt(x.qtd)} atendimentos (${pct(x.qtd / total)}), ${fmt(x.prontuarios)} prontuários`).join(' · ')
+    : 'Nenhum atendimento no período.';
+  novoGrafico('chart_sexo', {
+    type: 'doughnut',
+    data: {
+      labels: s.total.map(x => x.nome),
+      datasets: [{ data: s.total.map(x => x.qtd), backgroundColor: s.total.map(x => corSexo(x.nome)),
+                   borderColor: '#fff', borderWidth: 2 }]
+    },
+    plugins: [pluginPercentual],
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '55%',
+      plugins: {
+        legend: { position: 'bottom' },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${fmt(ctx.parsed)} (${pct(ctx.parsed / total)})` } }
+      }
+    }
+  });
+  // pirâmide: feminino à esquerda (valor negativo no eixo) e masculino à direita
+  const esps = s.por_especialidade;
+  const iF = s.sexos.indexOf('Feminino'), iM = s.sexos.indexOf('Masculino');
+  const lados = [['Feminino', iF, -1], ['Masculino', iM, 1]].filter(([, i]) => i >= 0);
+  const maior = Math.max(1, ...esps.flatMap(e => lados.map(([, i]) => e.sexos[i])));
+  const folga = Math.ceil(maior * 1.18);  // espaço para o valor escrito na ponta das barras maiores
+  document.getElementById('box_sexo_esp').style.height = Math.max(260, esps.length * 22 + 60) + 'px';
+  novoGrafico('chart_sexo_esp', {
+    type: 'bar',
+    data: {
+      labels: esps.map(e => e.nome),
+      datasets: lados.map(([sexo, i, sinal]) => ({
+        label: sexo, data: esps.map(e => sinal * e.sexos[i]),
+        backgroundColor: corSexo(sexo) + 'cc', borderColor: corSexo(sexo), borderWidth: 1
+      }))
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top' },
+        valores: { mostrar: true },
+        tooltip: { callbacks: { label: ctx => {
+          const e = esps[ctx.dataIndex], n = Math.abs(ctx.parsed.x);
+          return ` ${ctx.dataset.label}: ${fmt(n)} (${pct(e.qtd ? n / e.qtd : 0)})`;
+        } } }
+      },
+      scales: {
+        x: { stacked: true, min: -folga, max: folga, ticks: { precision: 0, callback: v => fmt(Math.abs(v)) } },
+        y: { stacked: true, ticks: { autoSkip: false, font: { size: 11 } } }
+      }
+    }
+  });
+}
+
+// por idade: uma barra por ano (idade na data do atendimento)
+function renderIdade(r) {
+  const total = r.idades.reduce((t, x) => t + x.qtd, 0);
+  const dec1 = n => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  document.getElementById('idade_resumo').textContent = total
+    ? (r.media !== null ? `Idade média: ${dec1(r.media)} anos · mediana: ${dec1(r.mediana)} anos. ` : '')
+      + 'Idade em anos completos na data do atendimento.'
+    : 'Nenhum atendimento no período.';
+  const cor = x => x.nome === 'Não informada' ? '#9aa7ab' : '#0F9688';
+  novoGrafico('chart_idade', {
+    type: 'bar',
+    data: {
+      labels: r.idades.map(x => x.nome),
+      datasets: [{
+        label: 'Atendimentos', data: r.idades.map(x => x.qtd),
+        backgroundColor: r.idades.map(x => cor(x) + 'cc'), borderColor: r.idades.map(cor),
+        borderWidth: 1, borderRadius: 2, categoryPercentage: 0.9, barPercentage: 0.9
+      }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 30 } },
+      plugins: {
+        legend: { display: false },
+        valores: { mostrar: true, vertical: true },
+        tooltip: { callbacks: {
+          title: items => items[0].label === 'Não informada' ? items[0].label
+            : items[0].label + (items[0].label === '1' ? ' ano' : ' anos'),
+          label: ctx => ` Atendimentos: ${fmt(ctx.parsed.y)} (${pct(total ? ctx.parsed.y / total : 0)})`,
+          afterLabel: ctx => ` Prontuários únicos: ${fmt(r.idades[ctx.dataIndex].prontuarios)}`
+        } }
+      },
+      scales: {
+        x: { title: { display: true, text: 'Idade (anos)' }, ticks: { autoSkip: false, maxRotation: 0,
+             font: { size: 10 }, callback: (v, i) => i % 5 === 0 || r.idades[i].nome === 'Não informada' ? r.idades[i].nome : '' } },
+        y: { beginAtZero: true, ticks: { precision: 0 } }
+      }
+    }
+  });
+}
+
+// tempo por consulta (do início ao fim registrados no atendimento médico)
+function renderTempo(t) {
+  const min = n => Number(n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + ' min';
+  document.getElementById('tempo_resumo').textContent = t.total
+    ? `Geral: ${min(t.total.media)} em média (mediana ${min(t.total.mediana)}), em ${fmt(t.total.consultas)} consultas`
+      + ' com início e fim registrados no atendimento médico.'
+    : 'Nenhuma consulta com início e fim registrados no período.';
+  const esps = t.especialidades;
+  document.getElementById('box_tempo').style.height = Math.max(200, esps.length * 22 + 40) + 'px';
+  novoGrafico('chart_tempo', {
+    type: 'bar',
+    data: {
+      labels: esps.map(e => e.nome),
+      datasets: [{
+        label: 'Tempo médio (min)', data: esps.map(e => e.media),
+        backgroundColor: '#53B7D9cc', borderColor: '#53B7D9', borderWidth: 1, borderRadius: 3
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 44 } },
+      plugins: {
+        legend: { display: false },
+        valores: { mostrar: true },
+        tooltip: { callbacks: {
+          label: ctx => ` Tempo médio: ${min(ctx.parsed.x)}`,
+          afterLabel: ctx => {
+            const e = esps[ctx.dataIndex];
+            return [` Mediana: ${min(e.mediana)}`, ` Consultas: ${fmt(e.consultas)}`];
+          }
+        } }
+      },
+      scales: {
+        x: { beginAtZero: true, title: { display: true, text: 'minutos' } },
+        y: { ticks: { autoSkip: false, font: { size: 11 } } }
+      }
     }
   });
 }
@@ -180,6 +479,11 @@ function render(d) {
     `por dia com atendimento (${fmt(k.dias_com_atendimento)} dias` +
     (k.dias_sem_atendimento ? `; ${fmt(k.dias_sem_atendimento)} sem atendimento fora da conta)` : ')');
   document.getElementById('k_concluidos').textContent = fmt(k.concluidos);
+  document.getElementById('k_altas').textContent = fmt(k.altas);
+  document.getElementById('k_taxa_alta').textContent =
+    k.taxa_alta !== null
+      ? `${Number(k.taxa_alta).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}% dos atendimentos`
+      : '—';
   document.getElementById('k_faltas').textContent = fmt(k.faltas);
   document.getElementById('k_absenteismo').textContent =
     k.taxa_absenteismo !== null ? `absenteísmo: ${fmt(k.taxa_absenteismo)}%` : '—';
@@ -225,6 +529,46 @@ function render(d) {
     Math.max(300, d.por_especialidade.length * 22 + 40) + 'px';
   barrasHorizontais('chart_especialidade', d.por_especialidade, '#2E758C');
   barrasHorizontais('chart_status', d.por_status, '#6b7f86');
+  renderSexo(d.por_sexo);
+  renderIdade(d.por_idade);
+  renderTempo(d.tempo_consulta);
+
+  // tabela por prontuário único (especialidade é texto do banco: escapado)
+  const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  const dec = (n, casas) => (n === null || n === undefined) ? '—'
+    : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
+  const linhaProntuario = (l, classe = '') => `<tr class="${classe}">
+      <td>${esc(l.nome)}</td><td class="num">${fmt(l.atendimentos)}</td><td class="num">${fmt(l.prontuarios)}</td>
+      <td class="num">${dec(l.por_prontuario, 2)}</td><td class="num">${fmt(l.com_retorno)}</td>
+      <td class="num">${dec(l.intervalo_meses, 1)}</td></tr>`;
+  // por macrorregião de saúde: gráfico e tabela
+  const macros = d.por_macrorregiao;
+  const totalMacro = macros.reduce((s, m) => s + m.qtd, 0);
+  barrasHorizontais('chart_macro', macros, '#2E758C');
+  document.getElementById('tb_macro').innerHTML = macros.map(m => `<tr>
+      <td>${esc(m.nome)}</td><td class="num">${fmt(m.qtd)}</td>
+      <td class="num">${dec(totalMacro ? m.qtd / totalMacro * 100 : null, 1)}</td><td class="num">${fmt(m.prontuarios)}</td></tr>`).join('')
+    + (macros.length ? `<tr class="total"><td>Total</td><td class="num">${fmt(totalMacro)}</td><td class="num">100,0</td>
+      <td class="num">${fmt(d.por_prontuario_total.prontuarios)}</td></tr>` : '<tr><td colspan="4">Nenhum atendimento no período.</td></tr>');
+
+  // por município: gráfico com os 15 maiores e tabela com todos
+  const municipios = d.por_municipio;
+  const totalMun = municipios.reduce((s, m) => s + m.qtd, 0);
+  const top = municipios.slice(0, 15);
+  document.getElementById('municipio_resumo').textContent = municipios.length
+    ? `${fmt(municipios.length)} municípios no período` + (municipios.length > 15 ? '; o gráfico mostra os 15 com mais atendimentos.' : '.')
+    : 'Nenhum atendimento no período.';
+  document.getElementById('box_municipio').style.height = Math.max(200, top.length * 24 + 40) + 'px';
+  barrasHorizontais('chart_municipio', top, '#00A1A2');
+  document.getElementById('tb_municipio').innerHTML = municipios.map(m => `<tr>
+      <td>${esc(m.nome)}</td><td class="num">${fmt(m.qtd)}</td>
+      <td class="num">${dec(totalMun ? m.qtd / totalMun * 100 : null, 1)}</td><td class="num">${fmt(m.prontuarios)}</td></tr>`).join('')
+    + (municipios.length ? `<tr class="total"><td>Total</td><td class="num">${fmt(totalMun)}</td><td class="num">100,0</td>
+      <td class="num">${fmt(d.por_prontuario_total.prontuarios)}</td></tr>` : '');
+
+  document.getElementById('tb_prontuario').innerHTML = d.por_prontuario.length
+    ? d.por_prontuario.map(l => linhaProntuario(l)).join('') + linhaProntuario(d.por_prontuario_total, 'total')
+    : '<tr><td colspan="6">Nenhum atendimento no período.</td></tr>';
 
   novoGrafico('chart_semana', {
     type: 'bar',
@@ -237,8 +581,10 @@ function render(d) {
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 16 } },
       plugins: {
         legend: { display: false },
+        valores: { mostrar: true },
         tooltip: {
           callbacks: {
             afterLabel: ctx => {
@@ -257,19 +603,79 @@ function render(d) {
     data: {
       labels: d.horas,
       datasets: [{
-        label: 'Atendimentos', data: d.por_hora,
+        label: 'Consultas', data: d.por_hora,
         backgroundColor: '#2E758Ccc', borderColor: '#2E758C', borderWidth: 1, borderRadius: 4
       }]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
+      layout: { padding: { top: 16 } },
       plugins: {
         legend: { display: false },
+        valores: { mostrar: true },
         tooltip: { callbacks: { title: items => { const h = items[0].label.slice(0, 2); return `${h}:00 – ${h}:59`; } } }
       },
       scales: { y: { beginAtZero: true, ticks: { precision: 0 } } }
     }
   });
+}
+
+// Consultas por status por sala: barras empilhadas, uma série por status
+const PALETA_STATUS = ['#6b7f86', '#F7975B', '#53B7D9', '#0F9688', '#F3A133'];
+function renderSalas(d) {
+  const aviso = document.getElementById('salas_aviso');
+  aviso.textContent = d.salas.length ? `${fmt(d.salas.length)} salas, da mais para a menos usada.` : 'Nenhuma consulta no período.';
+  document.getElementById('box_salas').style.height = Math.max(160, d.salas.length * 22 + 70) + 'px';
+  novoGrafico('chart_salas', {
+    type: 'bar',
+    data: {
+      labels: d.salas,
+      datasets: d.series.map((s, i) => {
+        const cor = CORES_STATUS[s.status.toUpperCase()] || PALETA_STATUS[i % PALETA_STATUS.length];
+        return { label: s.status, data: s.valores, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1 };
+      })
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index', axis: 'y' },
+      layout: { padding: { right: 44 } },
+      plugins: {
+        valores: { mostrar: true, total: true },
+        legend: { display: true, position: 'top', labels: { usePointStyle: true, padding: 15 } },
+        tooltip: {
+          filter: item => item.parsed.x > 0,
+          callbacks: {
+            label: ctx => ` ${ctx.dataset.label}: ${fmt(ctx.parsed.x)}`,
+            footer: items => 'Total: ' + fmt(items.reduce((s, i) => s + i.parsed.x, 0))
+          }
+        }
+      },
+      scales: { x: { stacked: true, beginAtZero: true, ticks: { precision: 0 } },
+                y: { stacked: true, ticks: { autoSkip: false, font: { size: 11 } } } }
+    }
+  });
+}
+
+let pedidoSalas = 0;
+function carregarSalas(params) {
+  const pedido = ++pedidoSalas;  // ignora a resposta de um filtro anterior
+  const card = document.getElementById('card_salas');
+  const aviso = document.getElementById('salas_aviso');
+  card.classList.add('loading');
+  aviso.textContent = 'Carregando salas…';
+  fetch('/api/ambulatorio/salas?' + params)
+    .then(r => r.json())
+    .then(res => {
+      if (pedido !== pedidoSalas) return;
+      card.classList.remove('loading');
+      if (!res.ok) { aviso.textContent = 'Erro ao carregar as salas: ' + res.erro; return; }
+      renderSalas(res.dados);
+    })
+    .catch(err => {
+      if (pedido !== pedidoSalas) return;
+      card.classList.remove('loading');
+      aviso.textContent = 'Falha ao carregar as salas: ' + err;
+    });
 }
 
 function carregar() {
@@ -296,6 +702,7 @@ function carregar() {
       preencherSelect('especialidade', d.opcoes.especialidades, 'Todas');
       preencherSelect('status', d.opcoes.status, 'Todos');
       render(d);
+      carregarSalas(params);  // depois dos demais, para não atrasar a página
     })
     .catch(err => {
       hideLoader();

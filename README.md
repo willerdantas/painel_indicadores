@@ -24,8 +24,9 @@ planilhas da pasta `dados/` e dos lançamentos feitos na área restrita.
 
 - Lançamento de custos por unidade, de produção hospitalar e do SIMAQ.
 - Importação da planilha mensal de custos (aba GERAL), com pré-visualização antes de gravar.
-- Cadastros: unidades, grupos de unidades e itens.
-- Classificação de Exames: cadastro das classificações e associação de cada exame a uma delas (usada no painel Exames).
+- Cadastros: categorias, subcategorias e itens de custo, unidades e grupos de unidades, SIMAQ e produção, e ainda:
+  - Regiões de Saúde (Ceará): as 5 macrorregiões de saúde e os 184 municípios de cada uma (usadas no gráfico por macrorregião do Ambulatório);
+  - Classificação de Exames: cadastro das classificações e associação de cada exame a uma delas (usada no painel Exames).
 - Usuários e perfis de acesso: cada perfil libera só algumas telas.
 - Configuração do Banco (só administrador):
   - dados de conexão, guardados criptografados;

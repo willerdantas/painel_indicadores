@@ -120,6 +120,9 @@
 </div>
 {% endfor %}
 
+<div class="grupo-titulo">Classificação de Exames</div>
+{% include '_classificacao_exames.html' %}
+
 <script>
     // cadastro opcional (ex.: subcategoria): só as opções da categoria escolhida na mesma linha
     document.querySelectorAll('select.opcional').forEach(sel => {

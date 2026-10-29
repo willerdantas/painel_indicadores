@@ -40,8 +40,8 @@ PAGINAS = [
     ('custos', 'Lançar Dados de Custos', ['/admin/custos']),
     ('producao', 'Lançar Dados de Produção', ['/admin/producao']),
     ('simaq', 'Lançar Dados do SIMAQ', ['/admin/simaq']),
-    ('cadastros', 'Cadastros', ['/admin/cadastros']),
-    ('classificacoes', 'Classificação de Exames', ['/admin/classificacoes']),
+    # inclui a Classificação de Exames, que é uma seção da tela Cadastros
+    ('cadastros', 'Cadastros', ['/admin/cadastros', '/admin/classificacoes']),
 ]
 CHAVES_PAGINAS = [p[0] for p in PAGINAS]
 

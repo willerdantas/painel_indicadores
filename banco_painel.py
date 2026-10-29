@@ -698,6 +698,10 @@ CADASTROS = [
     Cadastro('unidade', 'Unidades', 'Unidades (Centros de Custo)', pais=[('grupo_unidade', 'Grupo')],
              extras=[Coluna('medida', 'Medida da produção', 'texto')],
              uso=('custos_unidade', 'unidade_id', 'lançamentos')),
+    # agrupamento dos municípios (gráfico por macrorregião do Ambulatório)
+    Cadastro('macrorregiao', 'Macrorregiões de Saúde', 'Regiões de Saúde (Ceará)',
+             uso=('municipio_regiao', 'macrorregiao_id', 'municípios')),
+    Cadastro('municipio_regiao', 'Municípios', 'Regiões de Saúde (Ceará)', pais=[('macrorregiao', 'Macrorregião')]),
 ]
 CADASTROS_POR_TABELA = {c.tabela: c for c in CADASTROS}
 
@@ -910,6 +914,94 @@ def _criar_subcategorias_custo(cur):
     cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('subcategoria_custo', %s)", [linhas])
 
 
+# Macrorregiões de saúde do Ceará e seus municípios (grafia do cadastro
+# t_municipio do sistema hospitalar: sem acento, maiúsculas). Fonte: Plano
+# Estadual de Saúde 2020-2023 (SESA-CE), quadros de cobertura por município de
+# cada região de saúde. Carga inicial de municipio_regiao; depois a tela Cadastros.
+MACRORREGIOES_CE = {
+    'Fortaleza': (  # 44 municípios
+        'ACARAPE', 'AMONTADA', 'APUIARES', 'AQUIRAZ', 'ARACOIABA', 'ARATUBA', 'BARREIRA', 'BATURITE',
+        'BEBERIBE', 'CAPISTRANO', 'CASCAVEL', 'CAUCAIA', 'CHOROZINHO', 'EUSEBIO', 'FORTALEZA',
+        'GENERAL SAMPAIO', 'GUAIUBA', 'GUARAMIRANGA', 'HORIZONTE', 'ITAITINGA', 'ITAPAJE', 'ITAPIPOCA',
+        'ITAPIUNA', 'MARACANAU', 'MARANGUAPE', 'MIRAIMA', 'MULUNGU', 'OCARA', 'PACAJUS', 'PACATUBA', 'PACOTI',
+        'PALMACIA', 'PARACURU', 'PARAIPABA', 'PENTECOSTE', 'PINDORETAMA', 'REDENCAO',
+        'SAO GONCALO DO AMARANTE', 'SAO LUIS DO CURU', 'TEJUCUOCA', 'TRAIRI', 'TURURU', 'UMIRIM',
+        'URUBURETAMA',
+    ),
+    'Norte': (  # 55 municípios
+        'ACARAU', 'ALCANTARAS', 'ARARENDA', 'BARROQUINHA', 'BELA CRUZ', 'CAMOCIM', 'CARIRE', 'CARNAUBAL',
+        'CATUNDA', 'CHAVAL', 'COREAU', 'CRATEUS', 'CROATA', 'CRUZ', 'FORQUILHA', 'FREICHEIRINHA', 'GRACA',
+        'GRANJA', 'GROAIRAS', 'GUARACIABA DO NORTE', 'HIDROLANDIA', 'IBIAPINA', 'INDEPENDENCIA', 'IPAPORANGA',
+        'IPU', 'IPUEIRAS', 'IRAUCUBA', 'ITAREMA', 'JERICOACOARA', 'MARCO', 'MARTINOPOLE', 'MASSAPE', 'MERUOCA',
+        'MONSENHOR TABOSA', 'MORAUJO', 'MORRINHOS', 'MUCAMBU', 'NOVA RUSSAS', 'NOVO ORIENTE', 'PACUJA',
+        'PIRES FERREIRA', 'PORANGA', 'QUITERIANOPOLIS', 'RERIUTABA', 'SANTA QUITERIA', 'SANTANA DO ACARAU',
+        'SAO BENEDITO', 'SENADOR SA', 'SOBRAL', 'TAMBORIL', 'TIANGUA', 'UBAJARA', 'URUOCA', 'VARJOTA',
+        'VICOSA DO CEARA',
+    ),
+    'Cariri': (  # 45 municípios
+        'ABAIARA', 'ACOPIARA', 'ALTANEIRA', 'ANTONINA DO NORTE', 'ARARIPE', 'ASSARE', 'AURORA', 'BAIXIO',
+        'BARBALHA', 'BARRO', 'BREJO SANTO', 'CAMPOS SALES', 'CARIRIACU', 'CARIUS', 'CATARINA', 'CEDRO',
+        'CRATO', 'DEPUTADO IRAPUAN PINHEIRO', 'FARIAS BRITO', 'GRANJEIRO', 'ICO', 'IGUATU', 'IPAUMIRIM',
+        'JARDIM', 'JATI', 'JUAZEIRO DO NORTE', 'JUCAS', 'LAVRAS DA MANGABEIRA', 'MAURITI', 'MILAGRES',
+        'MISSAO VELHA', 'MOMBACA', 'NOVA OLINDA', 'OROS', 'PENAFORTE', 'PIQUET CARNEIRO', 'PORTEIRAS',
+        'POTENGI', 'QUIXELO', 'SABOEIRO', 'SALITRE', 'SANTANA DO CARIRI', 'TARRAFAS', 'UMARI', 'VARZEA ALEGRE',
+    ),
+    'Sertão Central': (  # 20 municípios
+        'AIUABA', 'ARNEIROZ', 'BANABUIU', 'BOA VIAGEM', 'CANINDE', 'CARIDADE', 'CHORO', 'IBARETAMA',
+        'IBICUITINGA', 'ITATIRA', 'MADALENA', 'MILHA', 'PARAMBU', 'PARAMOTI', 'PEDRA BRANCA', 'QUIXADA',
+        'QUIXERAMOBIM', 'SENADOR POMPEU', 'SOLONOPOLE', 'TAUA',
+    ),
+    'Litoral Leste/Jaguaribe': (  # 20 municípios
+        'ALTO SANTO', 'ARACATI', 'ERERE', 'FORTIM', 'ICAPUI', 'IRACEMA', 'ITAICABA', 'JAGUARETAMA',
+        'JAGUARIBARA', 'JAGUARIBE', 'JAGUARUANA', 'LIMOEIRO DO NORTE', 'MORADA NOVA', 'PALHANO', 'PEREIRO',
+        'POTIRETAMA', 'QUIXERE', 'RUSSAS', 'SAO JOAO DO JAGUARIBE', 'TABULEIRO DO NORTE',
+    ),
+}
+
+
+def _criar_regioes_saude(cur):
+    """macrorregiao (macrorregiões de saúde do Ceará) e municipio_regiao
+    (município -> macrorregião), mantidas na tela Cadastros. Na primeira vez
+    carrega os 184 municípios de MACRORREGIOES_CE (registrado em migracao).
+    Depende de migracao."""
+    s = schema()
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.macrorregiao (
+                       id    SERIAL PRIMARY KEY,
+                       nome  TEXT NOT NULL UNIQUE,
+                       ativo BOOLEAN NOT NULL DEFAULT true)""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.municipio_regiao (
+                       id              SERIAL PRIMARY KEY,
+                       macrorregiao_id INTEGER NOT NULL REFERENCES {s}.macrorregiao (id),
+                       nome            TEXT NOT NULL UNIQUE,
+                       ativo           BOOLEAN NOT NULL DEFAULT true)""")
+    cur.execute(f"SELECT 1 FROM {s}.migracao WHERE tabela = 'municipio_regiao'")
+    if cur.fetchone():
+        return
+    linhas = 0
+    for macro, municipios in MACRORREGIOES_CE.items():
+        cur.execute(f"""INSERT INTO {s}.macrorregiao (nome) VALUES (%s)
+                        ON CONFLICT (nome) DO UPDATE SET nome = EXCLUDED.nome RETURNING id""", [macro])
+        macro_id = cur.fetchone()['id']
+        execute_batch(cur, f'INSERT INTO {s}.municipio_regiao (macrorregiao_id, nome) VALUES (%s, %s) '
+                           'ON CONFLICT (nome) DO NOTHING', [(macro_id, m) for m in municipios])
+        linhas += len(municipios)
+    cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('municipio_regiao', %s)", [linhas])
+    print(f'[painel] macrorregiões de saúde: {linhas} municípios do Ceará')
+
+
+def macrorregiao_dos_municipios():
+    """{nome do município (sem acento, maiúsculas): macrorregião} dos
+    municípios do Ceará ativos no cadastro; vazio sem o banco do painel."""
+    if not pronto():
+        return {}
+    s = schema()
+    with _cursor() as cur:
+        cur.execute(f"""SELECT m.nome, r.nome AS macro FROM {s}.municipio_regiao m
+                        JOIN {s}.macrorregiao r ON r.id = m.macrorregiao_id
+                        WHERE m.ativo AND r.ativo""")
+        return {_chave_nome(row['nome']): row['macro'] for row in cur.fetchall()}
+
+
 def _criar_controle_migracao(cur):
     cur.execute(f"""
         CREATE TABLE IF NOT EXISTS {schema()}.migracao (
@@ -966,6 +1058,7 @@ def iniciar(forcar=False):
                 _criar_controle_migracao(cur)
                 _criar_tabelas_classificacao(cur)
                 _criar_subcategorias_custo(cur)
+                _criar_regioes_saude(cur)
             for t in TABELAS:
                 if _migracao_feita(t):
                     continue

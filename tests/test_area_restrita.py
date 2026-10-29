@@ -434,12 +434,13 @@ def test_com_banco_configurado_senha_em_branco_nao_entra(cliente, admin_id):
 
 # ---------------------------------------------------------------- classificação de exames
 
-def test_classificacoes_no_menu_e_por_perfil(cliente, logar, admin_id):
-    assert 'classificacoes' in usuarios.CHAVES_PAGINAS
+def test_classificacoes_ficam_em_cadastros(cliente, logar, admin_id):
+    assert 'classificacoes' not in usuarios.CHAVES_PAGINAS  # permissão é a de Cadastros
+    assert usuarios.pagina_da_rota('/admin/classificacoes/associar') == 'cadastros'
     logar(admin_id)
-    assert 'Classificação de Exames' in cliente.get('/admin').get_data(as_text=True)
-    r = cliente.get('/admin/classificacoes')  # sem schema do painel nos testes: mostra o aviso
-    assert r.status_code == 200 and 'Schema dos dados do painel indisponível' in r.get_data(as_text=True)
+    assert 'Classificação de Exames' not in cliente.get('/admin').get_data(as_text=True)  # sem cartão próprio
+    r = cliente.get('/admin/classificacoes')  # endereço antigo: vai para a seção em Cadastros
+    assert r.status_code == 302 and r.headers['Location'].endswith('/admin/cadastros#classificacao-exames')
 
 
 def test_classificacoes_bloqueada_sem_permissao(cliente, logar):

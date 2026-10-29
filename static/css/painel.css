@@ -772,6 +772,9 @@ img { max-width: 100%; }
 .pg-admin-cadastros .rolagem input[type=text], .pg-admin-cadastros .rolagem select { font-size: 13px; padding: 6px 8px; background: #fff; border-color: transparent; }
 .pg-admin-cadastros .rolagem input[type=text]:hover, .pg-admin-cadastros .rolagem select:hover { border-color: var(--border); }
 .pg-admin-cadastros .rolagem input.curto { max-width: 90px; text-align: right; }
+/* botões da linha compactos para o nome caber (não encolhe até sumir) */
+.pg-admin-cadastros .rolagem .acoes-linha .btn.pequeno { padding: 5px 8px; font-size: 10px; letter-spacing: .5px; }
+.pg-admin-cadastros .rolagem input[name=nome] { min-width: 80px; }
 .pg-admin-cadastros .uso { text-align: right; color: var(--muted); white-space: nowrap; }
 .pg-admin-cadastros .btn[disabled] { opacity: .35; cursor: not-allowed; }
 .pg-admin-cadastros tr.inativo td { background: var(--bg); }
@@ -888,6 +891,28 @@ img { max-width: 100%; }
 .pg-ambulatorio .graf-card { min-width: 0; }
 .pg-ambulatorio .graf-card.full { grid-column: 1 / -1; }
 .pg-ambulatorio .chart-box { height: 300px; }
+/* 6 cards de indicadores numa linha em telas largas */
+.pg-ambulatorio .kpis { grid-template-columns: repeat(auto-fit, minmax(165px, 1fr)); }
+.pg-ambulatorio .kpi .value { font-size: 1.7rem; }
+/* tabela por prontuário único: rola com o cabeçalho e o total fixos */
+.pg-ambulatorio .tabela-prontuario { max-height: 460px; overflow: auto; margin-top: .5rem; }
+.pg-ambulatorio .tabela-prontuario thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.pg-ambulatorio .tabela-prontuario tr.total td { position: sticky; bottom: 0; background: #fff; }
+.pg-ambulatorio .tabela-prontuario th.num { text-align: right; }
+/* por município: gráfico (15 maiores) e tabela com todos, lado a lado */
+.pg-ambulatorio .municipios { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.pg-ambulatorio .tabela-municipio .tabela { font-size: .8rem; }
+.pg-ambulatorio .tabela-municipio .tabela th, .pg-ambulatorio .tabela-municipio .tabela td { padding: 6px 8px; }
+.pg-ambulatorio .tabela-municipio { max-height: 420px; overflow: auto; margin-top: 0; }
+.pg-ambulatorio .tabela-municipio thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.pg-ambulatorio .tabela-municipio th.num { text-align: right; }
+.pg-ambulatorio .tabela-municipio tr.total td { position: sticky; bottom: 0; background: #fff; }
+@media (max-width: 900px) { .pg-ambulatorio .municipios { grid-template-columns: 1fr; } }
+.pg-ambulatorio .por-sexo { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(0, 2.2fr); gap: 1.5rem; align-items: start; }
+.pg-ambulatorio .por-sexo .chart-box { min-width: 0; }
+/* gráficos com muitas barras: altura limitada, com rolagem */
+.pg-ambulatorio .rolagem-grafico { max-height: 420px; overflow-y: auto; min-width: 0; }
+@media (max-width: 900px) { .pg-ambulatorio .por-sexo { grid-template-columns: 1fr; } }
 @media(max-width:900px) {
   .pg-ambulatorio .kpis { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
   .pg-ambulatorio .graf-grid { grid-template-columns: 1fr; }

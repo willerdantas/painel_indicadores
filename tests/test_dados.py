@@ -173,3 +173,123 @@ def test_lancamento_custos_agrupa_por_categoria_e_subcategoria():
     assert [(s['nome'], s['total'], len(s['itens'])) for s in pessoal['subs']] == [
         ('Cooperativa', 15, 2), ('Sem subcategoria', 0, 1)]
     assert not gerais['com_sub'] and gerais['total'] == 2
+
+
+def test_ambulatorio_consultas_por_status_por_sala(monkeypatch):
+    import ambulatorio
+    linhas = [
+        {'sala': 'SL-01', 'especialidade': 'Cardiologia', 'status': 'CONCLUÍDO', 'qtd': 5},
+        {'sala': 'SL-01', 'especialidade': 'Cardiologia', 'status': 'FALTOU', 'qtd': 2},
+        {'sala': 'SL-02', 'especialidade': 'Pneumologia', 'status': 'CONCLUÍDO', 'qtd': 9},
+    ]
+    monkeypatch.setattr(ambulatorio, '_salas_periodo', lambda ini, fim: linhas)
+    d = ambulatorio.get_salas('2026-10-01', '2026-10-31')
+    assert d['salas'] == ['SL-02', 'SL-01']  # da mais para a menos usada
+    assert d['series'] == [{'status': 'CONCLUÍDO', 'valores': [9, 5]}, {'status': 'FALTOU', 'valores': [0, 2]}]
+    d = ambulatorio.get_salas('2026-10-01', '2026-10-31', especialidade='Cardiologia')
+    assert d['salas'] == ['SL-01']
+
+
+def test_ambulatorio_por_prontuario_e_intervalo_medio():
+    from datetime import date
+    import ambulatorio
+    visitas = [
+        (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 1, 10), 'FORTALEZA/CE'),
+        (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 4, 10), 'FORTALEZA/CE'),   # 90 dias depois
+        (1, 'Cardiologia', 'FALTOU', date(2026, 4, 10), 'FORTALEZA/CE'),      # mesmo dia: não é retorno
+        (2, 'Cardiologia', 'CONCLUÍDO', date(2026, 2, 1), 'CAUCAIA/CE'),
+        (1, 'Pneumologia', 'CONCLUÍDO', date(2026, 3, 1), 'FORTALEZA/CE'),
+    ]
+    linhas, total = ambulatorio.por_prontuario(visitas)
+    cardio = linhas[0]
+    assert (cardio['nome'], cardio['atendimentos'], cardio['prontuarios'], cardio['com_retorno']) == ('Cardiologia', 4, 2, 1)
+    assert cardio['por_prontuario'] == 2.0 and cardio['intervalo_meses'] == round(90 / 30.44, 1)
+    assert linhas[1]['intervalo_meses'] is None  # sem retorno
+    assert (total['atendimentos'], total['prontuarios']) == (5, 2)  # paciente 1 conta uma vez no total
+    assert ambulatorio.por_municipio(visitas) == [
+        {'nome': 'FORTALEZA/CE', 'qtd': 4, 'prontuarios': 1}, {'nome': 'CAUCAIA/CE', 'qtd': 1, 'prontuarios': 1}]
+    assert ambulatorio.por_municipio(visitas, especialidade='Pneumologia') == [
+        {'nome': 'FORTALEZA/CE', 'qtd': 1, 'prontuarios': 1}]
+    linhas, _ = ambulatorio.por_prontuario(visitas, status='FALTOU')
+    assert [(l['nome'], l['atendimentos']) for l in linhas] == [('Cardiologia', 1)]
+
+
+def test_ambulatorio_por_macrorregiao():
+    from datetime import date
+    import ambulatorio
+    d = date(2026, 10, 1)
+    visitas = [
+        (1, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE'),
+        (2, 'Cardiologia', 'CONCLUÍDO', d, 'SOBRAL/CE'),
+        (3, 'Cardiologia', 'CONCLUÍDO', d, 'FLORES/CE'),      # do Ceará, fora do cadastro
+        (4, 'Cardiologia', 'CONCLUÍDO', d, 'MOSSORO/RN'),
+        (5, 'Cardiologia', 'CONCLUÍDO', d, 'Sem município'),
+    ]
+    mapa = {'FORTALEZA': 'Fortaleza', 'SOBRAL': 'Norte'}
+    assert {m['nome']: m['qtd'] for m in ambulatorio.por_macrorregiao(visitas, mapa)} == {
+        'Fortaleza': 1, 'Norte': 1, 'Ceará (não classificado)': 1, 'Outros estados': 1, 'Sem município': 1}
+
+
+def test_ambulatorio_por_sexo_e_especialidade():
+    from datetime import date
+    import ambulatorio
+    d = date(2026, 10, 1)
+    visitas = [
+        (1, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Feminino'),
+        (1, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Feminino'),  # mesmo prontuário
+        (2, 'Cardiologia', 'FALTOU', d, 'FORTALEZA/CE', 'Masculino'),
+        (3, 'Pneumologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Não informado'),
+        (4, 'Pneumologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Masculino'),
+    ]
+    s = ambulatorio.por_sexo(visitas)
+    assert s['sexos'] == ['Feminino', 'Masculino', 'Não informado']
+    assert [(x['nome'], x['qtd'], x['prontuarios']) for x in s['total']] == [
+        ('Feminino', 2, 1), ('Masculino', 2, 2), ('Não informado', 1, 1)]
+    assert s['por_especialidade'] == [
+        {'nome': 'Cardiologia', 'qtd': 3, 'sexos': [2, 1, 0]},
+        {'nome': 'Pneumologia', 'qtd': 2, 'sexos': [0, 1, 1]}]
+    assert ambulatorio.por_sexo(visitas, status='FALTOU')['sexos'] == ['Masculino']
+
+
+def test_ambulatorio_por_idade_um_ano_por_barra():
+    from datetime import date
+    import ambulatorio
+    d = date(2026, 10, 1)
+    visitas = [
+        (1, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Feminino', 2),
+        (1, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Feminino', 2),   # mesmo prontuário
+        (2, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Masculino', 0),
+        (3, 'Pneumologia', 'FALTOU', d, 'FORTALEZA/CE', 'Masculino', 5),
+        (4, 'Pneumologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Feminino', None),  # sem data de nascimento
+    ]
+    r = ambulatorio.por_idade(visitas)
+    assert [(x['nome'], x['qtd'], x['prontuarios']) for x in r['idades']] == [
+        ('0', 1, 1), ('1', 0, 0), ('2', 2, 1), ('3', 0, 0), ('4', 0, 0), ('5', 1, 1), ('Não informada', 1, 1)]
+    assert r['media'] == round((2 + 2 + 0 + 5) / 4, 1) and r['mediana'] == 2
+    assert [x['nome'] for x in ambulatorio.por_idade(visitas, status='FALTOU')['idades']][-1] == '5'
+    assert ambulatorio.por_idade([]) == {'idades': [], 'media': None, 'mediana': None}
+
+
+def test_ambulatorio_tempo_medio_por_consulta():
+    import ambulatorio
+    consultas = [
+        ('Cardiologia', 'CONCLUÍDO', 7, 10.0),
+        ('Cardiologia', 'CONCLUÍDO', 7, 20.0),
+        ('Cardiologia', 'ALTA AMBULATORIAL', 8, 60.0),
+        ('Pneumologia', 'CONCLUÍDO', 9, 5.0),
+        ('Pneumologia', 'CONCLUÍDO', 9, None),   # sem fim: fora do tempo
+    ]
+    t = ambulatorio.tempo_consulta(consultas)
+    assert t['especialidades'] == [
+        {'nome': 'Cardiologia', 'consultas': 3, 'media': 30.0, 'mediana': 20.0},
+        {'nome': 'Pneumologia', 'consultas': 1, 'media': 5.0, 'mediana': 5.0}]
+    assert t['total'] == {'nome': 'Total', 'consultas': 4, 'media': 23.8, 'mediana': 15.0}
+    assert ambulatorio.tempo_consulta(consultas, status='ALTA AMBULATORIAL')['total']['media'] == 60.0
+    assert ambulatorio.tempo_consulta([]) == {'especialidades': [], 'total': None}
+
+
+def test_macrorregioes_do_ceara_tem_os_184_municipios():
+    m = banco_painel.MACRORREGIOES_CE
+    assert list(m) == ['Fortaleza', 'Norte', 'Cariri', 'Sertão Central', 'Litoral Leste/Jaguaribe']
+    nomes = [n for v in m.values() for n in v]
+    assert len(nomes) == len(set(nomes)) == 184

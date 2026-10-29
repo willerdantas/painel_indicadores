@@ -853,7 +853,13 @@ def admin_cadastros():
     grupos = {}
     for c in banco_painel.CADASTROS:
         grupos.setdefault(c.grupo, []).append(c)
-    return render_template('admin_cadastros.html', grupos=grupos, registros=registros)
+    # seção Classificação de Exames: os exames vêm do sistema hospitalar, que pode estar fora
+    try:
+        exames, erro_exames = classificacao_exames.exames(), None
+    except psycopg2.Error as e:
+        exames, erro_exames = [], f'Exames do sistema hospitalar indisponíveis: {e}'.strip()
+    return render_template('admin_cadastros.html', grupos=grupos, registros=registros,
+                           classificacoes=classificacao_exames.listar(), exames=exames, erro_exames=erro_exames)
 
 
 @_rota('/admin/cadastros/<tabela>/salvar', methods=['POST'])
@@ -905,13 +911,15 @@ def admin_cadastros_excluir(tabela, registro_id):
 
 # ---------------------------------------------------------------- classificação dos exames
 
+# Fica na tela Cadastros (seção Classificação de Exames); a permissão é a de Cadastros.
+
+def _voltar_classificacoes():
+    return redirect(url_for('admin_cadastros', _anchor='classificacao-exames'))
+
+
 @_rota('/admin/classificacoes')
 def admin_classificacoes():
-    if not banco_painel.pronto():
-        return render_template('admin_classificacoes.html', indisponivel=banco_painel.erro()
-                               or 'Banco de dados dos lançamentos indisponível.', sql=banco_painel.sql_criar_schema())
-    return render_template('admin_classificacoes.html', classificacoes=classificacao_exames.listar(),
-                           exames=classificacao_exames.exames())
+    return _voltar_classificacoes()  # endereço antigo
 
 
 @_rota('/admin/classificacoes/salvar', methods=['POST'])
@@ -919,17 +927,17 @@ def admin_classificacoes_salvar():
     nome = request.form.get('nome')
     erro = classificacao_exames.salvar(request.form.get('id', type=int), nome)
     flash(erro or f'Classificação "{" ".join((nome or "").split())}" salva.', 'erro' if erro else 'ok')
-    return redirect(url_for('admin_classificacoes'))
+    return _voltar_classificacoes()
 
 
 @_rota('/admin/classificacoes/<int:classificacao_id>/excluir', methods=['POST'])
 def admin_classificacoes_excluir(classificacao_id):
     if not usuarios.eh_admin(g.usuario):
         flash('Só o administrador pode excluir classificações.', 'erro')
-        return redirect(url_for('admin_classificacoes'))
+        return _voltar_classificacoes()
     erro = classificacao_exames.excluir(classificacao_id)
     flash(erro or 'Classificação excluída.', 'erro' if erro else 'ok')
-    return redirect(url_for('admin_classificacoes'))
+    return _voltar_classificacoes()
 
 
 @_rota('/admin/classificacoes/associar', methods=['POST'])
