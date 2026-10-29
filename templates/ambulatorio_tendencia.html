@@ -1,0 +1,259 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambulatório — Tendência Mensal</title>
+<script src="/static/chart.umd.min.js"></script>
+<script>
+  // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
+<script src="/static/js/tendencia.js"></script>
+    {{ recursos() }}
+</head>
+<body class="pg-ambulatorio-tendencia">
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="{{ logo('carregando') }}" alt="Carregando...">
+  </div>
+</div>
+
+{{ cabecalho('Ambulatório', 'Painel de Gestão', links=[('/ambulatorio', '🗂️ Indicadores'), ('/ambulatorio/comparativo', '📊 Comparativo')]) }}
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label for="especialidade">Especialidade</label>
+      <select id="especialidade"><option value="">Todas</option></select>
+    </div>
+    <div>
+      <label for="sexo">Sexo</label>
+      <select id="sexo"><option value="">Todos</option></select>
+    </div>
+    <div>
+      <label for="macrorregiao">Macrorregião</label>
+      <select id="macrorregiao"><option value="">Todas</option></select>
+    </div>
+    <div>
+      <label for="municipio">Município</label>
+      <select id="municipio"><option value="">Todos</option></select>
+    </div>
+    <div>
+      <label for="mes_ini">Mês Inicial</label>
+      <input type="month" id="mes_ini" value="{{ mes_ini }}">
+    </div>
+    <div>
+      <label for="mes_fim">Mês Final</label>
+      <input type="month" id="mes_fim" value="{{ mes_fim }}">
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="carregarGraficos()">Atualizar</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <h2 class="section-title">Atendimentos do Ambulatório</h2>
+  <div class="charts-grid" id="charts_ambulatorio"></div>
+
+</div>
+
+<script>
+const chartInstances = {};
+
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 300);
+});
+
+function v(id){ return document.getElementById(id).value; }
+
+// cores iguais às da página do Ambulatório
+const CORES_STATUS = {
+  'CONCLUÍDO': '#3BB5A3', 'ALTA AMBULATORIAL': '#007C6B', 'FALTOU': '#EB600A',
+  'CANCELADA': '#c0392b', 'NÃO CONFIRMADO': '#F3A133', 'MARCADO': '#53B7D9',
+  'RECEPÇÃO': '#00B2C9', 'ESPERA': '#2E758C', 'ANDAMENTO': '#0F9688',
+};
+const CORES_SEXO = { 'Feminino': '#C9577F', 'Masculino': '#2E758C' };
+const PALETA = ['#00B2C9', '#3BB5A3', '#2E758C', '#F3A133', '#EB600A', '#0F9688', '#53B7D9', '#6b7f86', '#C9577F'];
+
+// Preenche um select com as opções do período, mantendo a escolha atual
+// quando ela ainda existe.
+function preencherSelect(id, opcoes, rotuloTodos) {
+  const sel = document.getElementById(id);
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">${rotuloTodos}</option>`;
+  (opcoes || []).forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o; opt.textContent = o;
+    sel.appendChild(opt);
+  });
+  sel.value = (opcoes || []).includes(atual) ? atual : '';
+}
+
+// barras do mês com linhas de média e mediana
+function criarGrafico(container, titulo, meses, valores, cor, sufixo) {
+  const valoresNum = numeros(valores);
+  const datasets = [
+    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2, sufixo: sufixo || '' },
+    ...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum), sufixo)
+  ];
+  chartInstances[titulo] = new Chart(container.querySelector('canvas'), {
+    type: 'bar',
+    data: { labels: meses, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtNum(ctx.parsed.y)}${ctx.dataset.sufixo || ''}` } }
+      },
+      scales: { y: { beginAtZero: true }, x: { ticks: { font: { size: 11 } } } }
+    }
+  });
+}
+
+// barras empilhadas (status, sexo, macrorregião) com a linha do total e,
+// abaixo, a tabela de total, média e mediana mensais de cada série
+function criarGraficoEmpilhado(container, titulo, meses, series, cores, rotuloSerie) {
+  const cor = (s, i) => cores[s.nome] || cores[String(s.nome).toUpperCase()] || PALETA[i % PALETA.length];
+  const datasets = series.map((s, i) => ({
+    label: s.nome, type: 'bar', data: numeros(s.valores),
+    backgroundColor: cor(s, i) + 'cc', borderColor: cor(s, i), borderWidth: 1, borderRadius: 3, stack: 'serie'
+  }));
+  const totais = meses.map((_, j) => series.reduce((t, s) => t + (Number(s.valores[j]) || 0), 0));
+  datasets.push({
+    label: 'Total', type: 'line', data: totais, stack: 'total',
+    borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3,
+    pointHoverRadius: 4, tension: 0.2, fill: false, order: 0
+  });
+  linhasMediaMediana(meses.length, calcularMedia(totais), calcularMediana(totais))
+    .forEach((l, i) => datasets.push({ ...l, stack: 'linha' + i }));
+
+  chartInstances[titulo] = new Chart(container.querySelector('canvas'), {
+    type: 'bar', data: { labels: meses, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+        tooltip: { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${fmtNum(ctx.parsed.y ?? 0)}` } }
+      },
+      scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } }
+    }
+  });
+
+  // textos vêm do banco (status, municípios): escapados
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  const linha = (nome, vals, c, classe) => {
+    const nums = numeros(vals);
+    return `<tr class="${classe || ''}">
+      <td>${c ? `<span class="marca-cor" style="background:${c}"></span>` : ''}${esc(nome)}</td>
+      <td class="num">${fmtNum(nums.reduce((a, b) => a + (b || 0), 0))}</td>
+      <td class="num">${fmtNum(calcularMedia(nums))}</td>
+      <td class="num">${fmtNum(calcularMediana(nums))}</td></tr>`;
+  };
+  const info = document.createElement('div');
+  info.className = 'saidas-info';
+  info.innerHTML = `<table class="tabela">
+      <thead><tr><th>${rotuloSerie}</th><th class="num">Total no período</th><th class="num">Média mensal</th><th class="num">Mediana mensal</th></tr></thead>
+      <tbody>${series.map((s, i) => linha(s.nome, s.valores, cor(s, i))).join('')}${linha('Total de atendimentos', totais, '#38464D', 'total')}</tbody></table>`;
+  container.appendChild(info);
+}
+
+function carregarGraficos() {
+  const params = new URLSearchParams({
+    especialidade: v('especialidade'), sexo: v('sexo'), macrorregiao: v('macrorregiao'), municipio: v('municipio'),
+    mes_ini: v('mes_ini'), mes_fim: v('mes_fim')
+  });
+  const errEl = document.getElementById('erro');
+  showLoader();
+  fetch('/api/ambulatorio/mensal?' + params)
+    .then(r => r.json())
+    .then(res => {
+      hideLoader();
+      if (!res.ok) {
+        errEl.textContent = 'Erro ao carregar gráficos: ' + res.erro;
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      const d = res.dados;
+      preencherSelect('especialidade', d.opcoes.especialidades, 'Todas');
+      preencherSelect('sexo', d.opcoes.sexos, 'Todos');
+      preencherSelect('macrorregiao', d.opcoes.macrorregioes, 'Todas');
+      preencherSelect('municipio', d.opcoes.municipios, 'Todos');
+
+      const container = document.getElementById('charts_ambulatorio');
+      container.classList.toggle('stacked', d.meses.length > 12);
+      Object.keys(chartInstances).forEach(k => { try { chartInstances[k].destroy(); } catch (e) {} delete chartInstances[k]; });
+      container.innerHTML = '';
+
+      // gráficos da página, nesta ordem (os empilhados em largura total)
+      const indicadores = [
+        { key: 'atendimentos', titulo: 'Atendimentos', cor: '#2E758C' },
+        { key: 'media_diaria', titulo: 'Média Diária de Atendimentos (por dia com atendimento)', cor: '#00A1A2' },
+        { key: 'status', titulo: 'Atendimentos por Status', empilhado: CORES_STATUS, rotulo: 'Status' },
+        { key: 'prontuarios', titulo: 'Prontuários Únicos', cor: '#0F9688' },
+        { key: 'por_prontuario', titulo: 'Atendimentos por Prontuário', cor: '#53B7D9' },
+        { key: 'taxa_alta', titulo: 'Taxa de Alta Ambulatorial (%)', cor: '#007C6B', sufixo: '%' },
+        { key: 'taxa_absenteismo', titulo: 'Taxa de Absenteísmo (%)', cor: '#EB600A', sufixo: '%' },
+        { key: 'sexo', titulo: 'Atendimentos por Sexo', empilhado: CORES_SEXO, rotulo: 'Sexo' },
+        { key: 'consultas', titulo: 'Consultas Realizadas (atendimento médico)', cor: '#3BB5A3' },
+        { key: 'tempo_medio', titulo: 'Tempo Médio por Consulta (min)', cor: '#F3A133', sufixo: ' min' },
+        { key: 'macrorregiao', titulo: 'Atendimentos por Macrorregião de Saúde', empilhado: {}, rotulo: 'Macrorregião' },
+        { key: 'especialidades', titulo: 'Especialidades com Atendimento', cor: '#F7975B' },
+      ];
+      // primeiro todos os cartões, depois os gráficos: cada gráfico já nasce
+      // com a largura final da grade (o primeiro cartão sozinho ocuparia a linha toda)
+      const cartoes = indicadores.filter(ind => {
+        const valores = d[ind.key];
+        return ind.empilhado
+          ? valores && valores.some(s => s.valores.some(x => Number(x)))
+          : valores && valores.some(x => x !== null && x !== undefined && Number(x) !== 0);
+      }).map(ind => {
+        const card = document.createElement('div');
+        card.className = 'chart-card' + (ind.empilhado ? ' largura-total' : '');
+        card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
+        container.appendChild(card);
+        return [ind, card];
+      });
+      cartoes.forEach(([ind, card]) => {
+        const valores = d[ind.key];
+        if (ind.empilhado) {
+          criarGraficoEmpilhado(card, ind.titulo, d.meses, valores, ind.empilhado, ind.rotulo);
+        } else {
+          criarGrafico(card, ind.titulo, d.meses, valores, ind.cor, ind.sufixo);
+        }
+      });
+      if (!container.children.length) {
+        container.innerHTML = '<p class="sem-dado">Nenhum atendimento nos meses escolhidos.</p>';
+      }
+    })
+    .catch(err => {
+      hideLoader();
+      errEl.textContent = 'Erro ao carregar gráficos: ' + err;
+      errEl.style.display = 'block';
+    });
+}
+
+// filtros e meses aplicam na hora
+['especialidade', 'sexo', 'macrorregiao', 'municipio', 'mes_ini', 'mes_fim'].forEach(id =>
+  document.getElementById(id).addEventListener('change', carregarGraficos));
+
+carregarGraficos();
+</script>
+    {{ rodape() }}
+</body>
+</html>

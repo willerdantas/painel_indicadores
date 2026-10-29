@@ -1276,6 +1276,58 @@ img { max-width: 100%; }
   .pg-hcasg-hospitalares-tendencia .chart-container { height: 250px; }
 }
 
+/* ---------- página: ambulatorio_tendencia ---------- */
+.pg-ambulatorio-tendencia .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }
+.pg-ambulatorio-tendencia .filters label { display: block; }
+.pg-ambulatorio-tendencia .filters input, .pg-ambulatorio-tendencia .filters select { width: 100%; }
+.pg-ambulatorio-tendencia .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+.pg-ambulatorio-tendencia .charts-grid.stacked { grid-template-columns: 1fr; }
+.pg-ambulatorio-tendencia .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
+.pg-ambulatorio-tendencia .chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
+.pg-ambulatorio-tendencia .chart-container { height: 300px; }
+.pg-ambulatorio-tendencia .error-bar { display: none; }
+.pg-ambulatorio-tendencia .sem-dado { color: var(--muted); font-style: italic; }
+@media(max-width:900px) {
+  .pg-ambulatorio-tendencia .charts-grid { grid-template-columns: 1fr; }
+}
+@media(max-width:600px) {
+  .pg-ambulatorio-tendencia .chart-container { height: 250px; }
+}
+
+/* ---------- página: ambulatorio_comparativo ---------- */
+.pg-ambulatorio-comparativo .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }
+.pg-ambulatorio-comparativo .filters label { display: block; }
+.pg-ambulatorio-comparativo .filters input, .pg-ambulatorio-comparativo .filters select { width: 100%; }
+.pg-ambulatorio-comparativo .error-bar { display: none; }
+.pg-ambulatorio-comparativo .tabela-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); overflow-x: auto; }
+.pg-ambulatorio-comparativo table.comparativo { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.pg-ambulatorio-comparativo table.comparativo th, .pg-ambulatorio-comparativo table.comparativo td { padding: .7rem .9rem; text-align: left; border-bottom: 1px solid var(--border); }
+.pg-ambulatorio-comparativo table.comparativo th { font-family: 'Syne', sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+.pg-ambulatorio-comparativo table.comparativo th.num, .pg-ambulatorio-comparativo table.comparativo td.num { text-align: right; }
+.pg-ambulatorio-comparativo table.comparativo tr:last-child td { border-bottom: none; }
+.pg-ambulatorio-comparativo table.comparativo tr:hover td { background: rgba(59,181,163,.06); }
+.pg-ambulatorio-comparativo .indicador-nome { font-weight: 600; color: var(--dark); }
+.pg-ambulatorio-comparativo .unidade { color: var(--muted); font-size: .76rem; }
+.pg-ambulatorio-comparativo .variacao { font-weight: 700; display: inline-flex; align-items: center; gap: .3rem; }
+.pg-ambulatorio-comparativo .variacao.up { color: var(--up); }
+.pg-ambulatorio-comparativo .variacao.down { color: var(--down); }
+.pg-ambulatorio-comparativo .variacao.flat { color: var(--muted); }
+.pg-ambulatorio-comparativo .sem-dado { color: var(--muted); font-style: italic; }
+.pg-ambulatorio-comparativo .nota-comparativo { font-size: .78rem; color: var(--muted); margin-bottom: .9rem; }
+.pg-ambulatorio-comparativo table.comparativo td.celula-mes { white-space: nowrap; }
+.pg-ambulatorio-comparativo .valor-mes { font-weight: 600; color: var(--dark); font-variant-numeric: tabular-nums; }
+.pg-ambulatorio-comparativo .var-mes { margin-top: .2rem; font-size: .74rem; }
+.pg-ambulatorio-comparativo table.comparativo .periodo { background: var(--claro); white-space: nowrap; }
+.pg-ambulatorio-comparativo table.comparativo th.periodo small { font-weight: 500; text-transform: none; letter-spacing: 0; }
+.pg-ambulatorio-comparativo table.comparativo th:first-child,
+.pg-ambulatorio-comparativo table.comparativo td:first-child { position: sticky; left: 0; z-index: 1; min-width: 200px; background: var(--card); }
+.pg-ambulatorio-comparativo table.comparativo th:first-child { background: var(--bg); }
+/* atendimentos por status: detalhe do total, recuado */
+.pg-ambulatorio-comparativo table.comparativo tr.sub td { padding-top: .45rem; padding-bottom: .45rem; }
+.pg-ambulatorio-comparativo table.comparativo tr.sub .indicador-nome { padding-left: 1.1rem; font-weight: 500; color: var(--muted); }
+.pg-ambulatorio-comparativo table.comparativo tr.sub .indicador-nome::before { content: '↳ '; color: var(--border); }
+.pg-ambulatorio-comparativo table.comparativo tr.sub .unidade { padding-left: 1.1rem; }
+
 /* ---------- página: index ---------- */
 .pg-index .aviso-login { color: #fff; font-size: 17px; position: relative; }
 .pg-index .cards-row { display: flex; flex-wrap: wrap; justify-content: center; gap: 26px; max-width: calc(4 * 240px + 3 * 26px); }

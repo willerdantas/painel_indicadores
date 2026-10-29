@@ -1,0 +1,216 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ambulatório — Comparativo</title>
+    {{ recursos() }}
+</head>
+<body class="pg-ambulatorio-comparativo">
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="{{ logo('carregando') }}" alt="Carregando...">
+  </div>
+</div>
+
+{{ cabecalho('Ambulatório', 'Painel de Gestão', links=[('/ambulatorio/tendencia', '📈 Tendência Mensal'), ('/ambulatorio', '🗂️ Indicadores')]) }}
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label for="especialidade">Especialidade</label>
+      <select id="especialidade"><option value="">Todas</option></select>
+    </div>
+    <div>
+      <label for="sexo">Sexo</label>
+      <select id="sexo"><option value="">Todos</option></select>
+    </div>
+    <div>
+      <label for="macrorregiao">Macrorregião</label>
+      <select id="macrorregiao"><option value="">Todas</option></select>
+    </div>
+    <div>
+      <label for="municipio">Município</label>
+      <select id="municipio"><option value="">Todos</option></select>
+    </div>
+    <div>
+      <label for="modo">Comparação</label>
+      <select id="modo">
+        <option value="individual" title="Só o Mês A contra o Mês B">Individual</option>
+        <option value="periodo" title="Todos os meses de A até B">Período</option>
+      </select>
+    </div>
+    <div>
+      <label for="mes-a">Mês A</label>
+      {{ seletor_mes('mes-a', 'mes_a', valor=mes_a, dica=False) }}
+    </div>
+    <div>
+      <label for="mes-b">Mês B</label>
+      {{ seletor_mes('mes-b', 'mes_b', valor=mes_b, dica=False) }}
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="carregarComparativo()">Comparar</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <h2 class="section-title" id="titulo-tabela">Comparativo</h2>
+  <div class="tabela-card">
+    <p class="nota-comparativo" id="nota-comparativo"></p>
+    <table class="comparativo">
+      <thead id="thead-comparativo">
+        <tr><th>Indicador</th></tr>
+      </thead>
+      <tbody id="tbody-comparativo">
+        <tr><td class="sem-dado">Escolha os meses e clique em Comparar.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+</div>
+
+<script>
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 300);
+});
+
+function v(id){ return document.getElementById(id).value; }
+
+// textos vêm do banco (status): escapados
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+
+function preencherSelect(id, opcoes, rotuloTodos) {
+  const sel = document.getElementById(id);
+  const atual = sel.value;
+  sel.innerHTML = `<option value="">${rotuloTodos}</option>`;
+  (opcoes || []).forEach(o => {
+    const opt = document.createElement('option');
+    opt.value = o; opt.textContent = o;
+    sel.appendChild(opt);
+  });
+  sel.value = (opcoes || []).includes(atual) ? atual : '';
+}
+
+function formatarValor(valor, unidade) {
+  if (valor === null || valor === undefined) return '<span class="sem-dado">—</span>';
+  const num = Number(valor);
+  const casas = Number.isInteger(num) ? 0 : 2;
+  return `${num.toLocaleString('pt-BR', { minimumFractionDigits: 0, maximumFractionDigits: casas })} ${unidade || ''}`.trim();
+}
+
+function formatarVariacao(variacao) {
+  if (variacao === null || variacao === undefined) return '<span class="sem-dado">—</span>';
+  const num = Number(variacao);
+  const txt = Math.abs(num).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + '%';
+  if (num > 0) return `<span class="variacao up">▲ ${txt}</span>`;
+  if (num < 0) return `<span class="variacao down">▼ ${txt}</span>`;
+  return `<span class="variacao flat">= 0,00%</span>`;
+}
+
+// valor AAAA-MM do seletor de mês (campo escondido do calendário)
+function mes(nome) { const el = document.querySelector(`input[name="${nome}"]`); return el ? el.value : ''; }
+
+const NOTAS = {
+  individual: 'Compara só o Mês A com o Mês B (os meses entre eles não entram).',
+  periodo: 'Cada mês mostra o valor e, abaixo, a variação em relação ao mês anterior; ' +
+           'a última coluna compara o primeiro com o último mês do período.'
+};
+
+function carregarComparativo() {
+  const mesA = mes('mes_a');
+  const mesB = mes('mes_b');
+  const modo = v('modo');
+  const erroEl = document.getElementById('erro');
+  erroEl.style.display = 'none';
+
+  if (!mesA || !mesB || mesA === mesB) {
+    erroEl.textContent = 'Escolha dois meses diferentes (Mês A e Mês B).';
+    erroEl.style.display = 'block';
+    return;
+  }
+
+  const params = new URLSearchParams({
+    especialidade: v('especialidade'), sexo: v('sexo'), macrorregiao: v('macrorregiao'), municipio: v('municipio'),
+    mes_a: mesA, mes_b: mesB, modo
+  });
+
+  showLoader();
+  fetch('/api/ambulatorio/comparativo?' + params)
+    .then(r => r.json())
+    .then(res => {
+      hideLoader();
+      if (!res.ok) {
+        erroEl.textContent = 'Erro: ' + res.erro;
+        erroEl.style.display = 'block';
+        return;
+      }
+      if (res.opcoes) {
+        preencherSelect('especialidade', res.opcoes.especialidades, 'Todas');
+        preencherSelect('sexo', res.opcoes.sexos, 'Todos');
+        preencherSelect('macrorregiao', res.opcoes.macrorregioes, 'Todas');
+        preencherSelect('municipio', res.opcoes.municipios, 'Todos');
+      }
+      const meses = res.meses || [];
+      const individual = res.modo === 'individual';
+      const primeiro = meses[0], ultimo = meses[meses.length - 1];
+      document.getElementById('nota-comparativo').textContent = NOTAS[individual ? 'individual' : 'periodo'];
+      document.getElementById('titulo-tabela').textContent = individual
+        ? `Comparativo — ${primeiro} x ${ultimo}`
+        : `Comparativo mês a mês — ${primeiro} a ${ultimo}`;
+      document.getElementById('thead-comparativo').innerHTML = `<tr><th>Indicador</th>` +
+        meses.map(m => `<th class="num">${m}</th>`).join('') +
+        (individual
+          ? `<th class="num periodo">Variação<br><small>${primeiro} → ${ultimo}</small></th></tr>`
+          : `<th class="num periodo">Variação no período<br><small>${primeiro} → ${ultimo}</small></th></tr>`);
+
+      const tbody = document.getElementById('tbody-comparativo');
+      if (!res.linhas || res.linhas.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="${meses.length + 2}" class="sem-dado">Sem dados para os meses escolhidos.</td></tr>`;
+        return;
+      }
+      tbody.innerHTML = res.linhas.map(l => {
+        const sufixo = l.unidade === '%' ? '%' : (l.unidade === 'min' ? 'min' : '');
+        // no período, a variação sobre o mês anterior fica abaixo de cada mês;
+        // no individual, só a variação A → B, na última coluna
+        const celulas = l.valores.map((valor, i) => `
+          <td class="num celula-mes">
+            <div class="valor-mes">${formatarValor(valor, sufixo)}</div>
+            ${individual ? '' : `<div class="var-mes">${i > 0 ? formatarVariacao(l.variacoes[i]) : '&nbsp;'}</div>`}
+          </td>`).join('');
+        return `<tr class="${l.sub ? 'sub' : ''}">
+          <td>
+            <div class="indicador-nome">${esc(l.indicador)}</div>
+            ${l.unidade ? `<div class="unidade">${esc(l.unidade)}</div>` : ''}
+          </td>
+          ${celulas}
+          <td class="num periodo">${formatarVariacao(l.variacao_periodo)}</td>
+        </tr>`;
+      }).join('');
+    })
+    .catch(err => {
+      hideLoader();
+      erroEl.textContent = 'Falha na requisição: ' + err;
+      erroEl.style.display = 'block';
+    });
+}
+
+// modo e filtros aplicam na hora
+['modo', 'especialidade', 'sexo', 'macrorregiao', 'municipio'].forEach(id =>
+  document.getElementById(id).addEventListener('change', carregarComparativo));
+
+carregarComparativo();
+</script>
+    {{ rodape() }}
+</body>
+</html>

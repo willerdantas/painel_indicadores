@@ -41,7 +41,7 @@ import time
 from datetime import date, timedelta
 
 import banco_painel
-from indicadores_hcasg import fetch_all, _DIAS_SEMANA
+from indicadores_hcasg import fetch_all, _DIAS_SEMANA, _meses_iso, _meses_labels
 
 _CACHE_TTL = 600  # segundos
 _cache = {}
@@ -181,7 +181,7 @@ def _perfil_atendimentos(internacoes):
 def _consultas_periodo(dt_ini, dt_fim):
     """Um registro por consulta realizada no período (data de início em
     t_internacao_atendimento.dat_ini): (especialidade, status, hora de início,
-    duração em minutos, sexo, município). Hora fora do formato HH:MM, sem fim
+    duração em minutos, sexo, município, dia de início). Hora fora do formato HH:MM, sem fim
     ou duração fora de 0 a 12 h: None (com cache em memória).
 
     Especialidade, status, sexo e município vêm dos atendimentos do período
@@ -191,7 +191,7 @@ def _consultas_periodo(dt_ini, dt_fim):
     cada consulta lia a tabela inteira uma vez por consulta)."""
     def calcular():
         rows = _consultar('consultas', f"""
-            SELECT x.isn_internacao AS internacao,
+            SELECT x.isn_internacao AS internacao, x.dat_ini::date AS dia,
                 CASE WHEN x.dsc_hor_ini ~ {_HORA_VALIDA}
                      THEN split_part(x.dsc_hor_ini, ':', 1)::int END AS hora,
                 CASE WHEN x.dsc_hor_ini ~ {_HORA_VALIDA} AND x.dsc_hor_fim ~ {_HORA_VALIDA} AND x.dat_fim IS NOT NULL
@@ -211,7 +211,7 @@ def _consultas_periodo(dt_ini, dt_fim):
             minutos = r["minutos"]
             consultas.append((esp, st, r["hora"],
                               float(minutos) if minutos is not None and 0 <= minutos <= _MINUTOS_MAXIMO else None,
-                              sexo, municipio))
+                              sexo, municipio, r["dia"]))
         return consultas
     return _em_cache(('consultas', dt_ini, dt_fim), calcular)
 
@@ -279,10 +279,14 @@ def por_municipio(visitas, especialidade=None, status=None):
 def macrorregiao_do_municipio(municipio, macro_do_municipio):
     """Macrorregião de saúde de um município "NOME/UF" (cadastro {município
     sem acento: macrorregião}): do Ceará fora do cadastro, "Ceará (não
-    classificado)"; de outro estado, "Outros estados"; "Sem município" fica igual."""
+    classificado)"; de outro estado, "Outros estados"; "Sem município" fica igual.
+    Sem a UF (atendimentos antigos têm só o nome): pelo cadastro do Ceará ou,
+    fora dele, "UF não informada"."""
+    if municipio == 'Sem município':
+        return municipio
     nome, _, uf = municipio.rpartition('/')
     if not nome:
-        return municipio
+        return macro_do_municipio.get(banco_painel._chave_nome(municipio)) or 'UF não informada'
     if uf != 'CE':
         return 'Outros estados'
     return macro_do_municipio.get(banco_painel._chave_nome(nome)) or 'Ceará (não classificado)'
@@ -591,3 +595,130 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         "por_municipio": por_municipio(visitas, especialidade, status),
         "por_macrorregiao": por_macrorregiao(visitas, macro_do_municipio, especialidade, status),
     }
+
+
+# ---------------------------------------------------------------------------
+# Tendência mensal e comparativo (mesmo formato de get_mensal_hospitalar:
+# "meses", "meses_iso" e uma série por indicador, um valor por mês)
+# ---------------------------------------------------------------------------
+
+# linhas do comparativo, nesta ordem; os atendimentos por status entram logo
+# depois de "Atendimentos" (chaves atendimentos_status_<status>)
+CAMPOS_MENSAL = [
+    ("atendimentos", "Atendimentos", "qtd"),
+    ("media_diaria", "Média Diária de Atendimentos", "por dia com atendimento"),
+    ("prontuarios", "Prontuários Únicos", "qtd"),
+    ("por_prontuario", "Atendimentos por Prontuário", "atend./prontuário"),
+    ("concluidos", "Concluídos (concluído + alta)", "qtd"),
+    ("taxa_alta", "Taxa de Alta Ambulatorial", "%"),
+    ("taxa_absenteismo", "Taxa de Absenteísmo", "%"),
+    ("consultas", "Consultas Realizadas (atendimento médico)", "qtd"),
+    ("tempo_medio", "Tempo Médio por Consulta", "min"),
+    ("tempo_mediano", "Tempo Mediano por Consulta", "min"),
+    ("especialidades", "Especialidades com Atendimento", "qtd"),
+]
+
+
+def _janela_meses(mes_ini, mes_fim):
+    """Primeiro dia de cada mês de mes_ini a mes_fim ("AAAA-MM", em qualquer
+    ordem) e o intervalo de datas que cobre todos eles."""
+    a, b = sorted((date.fromisoformat(mes_ini + "-01"), date.fromisoformat(mes_fim + "-01")))
+    meses = []
+    while a <= b:
+        meses.append(a)
+        a = (a + timedelta(days=32)).replace(day=1)
+    return meses, meses[0], (meses[-1] + timedelta(days=32)).replace(day=1) - timedelta(days=1)
+
+
+def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, macrorregiao=None):
+    """Indicadores do ambulatório mês a mês (tendência mensal e comparativo),
+    com os filtros de especialidade, sexo, município e macrorregião. Os
+    atendimentos são datados pelo cadastro e as consultas (horário/tempo) pelo
+    início do atendimento médico, como na página do ambulatório; a média
+    diária divide pelos dias em que o ambulatório atendeu (sem filtro)."""
+    meses, dt_ini, dt_fim = _janela_meses(mes_ini, mes_fim)
+    n = len(meses)
+    idx = {(m.year, m.month): i for i, m in enumerate(meses)}
+    macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
+    filtro = filtro_paciente(sexo, municipio, macrorregiao, macro_do_municipio)
+
+    def passa(esp, sx, mun):
+        return (not especialidade or esp == especialidade) and (filtro is None or filtro(sx, mun))
+
+    def serie():
+        return [0] * n
+
+    visitas = _visitas_periodo(dt_ini, dt_fim)
+    dias_abertos = [set() for _ in meses]
+    atend, pacientes, especs = serie(), [set() for _ in meses], [set() for _ in meses]
+    por_status, por_sexo_mes, por_macro = {}, {}, {}
+    for paciente, esp, st, dia, mun, sx, *_ in visitas:
+        i = idx[(dia.year, dia.month)]
+        dias_abertos[i].add(dia)
+        if not passa(esp, sx, mun):
+            continue
+        atend[i] += 1
+        especs[i].add(esp)
+        if paciente is not None:
+            pacientes[i].add(paciente)
+        por_status.setdefault(st, serie())[i] += 1
+        por_sexo_mes.setdefault(sx, serie())[i] += 1
+        por_macro.setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
+
+    consultas, minutos = serie(), [[] for _ in meses]
+    for esp, _, _, mins, sx, mun, dia in _consultas_periodo(dt_ini, dt_fim):
+        i = idx.get((dia.year, dia.month))
+        if i is None or not passa(esp, sx, mun):
+            continue
+        consultas[i] += 1
+        if mins is not None:
+            minutos[i].append(mins)
+
+    def do_status(nome):
+        return next((v for k, v in por_status.items() if k.upper() == nome), serie())
+
+    def taxa(partes, totais):
+        return [round(p / t * 100, 1) if t else None for p, t in zip(partes, totais)]
+
+    def series(contagem, ordem=()):
+        nomes = [s for s in ordem if s in contagem] + sorted(
+            (s for s in contagem if s not in ordem), key=lambda s: (-sum(contagem[s]), s))
+        return [{"nome": s, "valores": contagem[s]} for s in nomes]
+
+    altas = do_status("ALTA AMBULATORIAL")
+    faltas = do_status("FALTOU")
+    status = series(por_status)
+    dados = {
+        "meses": _meses_labels(meses),
+        "meses_iso": _meses_iso(meses),
+        "atendimentos": atend,
+        "media_diaria": [round(a / len(d), 1) if d else None for a, d in zip(atend, dias_abertos)],
+        "prontuarios": [len(p) for p in pacientes],
+        "por_prontuario": [round(a / len(p), 2) if p else None for a, p in zip(atend, pacientes)],
+        "concluidos": [c + a for c, a in zip(do_status("CONCLUÍDO"), altas)],
+        "altas": altas,
+        "faltas": faltas,
+        "taxa_alta": taxa(altas, atend),
+        "taxa_absenteismo": taxa(faltas, atend),
+        "consultas": consultas,
+        "tempo_medio": [round(statistics.mean(m), 1) if m else None for m in minutos],
+        "tempo_mediano": [round(statistics.median(m), 1) if m else None for m in minutos],
+        "especialidades": [len(e) for e in especs],
+        "status": status,
+        "sexo": series(por_sexo_mes, _ORDEM_SEXO),
+        "macrorregiao": series(por_macro),
+        # opções dos filtros: tudo o que aparece nos meses (sem filtro aplicado)
+        "opcoes": {
+            "especialidades": sorted({v[1] for v in visitas}),
+            "sexos": sorted({v[5] for v in visitas}),
+            "municipios": sorted({v[4] for v in visitas}),
+            "macrorregioes": sorted({macrorregiao_do_municipio(v[4], macro_do_municipio) for v in visitas}),
+        },
+    }
+    campos = list(CAMPOS_MENSAL)
+    for s in status:
+        chave = "atendimentos_status_" + s["nome"]
+        dados[chave] = s["valores"]
+        campos.insert(campos.index(CAMPOS_MENSAL[0]) + 1 + status.index(s), (chave, s["nome"].capitalize(), "qtd"))
+    dados["_campos"] = campos
+    return dados

@@ -197,6 +197,41 @@ def test_ambulatorio_consultas_por_status_por_sala(monkeypatch):
     assert d['salas'] == ['SL-01']
 
 
+def test_ambulatorio_mensal(monkeypatch):
+    from datetime import date
+    import ambulatorio
+    s, o = date(2026, 9, 10), date(2026, 10, 5)
+    visitas = [  # (paciente, especialidade, status, dia, município, sexo, idade, internação)
+        (1, 'Cardiologia', 'CONCLUÍDO', s, 'FORTALEZA/CE', 'Feminino', 50, 11),
+        (1, 'Cardiologia', 'FALTOU', date(2026, 9, 11), 'FORTALEZA/CE', 'Feminino', 50, 12),
+        (2, 'Pneumologia', 'ALTA AMBULATORIAL', o, 'SOBRAL/CE', 'Masculino', 30, 13),
+        (3, 'Cardiologia', 'CONCLUÍDO', o, 'SOBRAL/CE', 'Feminino', 40, 14),
+    ]
+    consultas = [  # (especialidade, status, hora, minutos, sexo, município, dia)
+        ('Cardiologia', 'CONCLUÍDO', 8, 10.0, 'Feminino', 'FORTALEZA/CE', s),
+        ('Pneumologia', 'ALTA AMBULATORIAL', 9, 20.0, 'Masculino', 'SOBRAL/CE', o),
+        ('Cardiologia', 'CONCLUÍDO', 9, 30.0, 'Feminino', 'SOBRAL/CE', o),
+    ]
+    monkeypatch.setattr(ambulatorio, '_visitas_periodo', lambda ini, fim: visitas)
+    monkeypatch.setattr(ambulatorio, '_consultas_periodo', lambda ini, fim: consultas)
+    monkeypatch.setattr(ambulatorio.banco_painel, 'macrorregiao_dos_municipios',
+                        lambda: {'FORTALEZA': 'Fortaleza', 'SOBRAL': 'Norte'})
+    d = ambulatorio.get_mensal('2026-10', '2026-09')  # meses em qualquer ordem
+    assert d['meses_iso'] == ['2026-09', '2026-10']
+    assert d['atendimentos'] == [2, 2] and d['prontuarios'] == [1, 2]
+    assert d['media_diaria'] == [1.0, 2.0]  # 2 dias com atendimento em set, 1 em out
+    assert d['concluidos'] == [1, 2] and d['taxa_absenteismo'] == [50.0, 0.0] and d['taxa_alta'] == [0.0, 50.0]
+    assert d['consultas'] == [1, 2] and d['tempo_medio'] == [10.0, 25.0]
+    assert d['sexo'] == [{'nome': 'Feminino', 'valores': [2, 1]}, {'nome': 'Masculino', 'valores': [0, 1]}]
+    assert d['atendimentos_status_FALTOU'] == [1, 0]
+    assert d['_campos'][0][0] == 'atendimentos' and d['_campos'][1][0].startswith('atendimentos_status_')
+    # filtro de macrorregião: só Sobral (Norte), em outubro
+    n = ambulatorio.get_mensal('2026-09', '2026-10', macrorregiao='Norte')
+    assert n['atendimentos'] == [0, 2] and n['consultas'] == [0, 2]
+    assert n['media_diaria'] == [0.0, 2.0]  # a média continua pelos dias em que o ambulatório atendeu
+    assert ambulatorio.get_mensal('2026-09', '2026-10', especialidade='Pneumologia')['atendimentos'] == [0, 1]
+
+
 def test_ambulatorio_pedidos_simultaneos_fazem_uma_consulta():
     import threading
     import time
@@ -232,6 +267,9 @@ def test_ambulatorio_filtro_sexo_municipio_macrorregiao():
     assert f('Feminino', 'FORTALEZA/CE') and not f('Feminino', 'SOBRAL/CE') and not f('Masculino', 'FORTALEZA/CE')
     assert ambulatorio.macrorregiao_do_municipio('Sem município', mapa) == 'Sem município'
     assert ambulatorio.macrorregiao_do_municipio('IGUATU/CE', mapa) == 'Ceará (não classificado)'
+    # atendimentos antigos: município sem a UF
+    assert ambulatorio.macrorregiao_do_municipio('SOBRAL', mapa) == '2ª Sobral'
+    assert ambulatorio.macrorregiao_do_municipio('XYZ', mapa) == 'UF não informada'
 
 
 def test_ambulatorio_por_prontuario_e_intervalo_medio():
