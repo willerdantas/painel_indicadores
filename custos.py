@@ -7,6 +7,7 @@ Dados da página pública "Custos". Os valores ficam na tabela painel.custos
 
 import re
 import statistics
+from datetime import date
 
 import banco_painel
 
@@ -30,8 +31,29 @@ def _meses_entre(mes_ini, mes_fim):
     return meses
 
 
-def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None):
-    """Meses no formato AAAA-MM; um mês fora do formato levanta ValueError."""
+def _somar_meses(mes, n):
+    a, m = map(int, mes.split('-'))
+    a, m = divmod(a * 12 + m - 1 + n, 12)
+    return f'{a:04d}-{m + 1:02d}'
+
+
+def _subcategorias():
+    """{(categoria, item): subcategoria ou None} do cadastro de itens de custo
+    (vazio sem o banco do painel: tudo sem subcategoria)."""
+    if not banco_painel.pronto():
+        return {}
+    s = banco_painel.schema()
+    with banco_painel._cursor() as cur:
+        cur.execute(f"""SELECT t.nome AS tipo, it.nome AS item, sc.nome AS subcategoria
+                        FROM {s}.item_custo it
+                        JOIN {s}.tipo_custo t ON t.id = it.tipo_custo_id
+                        LEFT JOIN {s}.subcategoria_custo sc ON sc.id = it.subcategoria_custo_id""")
+        return {(r['tipo'], r['item']): r['subcategoria'] for r in cur.fetchall()}
+
+
+def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None, hoje=None):
+    """Meses no formato AAAA-MM; um mês fora do formato levanta ValueError.
+    tipo é a categoria de custo (tabela tipo_custo)."""
     for nome, mes in (('mes_ini', mes_ini), ('mes_fim', mes_fim)):
         if mes and not _MES.match(mes):
             raise ValueError(f'{nome} deve estar no formato AAAA-MM.')
@@ -39,14 +61,19 @@ def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None):
     if not todos:
         return {'vazio': True}
 
-    meses_disp = sorted({r['mes'] for r in todos})
+    # padrão: os 12 últimos meses completos (até o mês anterior ao atual), com ou sem dados
+    hoje = hoje or date.today()
+    fim_padrao = _somar_meses(f'{hoje.year:04d}-{hoje.month:02d}', -1)
     if not mes_fim:
-        mes_fim = meses_disp[-1]
+        mes_fim = fim_padrao
     if not mes_ini:
-        # padrão: os 12 últimos meses com dados
-        mes_ini = meses_disp[max(0, len(meses_disp) - 12)]
+        mes_ini = _somar_meses(mes_fim, -11)
     if mes_ini > mes_fim:
         mes_ini, mes_fim = mes_fim, mes_ini
+    # opções dos seletores: todos os meses entre o primeiro com dados e o último (ou o padrão)
+    com_dados = sorted({r['mes'] for r in todos})
+    meses_disp = _meses_entre(min(com_dados[0], mes_ini, _somar_meses(fim_padrao, -11)),
+                              max(com_dados[-1], mes_fim, fim_padrao))
 
     no_periodo = [r for r in todos if mes_ini <= r['mes'] <= mes_fim]
     opcoes = {
@@ -69,6 +96,10 @@ def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None):
     meses_lancados_filtro = {r['mes'] for r in linhas}
     valores_meses_com_dado = [v for v, m in zip(total_mes, meses) if m in meses_lancados_filtro]
     por_tipo = _somar(linhas, 'tipo')
+    # subcategoria; item sem subcategoria entra como "<categoria> (sem subcategoria)"
+    subs = _subcategorias()
+    por_subcategoria = _somar([{'sub': subs.get((r['tipo'], r['item'])) or f"{r['tipo']} (sem subcategoria)",
+                                'valor': r['valor']} for r in linhas], 'sub')
     maior_mes = max(zip(total_mes, meses)) if any(total_mes) else (0, None)
 
     return {
@@ -92,5 +123,6 @@ def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None):
         'por_mes_tipo': [{'tipo': t, 'valores': [round(v, 2) for v in por_mes_tipo[t]]} for t in tipos],
         'total_mes': total_mes,
         'por_tipo': por_tipo,
+        'por_subcategoria': por_subcategoria,
         'por_item': _somar(linhas, 'item'),
     }

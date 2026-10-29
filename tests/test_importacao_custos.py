@@ -139,3 +139,17 @@ def test_envio_sem_banco_mostra_erro_na_janela(cliente, logar, admin_id, tmp_pat
                          data={'csrf': 'tok', 'mes': '2026-06', 'planilha': (io.BytesIO(f.read()), 'p.xlsx')})
     assert r.status_code == 400
     assert 'Não foi possível preparar a importação' in r.get_data(as_text=True)
+
+
+def test_linhas_de_conta_com_outra_numeracao_nao_viram_itens(tmp_path):
+    """Planilha de outro mês com as contas fora da numeração padrão: são
+    reconhecidas pelo nome (antes viravam itens PESSOAL HM, PRODUÇÃO...)."""
+    linhas = [l[:] for l in LINHAS]
+    linhas.insert(3, ['1.1.19 – PESSOAL HM', 1, 1, 400, 100, 250, 50])
+    linhas.insert(9, ['2.7 - CUSTO GERENCIAL - HM', 1, 1, 400, 100, 250, 50])
+    linhas = [['2.8 - PRODUÇÃO', *l[1:]] if l[0] == '8. -  PRODUÇÃO' else
+              ['2.9 - CUSTO UNITÁRIO FINAL', *l[1:]] if l[0] == '9. - CUSTO UNITÁRIO FINAL' else l for l in linhas]
+    d = ic.ler_geral(_planilha(tmp_path, linhas))
+    assert [i['item'] for i in d['itens'] if i['categoria'] == 'custo'] == [
+        'Salário / SESA', 'COMINT', 'Mat. médico hospitalar', 'Energia elétrica']
+    assert [u['producao'] for u in d['unidades']] == [10, 20, None]

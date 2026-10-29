@@ -47,16 +47,17 @@ def itens(mes, unidade_id):
     s = schema()
     with _cursor() as cur:
         cur.execute(f"""
-            SELECT it.id, it.nome AS item, t.nome AS tipo, (it.ativo AND t.ativo) AS ativo,
+            SELECT it.id, it.nome AS item, t.nome AS tipo, sc.nome AS subcategoria, (it.ativo AND t.ativo) AS ativo,
                    cu.valor, cu.atualizado_em, cu.atualizado_por,
                    EXISTS (SELECT 1 FROM {s}.custos_unidade x WHERE x.item_custo_id = it.id) AS por_unidade,
                    EXISTS (SELECT 1 FROM {s}.custos x WHERE x.item_custo_id = it.id
                            AND NOT EXISTS (SELECT 1 FROM {s}.custos_unidade y WHERE y.mes = x.mes)) AS no_total
             FROM {s}.item_custo it
             JOIN {s}.tipo_custo t ON t.id = it.tipo_custo_id
+            LEFT JOIN {s}.subcategoria_custo sc ON sc.id = it.subcategoria_custo_id
             LEFT JOIN {s}.custos_unidade cu
                    ON cu.item_custo_id = it.id AND cu.mes = %s AND cu.unidade_id = %s
-            ORDER BY t.id, it.id""", [f'{mes}-01', unidade_id])
+            ORDER BY t.id, sc.nome NULLS LAST, it.id""", [f'{mes}-01', unidade_id])
         return [_linha(r) for r in cur.fetchall()
                 if r['valor'] is not None or (r['ativo'] and (r['por_unidade'] or not r['no_total']))]
 
@@ -84,14 +85,39 @@ def despesas_do_mes(mes):
     s = schema()
     with _cursor() as cur:
         cur.execute(f"""
-            SELECT t.nome AS tipo, it.nome AS item, SUM(cu.valor) AS total, COUNT(*) AS unidades
+            SELECT t.nome AS tipo, sc.nome AS subcategoria, it.nome AS item, SUM(cu.valor) AS total, COUNT(*) AS unidades
             FROM {s}.custos_unidade cu
             JOIN {s}.item_custo it ON it.id = cu.item_custo_id
             JOIN {s}.tipo_custo t ON t.id = it.tipo_custo_id
+            LEFT JOIN {s}.subcategoria_custo sc ON sc.id = it.subcategoria_custo_id
             WHERE cu.mes = %s
-            GROUP BY t.id, t.nome, it.id, it.nome
-            ORDER BY t.id, it.id""", [f'{mes}-01'])
+            GROUP BY t.id, t.nome, sc.nome, it.id, it.nome
+            ORDER BY t.id, sc.nome NULLS LAST, it.id""", [f'{mes}-01'])
         return [_linha(r) for r in cur.fetchall()]
+
+
+SEM_SUBCATEGORIA = 'Sem subcategoria'
+
+
+def agrupar(linhas, campo_valor):
+    """Linhas (já ordenadas por categoria e subcategoria) em
+    [{'nome', 'total', 'subs': [{'nome', 'total', 'itens'}], 'com_sub'}].
+    com_sub é falso quando nenhum item da categoria tem subcategoria (a tela
+    então lista os itens direto, sem o subtítulo "Sem subcategoria")."""
+    categorias = []
+    for l in linhas:
+        if not categorias or categorias[-1]['nome'] != l['tipo']:
+            categorias.append({'nome': l['tipo'], 'total': 0, 'subs': [], 'com_sub': False})
+        cat = categorias[-1]
+        sub = l.get('subcategoria') or SEM_SUBCATEGORIA
+        if not cat['subs'] or cat['subs'][-1]['nome'] != sub:
+            cat['subs'].append({'nome': sub, 'total': 0, 'itens': []})
+        cat['com_sub'] = cat['com_sub'] or bool(l.get('subcategoria'))
+        valor = l.get(campo_valor) or 0
+        cat['subs'][-1]['itens'].append(l)
+        cat['subs'][-1]['total'] += valor
+        cat['total'] += valor
+    return categorias
 
 
 def meses():

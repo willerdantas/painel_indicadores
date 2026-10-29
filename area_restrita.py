@@ -713,15 +713,11 @@ def admin_custos():
     unidade = next((u for u in unidades if u['id'] == unidade_id), unidades[0] if unidades else None)
     indice = unidades.index(unidade) if unidade else 0
     itens = lancamento_custos.itens(mes, unidade['id']) if unidade else []
-    tipos = []
-    for i in itens:
-        if not tipos or tipos[-1]['nome'] != i['tipo']:
-            tipos.append({'nome': i['tipo'], 'itens': [], 'total': 0})
-        tipos[-1]['itens'].append(i)
-        tipos[-1]['total'] += i['valor'] or 0
+    tipos = lancamento_custos.agrupar(itens, 'valor')  # categoria > subcategoria > itens
     despesas = lancamento_custos.despesas_do_mes(mes)
     return render_template(
         'admin_lancamento_custos.html', mes=mes, unidades=unidades, unidade=unidade, tipos=tipos,
+        grupos_despesas=lancamento_custos.agrupar(despesas, 'total'),
         anterior=unidades[indice - 1] if unidade and indice > 0 else None,
         proxima=unidades[indice + 1] if unidade and indice + 1 < len(unidades) else None,
         situacao=lancamento_custos.situacao(mes), despesas=despesas,

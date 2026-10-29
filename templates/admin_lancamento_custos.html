@@ -64,16 +64,24 @@
             <table class="tabela-lanc">
                 <thead><tr><th>Despesa</th><th class="num">Valor (R$)</th><th>Última alteração</th></tr></thead>
                 <tbody>
+                {# categoria > subcategoria > despesas; data-soma = onde cada valor entra no subtotal #}
                 {% for t in tipos %}
-                    <tr class="grupo"><td>{{ t.nome }}</td><td class="num subtotal"></td><td></td></tr>
-                    {% for i in t.itens %}
-                    <tr>
+                    {% set cat = 'c' ~ loop.index %}
+                    <tr class="grupo"><td>{{ t.nome }}</td><td class="num subtotal" data-subtotal="{{ cat }}"></td><td></td></tr>
+                    {% for sb in t.subs %}
+                    {% set sub = cat ~ '-s' ~ loop.index %}
+                    {% if t.com_sub %}
+                    <tr class="subgrupo"><td>{{ sb.nome }}</td><td class="num subtotal" data-subtotal="{{ sub }}"></td><td></td></tr>
+                    {% endif %}
+                    {% for i in sb.itens %}
+                    <tr class="{{ 'em-sub' if t.com_sub }}">
                         <td>{{ i.item }}{% if not i.ativo %} <span class="etiqueta inativo">inativa</span>{% endif %}
                             <input type="hidden" name="n__{{ i.id }}" value="{{ i.item }}"></td>
                         <td class="valor"><input type="text" name="v__{{ i.id }}" class="campo-valor" inputmode="decimal"
-                                   value="{{ i.valor | num_br('moeda') }}" aria-label="{{ i.item }}"></td>
+                                   data-soma="{{ cat }} {{ sub }}" value="{{ i.valor | num_br('moeda') }}" aria-label="{{ i.item }}"></td>
                         <td class="quem">{% if i.atualizado_em %}{{ i.atualizado_em.strftime('%d/%m/%Y') }}<br>{{ i.atualizado_por }}{% endif %}</td>
                     </tr>
+                    {% endfor %}
                     {% endfor %}
                 {% else %}
                     <tr><td colspan="3" class="dica">Nenhuma despesa cadastrada: cadastre itens de custo na tela Cadastros.</td></tr>
@@ -118,13 +126,14 @@
             <table class="despesas">
                 <thead><tr><th>Despesa</th><th class="num">Total</th><th class="num" title="Unidades com valor">Unid.</th></tr></thead>
                 <tbody>
-                {% set ns = namespace(tipo=None) %}
-                {% for d in despesas %}
-                    {% if d.tipo != ns.tipo %}{% set ns.tipo = d.tipo %}
-                    <tr class="grupo"><td>{{ d.tipo }}</td>
-                        <td class="num">{{ despesas | selectattr('tipo', 'equalto', d.tipo) | sum(attribute='total') | moeda_br }}</td><td></td></tr>
-                    {% endif %}
-                    <tr><td>{{ d.item }}</td><td class="num">{{ d.total | moeda_br }}</td><td class="num">{{ d.unidades }}</td></tr>
+                {% for t in grupos_despesas %}
+                    <tr class="grupo"><td>{{ t.nome }}</td><td class="num">{{ t.total | moeda_br }}</td><td></td></tr>
+                    {% for sb in t.subs %}
+                    {% if t.com_sub %}<tr class="subgrupo"><td>{{ sb.nome }}</td><td class="num">{{ sb.total | moeda_br }}</td><td></td></tr>{% endif %}
+                    {% for d in sb.itens %}
+                    <tr class="{{ 'em-sub' if t.com_sub }}"><td>{{ d.item }}</td><td class="num">{{ d.total | moeda_br }}</td><td class="num">{{ d.unidades }}</td></tr>
+                    {% endfor %}
+                    {% endfor %}
                 {% endfor %}
                 </tbody>
             </table>
@@ -157,7 +166,7 @@
 </div>
 
 <script>
-    // total da unidade e subtotais por tipo enquanto digita (formato brasileiro: 1.234,56)
+    // total da unidade e subtotais por categoria e subcategoria enquanto digita (formato brasileiro: 1.234,56)
     function lerValor(s) {
         s = (s || '').replace(/R\$|\s/g, '');
         if (!s) return 0;
@@ -169,15 +178,14 @@
     const moeda = v => v.toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
     function atualizarTotais() {
         let total = 0;
-        document.querySelectorAll('.tabela-lanc tr.grupo').forEach(grupo => {
-            let sub = 0, tr = grupo.nextElementSibling;
-            while (tr && !tr.classList.contains('grupo')) {
-                const campo = tr.querySelector('.campo-valor');
-                if (campo) sub += lerValor(campo.value);
-                tr = tr.nextElementSibling;
-            }
-            grupo.querySelector('.subtotal').textContent = moeda(sub);
-            total += sub;
+        const somas = {};
+        document.querySelectorAll('.tabela-lanc .campo-valor').forEach(campo => {
+            const v = lerValor(campo.value);
+            total += v;
+            campo.dataset.soma.split(' ').forEach(g => { somas[g] = (somas[g] || 0) + v; });
+        });
+        document.querySelectorAll('.tabela-lanc [data-subtotal]').forEach(el => {
+            el.textContent = moeda(somas[el.dataset.subtotal] || 0);
         });
         const el = document.getElementById('total-unidade');
         if (el) el.textContent = 'R$ ' + moeda(total);

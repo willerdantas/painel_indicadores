@@ -37,7 +37,7 @@
       <select id="mes_fim"></select>
     </div>
     <div>
-      <label for="tipo">Tipo de Custo</label>
+      <label for="tipo">Categoria</label>
       <select id="tipo"><option value="">Todos</option></select>
     </div>
     <div>
@@ -74,7 +74,7 @@
         <div class="icon">📈</div>
       </div>
       <div class="kpi c6">
-        <div class="label">Maior Tipo de Custo</div>
+        <div class="label">Maior Categoria</div>
         <div class="value" id="k_maior_tipo" style="font-size:1.25rem;">—</div>
         <div class="unit" id="k_maior_tipo_valor">—</div>
         <div class="icon">🏷️</div>
@@ -86,12 +86,20 @@
     <h2 class="section-title">Gráficos</h2>
     <div class="graf-grid">
       <div class="graf-card full">
-        <h3>Custo por mês (por tipo de custo)</h3>
+        <h3>Distribuição por categoria</h3>
+        {# rosca com o percentual e, no lugar da legenda, as barras com o valor de cada categoria #}
+        <div class="distribuicao">
+          <div class="chart-box rosca"><canvas id="chart_rosca"></canvas></div>
+          <div class="chart-box barras" id="box_tipo"><canvas id="chart_tipo"></canvas></div>
+        </div>
+      </div>
+      <div class="graf-card full">
+        <h3>Custo por mês (por categoria)</h3>
         <div class="chart-box"><canvas id="chart_mes"></canvas></div>
       </div>
       <div class="graf-card full">
-        <h3>Custo por tipo</h3>
-        <div class="chart-box" id="box_tipo" style="height:220px;"><canvas id="chart_tipo"></canvas></div>
+        <h3>Custo por subcategoria</h3>
+        <div class="chart-box" id="box_sub"><canvas id="chart_sub"></canvas></div>
       </div>
       <div class="graf-card full">
         <h3>Custo por item</h3>
@@ -149,6 +157,50 @@ const pluginRotuloTotal = {
   }
 };
 
+// Escreve o percentual em cada fatia da rosca (só nas que têm espaço)
+const pluginPercentual = {
+  id: 'percentual',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const ds = chart.data.datasets[0];
+    const total = ds.data.reduce((s, x) => s + x, 0);
+    if (!total) return;
+    ctx.save();
+    ctx.font = 'bold 12px "DM Sans", sans-serif';
+    ctx.fillStyle = '#fff';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    chart.getDatasetMeta(0).data.forEach((arco, i) => {
+      const p = ds.data[i] / total;
+      if (p < 0.04 || !chart.getDataVisibility(i)) return;
+      const { x, y } = arco.tooltipPosition();
+      ctx.fillText(pct(p), x, y);
+    });
+    ctx.restore();
+  }
+};
+const pct = p => (p * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) + '%';
+
+function rosca(id, itens) {
+  const total = itens.reduce((s, x) => s + x.valor, 0);
+  novoGrafico(id, {
+    type: 'doughnut',
+    data: {
+      labels: itens.map(x => x.nome),
+      datasets: [{ data: itens.map(x => x.valor), backgroundColor: itens.map((_, i) => PALETA[i % PALETA.length]),
+                   borderColor: '#fff', borderWidth: 2 }]
+    },
+    plugins: [pluginPercentual],
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '55%',
+      plugins: {
+        legend: { display: false },  // as barras ao lado fazem de legenda, com o valor
+        tooltip: { callbacks: { label: ctx => ` ${ctx.label}: ${moeda(ctx.parsed)} (${pct(ctx.parsed / total)})` } }
+      }
+    }
+  });
+}
+
 function preencherSelect(id, opcoes, rotuloTodos, rotulo = o => o) {
   const sel = document.getElementById(id);
   const atual = sel.value;
@@ -161,9 +213,28 @@ function preencherSelect(id, opcoes, rotuloTodos, rotulo = o => o) {
   if (opcoes.includes(atual)) sel.value = atual;
 }
 
-function barrasHorizontais(id, boxId, itens, cor) {
-  document.getElementById(boxId).style.height = Math.max(160, itens.length * 24 + 40) + 'px';
+// Escreve o valor no fim de cada barra horizontal
+const pluginRotuloBarra = {
+  id: 'rotuloBarra',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const ds = chart.data.datasets[0];
+    ctx.save();
+    ctx.font = 'bold 12px "DM Sans", sans-serif';
+    ctx.fillStyle = '#38464D';
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    chart.getDatasetMeta(0).data.forEach((barra, i) => ctx.fillText(moedaCurta(ds.data[i]), barra.x + 6, barra.y));
+    ctx.restore();
+  }
+};
+
+// comValor: valor escrito em cada barra (com folga no eixo para caber); altura: fixa em px
+function barrasHorizontais(id, boxId, itens, cor, { comValor = false, altura = null } = {}) {
+  document.getElementById(boxId).style.height = (altura || Math.max(160, itens.length * 24 + 40)) + 'px';
+  const maximo = Math.max(1, ...itens.map(x => x.valor));
   novoGrafico(id, {
+    plugins: comValor ? [pluginRotuloBarra] : [],
     type: 'bar',
     data: {
       labels: itens.map(x => x.nome),
@@ -174,8 +245,9 @@ function barrasHorizontais(id, boxId, itens, cor) {
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: false }, tooltip: { callbacks: { label: ctx => ' ' + moeda(ctx.parsed.x) } } },
-      scales: { x: { beginAtZero: true, ticks: { callback: val => moedaCurta(val) } },
-                y: { ticks: { autoSkip: false, font: { size: 11 } } } }
+      scales: { x: { beginAtZero: true, suggestedMax: comValor ? maximo * 1.18 : undefined,
+                     ticks: { callback: val => moedaCurta(val), maxTicksLimit: comValor ? 6 : undefined, maxRotation: 0 } },
+                y: { ticks: { autoSkip: false, font: { size: comValor ? 13 : 11 } } } }
     }
   });
 }
@@ -191,16 +263,21 @@ function render(d) {
   document.getElementById('k_maior_tipo').textContent = k.maior_tipo || '—';
   document.getElementById('k_maior_tipo_valor').textContent = moeda(k.maior_tipo_valor);
 
+  rosca('chart_rosca', d.por_tipo);
+  // mesma cor de cada categoria na rosca e no gráfico por mês
+  const corCategoria = nome => PALETA[Math.max(0, d.por_tipo.findIndex(t => t.nome === nome)) % PALETA.length];
+
   novoGrafico('chart_mes', {
     type: 'bar',
     data: {
       labels: d.meses,
       datasets: [
-        ...d.por_mes_tipo.map((s, i) => ({
+        ...d.por_mes_tipo.map(s => ({
           label: s.tipo, data: s.valores, stack: 'custo', order: 2,
-          backgroundColor: PALETA[i % PALETA.length] + 'cc', borderColor: PALETA[i % PALETA.length], borderWidth: 1
+          backgroundColor: corCategoria(s.tipo) + 'cc', borderColor: corCategoria(s.tipo), borderWidth: 1
         })),
-        { type: 'line', label: 'Total', data: d.total_mes, stack: 'total', order: 1,
+        // mês sem lançamento fica sem ponto (a linha não desce a zero)
+        { type: 'line', label: 'Total', data: d.total_mes.map(x => x || null), stack: 'total', order: 1,
           borderColor: '#38464D', backgroundColor: '#38464D', borderWidth: 2, pointRadius: 3, fill: false }
       ]
     },
@@ -226,7 +303,9 @@ function render(d) {
     }
   });
 
-  barrasHorizontais('chart_tipo', 'box_tipo', d.por_tipo);
+  // mesmas cores da rosca (mesma ordem: maior valor primeiro)
+  barrasHorizontais('chart_tipo', 'box_tipo', d.por_tipo, null, { comValor: true, altura: 300 });
+  barrasHorizontais('chart_sub', 'box_sub', d.por_subcategoria, '#007C6B');
   barrasHorizontais('chart_item', 'box_item', d.por_item, '#2E758C');
 }
 
@@ -264,7 +343,7 @@ function carregar() {
     });
 }
 
-// tipo e item filtram na hora; trocar o tipo limpa o item
+// categoria e item filtram na hora; trocar a categoria limpa o item
 document.getElementById('tipo').addEventListener('change', () => { document.getElementById('item').value = ''; carregar(); });
 document.getElementById('item').addEventListener('change', carregar);
 

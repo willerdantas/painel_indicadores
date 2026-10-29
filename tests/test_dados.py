@@ -50,6 +50,21 @@ def test_custos_periodo(dados_custos):
     assert d['kpis']['meses_com_dado'] == 3
 
 
+def test_custos_padrao_ultimos_12_meses_completos(dados_custos):
+    from datetime import date
+    d = custos.get_custos(hoje=date(2024, 6, 15))
+    assert (d['mes_ini'], d['mes_fim']) == ('2023-06', '2024-05')
+    assert d['meses_disponiveis'][0] == '2023-06' and d['meses_disponiveis'][-1] == '2024-05'
+    assert d['kpis']['total'] == 230.0
+
+
+def test_custos_por_subcategoria(dados_custos, monkeypatch):
+    monkeypatch.setattr(custos, '_subcategorias', lambda: {('Pessoal', 'Salários'): 'Servidores'})
+    d = custos.get_custos('2024-01', '2024-05')
+    assert d['por_subcategoria'] == [{'nome': 'Servidores', 'valor': 210.0},
+                                     {'nome': 'Insumos (sem subcategoria)', 'valor': 20.0}]
+
+
 @pytest.mark.parametrize('mes_ini, mes_fim', [(None, '2024-1'), ('abc', None), ('2024-13', None)])
 def test_custos_mes_malformado(dados_custos, mes_ini, mes_fim):
     with pytest.raises(ValueError):
@@ -143,3 +158,18 @@ def test_cadastro_item_custo_tem_subcategoria_opcional():
     assert item.pais == [('tipo_custo', 'Categoria')]
     assert item.opcionais == [('subcategoria_custo', 'Subcategoria', 'Sem subcategoria', 'tipo_custo')]
     assert banco_painel.CADASTROS_POR_TABELA['tipo_custo'].titulo == 'Categorias de Custo'
+
+
+def test_lancamento_custos_agrupa_por_categoria_e_subcategoria():
+    import lancamento_custos
+    linhas = [
+        {'tipo': 'Pessoal', 'subcategoria': 'Cooperativa', 'item': 'CEMERG', 'valor': 10.0},
+        {'tipo': 'Pessoal', 'subcategoria': 'Cooperativa', 'item': 'COMINT', 'valor': 5.0},
+        {'tipo': 'Pessoal', 'subcategoria': None, 'item': 'RESIDENTES', 'valor': None},
+        {'tipo': 'Despesas Gerais', 'subcategoria': None, 'item': 'Hemodiálise', 'valor': 2.0},
+    ]
+    pessoal, gerais = lancamento_custos.agrupar(linhas, 'valor')
+    assert pessoal['com_sub'] and pessoal['total'] == 15
+    assert [(s['nome'], s['total'], len(s['itens'])) for s in pessoal['subs']] == [
+        ('Cooperativa', 15, 2), ('Sem subcategoria', 0, 1)]
+    assert not gerais['com_sub'] and gerais['total'] == 2

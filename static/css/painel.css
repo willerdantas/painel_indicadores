@@ -862,6 +862,9 @@ img { max-width: 100%; }
 .pg-admin-lancamento-custos .rolagem-y thead th { position: sticky; top: 0; background: #fff; }
 .pg-admin-lancamento-custos .despesas tr.grupo td { background: var(--claro); color: var(--green); font-weight: 700; }
 .pg-admin-lancamento-custos .despesas td { font-size: 13px; padding: 6px 8px; }
+/* subcategoria de custo: subtítulo dentro da categoria e itens recuados */
+.pg-admin-lancamento-custos tr.subgrupo td { background: #f3faf9; color: var(--green); font-weight: 600; font-style: italic; padding-left: 22px; }
+.pg-admin-lancamento-custos tr.em-sub td:first-child { padding-left: 34px; }
 .pg-admin-lancamento-custos pre.sql { background: var(--bg); border-radius: 8px; padding: 12px 14px; font-size: 14px; margin: 12px 0; white-space: pre-wrap; }
 
 /* ---------- página: ambulatorio ---------- */
@@ -941,6 +944,10 @@ img { max-width: 100%; }
 /* ---------- página: custos ---------- */
 .pg-custos .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }
 .pg-custos .filters label { display: block; }
+/* distribuição por categoria: rosca (percentual) + barras (valor) lado a lado */
+.pg-custos .distribuicao { display: grid; grid-template-columns: minmax(240px, 1fr) minmax(0, 1.6fr); gap: 1.5rem; align-items: center; }
+.pg-custos .distribuicao .chart-box { height: 300px; min-width: 0; }
+@media (max-width: 760px) { .pg-custos .distribuicao { grid-template-columns: 1fr; } }
 .pg-custos .filters input, .pg-custos .filters select { width: 100%; }
 .pg-custos .clinica-btn { width: 100%; display: flex; justify-content: space-between; align-items: center; gap: .5rem; }
 .pg-custos .clinica-panel { display: none; min-width: 220px; }

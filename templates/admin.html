@@ -30,18 +30,35 @@
         <h1 class="section-title">Administração</h1>
 
         {# só as áreas liberadas no perfil; a configuração do banco é exclusiva do administrador #}
+        {# ícone de cada cartão (marca d'água, como na página inicial), em SVG embutido, traço 24x24 #}
+        {% set areas = [
+            (pode('usuarios'), 'admin_usuarios', 'Usuários',
+             '<path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/>'),
+            (pode('perfis'), 'admin_perfis', 'Perfis de Acesso',
+             '<path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/>'),
+            (pode('custos'), 'admin_custos', 'Lançar Dados de Custos',
+             '<line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/>'),
+            (pode('producao'), 'admin_producao', 'Lançar Dados de Produção',
+             '<line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/><line x1="3" y1="20" x2="21" y2="20"/>'),
+            (pode('simaq'), 'admin_simaq', 'Lançar Dados do SIMAQ',
+             '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>'),
+            (pode('cadastros'), 'admin_cadastros', 'Cadastros',
+             '<line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="4" cy="6" r="1"/><circle cx="4" cy="12" r="1"/><circle cx="4" cy="18" r="1"/>'),
+            (pode('classificacoes'), 'admin_classificacoes', 'Classificação de Exames',
+             '<path d="M20.6 13.4l-7.2 7.2a2 2 0 0 1-2.8 0L2 12V2h10l8.6 8.6a2 2 0 0 1 0 2.8z"/><circle cx="7" cy="7" r="1.5"/>'),
+            (eh_admin, 'admin_banco', 'Configuração do Banco',
+             '<ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.7-4 3-9 3s-9-1.3-9-3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/>'),
+        ] %}
+        {# só as áreas liberadas no perfil; a configuração do banco é exclusiva do administrador #}
         <div class="cards-row">
-            {% if pode('usuarios') %}<a href="{{ url_for('admin_usuarios') }}" class="card">Usuários</a>{% endif %}
-            {% if pode('perfis') %}<a href="{{ url_for('admin_perfis') }}" class="card">Perfis de Acesso</a>{% endif %}
-            {% if pode('custos') %}<a href="{{ url_for('admin_custos') }}" class="card">Lançar Dados de Custos</a>{% endif %}
-            {% if pode('producao') %}<a href="{{ url_for('admin_producao') }}" class="card">Lançar Dados de Produção</a>{% endif %}
-            {% if pode('simaq') %}<a href="{{ url_for('admin_simaq') }}" class="card">Lançar Dados do SIMAQ</a>{% endif %}
-            {% if pode('cadastros') %}<a href="{{ url_for('admin_cadastros') }}" class="card">Cadastros</a>{% endif %}
-            {% if pode('classificacoes') %}<a href="{{ url_for('admin_classificacoes') }}" class="card">Classificação de Exames</a>{% endif %}
-            {% if eh_admin %}<a href="{{ url_for('admin_banco') }}" class="card">Configuração do Banco</a>{% endif %}
-            {% if not pode('usuarios') and not pode('perfis') and not pode('custos') and not pode('producao') and not pode('simaq') and not pode('cadastros') and not pode('classificacoes') and not eh_admin %}
+            {% for liberada, rota, nome, icone in areas if liberada %}
+            <a href="{{ url_for(rota) }}" class="card">
+                <svg class="marca" viewBox="0 0 24 24" aria-hidden="true">{{ icone | safe }}</svg>
+                <span>{{ nome }}</span>
+            </a>
+            {% else %}
             <p style="color:#fff;font-size:17px;position:relative;">Seu perfil ainda não tem áreas liberadas. Fale com o administrador.</p>
-            {% endif %}
+            {% endfor %}
         </div>
 
     </main>

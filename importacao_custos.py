@@ -40,6 +40,9 @@ _SECAO_CUSTO_TOTAL = '5'
 _SECAO_RATEIO = '6'
 _SECAO_PRODUCAO = '8'
 _SECOES_CALCULADAS = ('3', '4', '7', '9')  # despesas gerais, custo gerencial, custo c/ rateio, custo unitário
+# linhas de conta pelo início do nome (sem acento, maiúsculas), qualquer que seja o código;
+# as com "TOTAL" no nome (SUB-TOTAL, TOTAL PESSOAL HM...) já são ignoradas
+_CONTAS_PELO_NOME = ('CUSTO GERENCIAL', 'CUSTO UNITARIO', 'CUSTO TOTAL C/', 'PESSOAL HM')
 _CODIGO = re.compile(r'^\s*(\d+(?:\.\d+)*)\.?\s*[-–—]?\s*(.*)$')
 _TOLERANCIA = 0.05  # R$: arredondamento entre o total (coluna D) e a soma das unidades
 _DIAS_LOTE = 2      # lotes não confirmados são apagados depois disso
@@ -160,6 +163,16 @@ def ler_geral(caminho):
         primeiro = codigo.split('.')[0] if codigo else None
         total = _numero(ws.cell(r, 4).value)
         numeros = {k: _numero(v) for k, v in valores.items()}
+
+        # numeração da planilha varia de um mês para outro: as linhas de conta
+        # também são reconhecidas pelo nome (senão viram itens de custo redundantes)
+        chave_nome = _chave(nome)
+        if primeiro != _SECAO_PRODUCAO and chave_nome.startswith('PRODUCAO'):
+            primeiro = _SECAO_PRODUCAO
+        elif primeiro != _SECAO_CUSTO_TOTAL and chave_nome == 'CUSTO TOTAL':
+            primeiro = _SECAO_CUSTO_TOTAL
+        if any(chave_nome.startswith(c) for c in _CONTAS_PELO_NOME):
+            continue
 
         if primeiro == _SECAO_PRODUCAO:
             for u in unidades:
