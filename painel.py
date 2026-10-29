@@ -1118,6 +1118,9 @@ def api_ambulatorio_dados():
             data_ini, data_fim,
             especialidade=request.args.get('especialidade') or None,
             status=request.args.get('status') or None,
+            sexo=request.args.get('sexo') or None,
+            municipio=request.args.get('municipio') or None,
+            macrorregiao=request.args.get('macrorregiao') or None,
         )
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
@@ -1138,6 +1141,9 @@ def api_ambulatorio_salas():
             data_ini, data_fim,
             especialidade=request.args.get('especialidade') or None,
             status=request.args.get('status') or None,
+            sexo=request.args.get('sexo') or None,
+            municipio=request.args.get('municipio') or None,
+            macrorregiao=request.args.get('macrorregiao') or None,
         )
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:

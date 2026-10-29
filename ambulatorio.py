@@ -19,8 +19,8 @@ criados no banco hospitalar:
 usar o índice. Num servidor novo, sem esses índices, a página volta a ficar lenta.
 A consulta busca, uma vez por período, um resumo agrupado (dia ×
 especialidade × status) que fica em memória por alguns minutos; os filtros
-de especialidade e status são aplicados sobre esse resumo, sem nova
-consulta ao banco.
+de especialidade, status, sexo, município e macrorregião são aplicados
+sobre esse resumo, sem nova consulta ao banco.
 
 Horário e tempo das consultas: vêm do registro do atendimento médico
 (t_internacao_atendimento), com a data (dat_ini/dat_fim) e a hora em texto
@@ -66,7 +66,7 @@ def _guardar(chave, valor):
 # atendimentos do período e a marcação de cada um (especialidade e status)
 _CTE_ATENDIMENTOS = """
         WITH atend AS MATERIALIZED (
-            SELECT ti.isn_internacao, ti.dat_cadastro
+            SELECT ti.isn_internacao, ti.dat_cadastro, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
             FROM t_internacao ti
             WHERE ti.isn_tipo_atendimento = 4
               -- intervalo na própria coluna (sem ::date) para poder usar índice em dat_cadastro
@@ -92,6 +92,16 @@ _JOINS_ESPECIALIDADE_STATUS = """
         LEFT JOIN marcacao m ON m.isn_internacao = a.isn_internacao
         LEFT JOIN t_especialidade te ON te.isn_especialidade = m.isn_especialidade
         LEFT JOIN t_marcacao_situacao tms ON tms.isn_marcacao_situacao = m.isn_marcacao_situacao"""
+# município do atendimento (com a UF: há nomes iguais em estados diferentes) e
+# sexo do paciente; "a" precisa ter isn_paciente, isn_municipio e isn_uf
+_MUNICIPIO_SEXO = """
+            COALESCE(NULLIF(TRIM(tmu.dsc_municipio), '') || COALESCE('/' || NULLIF(TRIM(tuf.sgl_uf), ''), ''),
+                     'Sem município') AS municipio,
+            COALESCE(NULLIF(TRIM(tp.dsc_sexo), ''), 'Não informado') AS sexo"""
+_JOINS_MUNICIPIO_SEXO = """
+        LEFT JOIN t_municipio tmu ON tmu.isn_municipio = a.isn_municipio
+        LEFT JOIN t_uf tuf ON tuf.isn_uf = a.isn_uf
+        LEFT JOIN t_paciente tp ON tp.isn_paciente = a.isn_paciente"""
 
 
 def _resumo_periodo(dt_ini, dt_fim):
@@ -103,16 +113,18 @@ def _resumo_periodo(dt_ini, dt_fim):
 
     rows = fetch_all(f"""{_CTE_ATENDIMENTOS}
         SELECT
-            a.dat_cadastro::date                          AS dia,{_ESPECIALIDADE_STATUS}
+            a.dat_cadastro::date                          AS dia,{_ESPECIALIDADE_STATUS}{_MUNICIPIO_SEXO},
             COUNT(*)                                      AS qtd
-        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}
-        GROUP BY 1, 2, 3
+        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
+        GROUP BY 1, 2, 3, 4, 5
     """, [dt_ini, dt_fim + timedelta(days=1)])
     return _guardar(chave, [
         {
             "dia": r["dia"],
             "especialidade": r["especialidade"].strip(),
             "status": r["status"].strip(),
+            "municipio": r["municipio"].strip(),
+            "sexo": r["sexo"].strip(),
             "qtd": int(r["qtd"]),
         }
         for r in rows or []
@@ -126,7 +138,7 @@ _MINUTOS_MAXIMO = 12 * 60  # consulta mais longa que isso é erro de digitação
 def _consultas_periodo(dt_ini, dt_fim):
     """Um registro por consulta realizada no período (data de início em
     t_internacao_atendimento.dat_ini): (especialidade, status, hora de início,
-    duração em minutos). Hora fora do formato HH:MM, sem fim ou duração fora
+    duração em minutos, sexo, município). Hora fora do formato HH:MM, sem fim ou duração fora
     de 0 a 12 h: None (com cache em memória)."""
     chave = ('consultas', dt_ini, dt_fim)
     consultas = _do_cache(chave)
@@ -135,7 +147,8 @@ def _consultas_periodo(dt_ini, dt_fim):
 
     rows = fetch_all(f"""
         WITH atend AS MATERIALIZED (
-            SELECT x.isn_internacao, x.dat_ini, x.dsc_hor_ini, x.dat_fim, x.dsc_hor_fim
+            SELECT x.isn_internacao, x.dat_ini, x.dsc_hor_ini, x.dat_fim, x.dsc_hor_fim,
+                   ti.isn_paciente, ti.isn_municipio, ti.isn_uf
             FROM t_internacao_atendimento x
             JOIN t_internacao ti ON ti.isn_internacao = x.isn_internacao AND ti.isn_tipo_atendimento = 4
             WHERE x.dat_ini >= %s AND x.dat_ini < %s
@@ -145,7 +158,7 @@ def _consultas_periodo(dt_ini, dt_fim):
                  THEN split_part(a.dsc_hor_ini, ':', 1)::int END AS hora,
             CASE WHEN a.dsc_hor_ini ~ {_HORA_VALIDA} AND a.dsc_hor_fim ~ {_HORA_VALIDA} AND a.dat_fim IS NOT NULL
                  THEN EXTRACT(EPOCH FROM (a.dat_fim::date + a.dsc_hor_fim::time)
-                                       - (a.dat_ini::date + a.dsc_hor_ini::time)) / 60 END AS minutos
+                                       - (a.dat_ini::date + a.dsc_hor_ini::time)) / 60 END AS minutos,{_MUNICIPIO_SEXO}
         FROM atend a
         LEFT JOIN LATERAL (
             -- a marcação mais recente da consulta, pelo índice de t_marcacao.isn_internacao
@@ -156,11 +169,12 @@ def _consultas_periodo(dt_ini, dt_fim):
             LIMIT 1
         ) m ON TRUE
         LEFT JOIN t_especialidade te ON te.isn_especialidade = m.isn_especialidade
-        LEFT JOIN t_marcacao_situacao tms ON tms.isn_marcacao_situacao = m.isn_marcacao_situacao
+        LEFT JOIN t_marcacao_situacao tms ON tms.isn_marcacao_situacao = m.isn_marcacao_situacao{_JOINS_MUNICIPIO_SEXO}
     """, [dt_ini, dt_fim + timedelta(days=1)])
     return _guardar(chave, [
         (r["especialidade"].strip(), r["status"].strip(), r["hora"],
-         float(r["minutos"]) if r["minutos"] is not None and 0 <= r["minutos"] <= _MINUTOS_MAXIMO else None)
+         float(r["minutos"]) if r["minutos"] is not None and 0 <= r["minutos"] <= _MINUTOS_MAXIMO else None,
+         r["sexo"].strip(), r["municipio"].strip())
         for r in rows or []
     ])
 
@@ -170,7 +184,7 @@ def tempo_consulta(consultas, especialidade=None, status=None):
     mais demorada para a mais rápida), e o total. Só entram as consultas com
     início e fim válidos."""
     tempos = {}
-    for esp, st, _, minutos in consultas:
+    for esp, st, _, minutos, *_ in consultas:
         if minutos is None or (especialidade and esp != especialidade) or (status and st != status):
             continue
         tempos.setdefault(esp, []).append(minutos)
@@ -201,17 +215,10 @@ def _visitas_periodo(dt_ini, dt_fim):
         return visitas
 
     rows = fetch_all(f"""{_CTE_ATENDIMENTOS}
-        SELECT ti.isn_paciente AS paciente,{_ESPECIALIDADE_STATUS}
-            a.dat_cadastro::date AS dia,
-            COALESCE(NULLIF(TRIM(tmu.dsc_municipio), '') || COALESCE('/' || NULLIF(TRIM(tuf.sgl_uf), ''), ''),
-                     'Sem município') AS municipio,
-            COALESCE(NULLIF(TRIM(tp.dsc_sexo), ''), 'Não informado') AS sexo,
+        SELECT a.isn_paciente AS paciente,{_ESPECIALIDADE_STATUS}
+            a.dat_cadastro::date AS dia,{_MUNICIPIO_SEXO},
             date_part('year', age(a.dat_cadastro::date, tp.dat_nascimento::date))::int AS idade
-        FROM atend a
-        JOIN t_internacao ti ON ti.isn_internacao = a.isn_internacao{_JOINS_ESPECIALIDADE_STATUS}
-        LEFT JOIN t_municipio tmu ON tmu.isn_municipio = ti.isn_municipio
-        LEFT JOIN t_uf tuf ON tuf.isn_uf = ti.isn_uf
-        LEFT JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
+        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
     """, [dt_ini, dt_fim + timedelta(days=1)])
     return _guardar(chave, [
         (r["paciente"], r["especialidade"].strip(), r["status"].strip(), r["dia"], r["municipio"].strip(),
@@ -233,6 +240,27 @@ def por_municipio(visitas, especialidade=None, status=None):
                   key=lambda x: (-x["qtd"], x["nome"]))
 
 
+def macrorregiao_do_municipio(municipio, macro_do_municipio):
+    """Macrorregião de saúde de um município "NOME/UF" (cadastro {município
+    sem acento: macrorregião}): do Ceará fora do cadastro, "Ceará (não
+    classificado)"; de outro estado, "Outros estados"; "Sem município" fica igual."""
+    nome, _, uf = municipio.rpartition('/')
+    if not nome:
+        return municipio
+    if uf != 'CE':
+        return 'Outros estados'
+    return macro_do_municipio.get(banco_painel._chave_nome(nome)) or 'Ceará (não classificado)'
+
+
+def filtro_paciente(sexo=None, municipio=None, macrorregiao=None, macro_do_municipio=None):
+    """Função (sexo, município) -> se o atendimento passa nos filtros de sexo,
+    município e macrorregião; None quando nenhum dos três está ativo."""
+    if not (sexo or municipio or macrorregiao):
+        return None
+    return lambda s, m: ((not sexo or s == sexo) and (not municipio or m == municipio)
+                         and (not macrorregiao or macrorregiao_do_municipio(m, macro_do_municipio or {}) == macrorregiao))
+
+
 def por_macrorregiao(visitas, macro_do_municipio, especialidade=None, status=None):
     """Atendimentos e prontuários únicos por macrorregião de saúde do Ceará
     (cadastro Regiões de Saúde: {município sem acento: macrorregião}).
@@ -242,13 +270,7 @@ def por_macrorregiao(visitas, macro_do_municipio, especialidade=None, status=Non
     for paciente, esp, st, _, municipio, *_ in visitas:
         if (especialidade and esp != especialidade) or (status and st != status):
             continue
-        nome, _, uf = municipio.rpartition('/')
-        if not nome:
-            grupo = municipio  # "Sem município"
-        elif uf != 'CE':
-            grupo = 'Outros estados'
-        else:
-            grupo = macro_do_municipio.get(banco_painel._chave_nome(nome)) or 'Ceará (não classificado)'
+        grupo = macrorregiao_do_municipio(municipio, macro_do_municipio)
         atend[grupo] = atend.get(grupo, 0) + 1
         if paciente is not None:
             pacientes.setdefault(grupo, set()).add(paciente)
@@ -387,27 +409,31 @@ def _salas_periodo(dt_ini, dt_fim):
             ORDER BY il.isn_internacao, il.isn_internacao_leito DESC
         )
         SELECT
-            COALESCE(NULLIF(TRIM(tl.dsc_leito), ''), 'Sem sala') AS sala,{_ESPECIALIDADE_STATUS}
+            COALESCE(NULLIF(TRIM(tl.dsc_leito), ''), 'Sem sala') AS sala,{_ESPECIALIDADE_STATUS}{_MUNICIPIO_SEXO},
             COUNT(*)                                      AS qtd
-        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}
+        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
         LEFT JOIN leito l ON l.isn_internacao = a.isn_internacao
         LEFT JOIN t_leito tl ON tl.isn_leito = l.isn_leito
-        GROUP BY 1, 2, 3
+        GROUP BY 1, 2, 3, 4, 5
     """, [dt_ini, dt_fim + timedelta(days=1)])
     return _guardar(chave, [
         {"sala": r["sala"].strip(), "especialidade": r["especialidade"].strip(),
-         "status": r["status"].strip(), "qtd": int(r["qtd"])}
+         "status": r["status"].strip(), "municipio": r["municipio"].strip(), "sexo": r["sexo"].strip(),
+         "qtd": int(r["qtd"])}
         for r in rows or []
     ])
 
 
-def get_salas(data_ini, data_fim, especialidade=None, status=None):
+def get_salas(data_ini, data_fim, especialidade=None, status=None, sexo=None, municipio=None, macrorregiao=None):
     """Consultas por status em cada sala: salas da mais para a menos usada e
-    uma série por status (mesmos filtros de especialidade e status da página)."""
+    uma série por status (mesmos filtros da página)."""
     dt_ini, dt_fim = sorted((date.fromisoformat(data_ini), date.fromisoformat(data_fim)))
+    filtro = filtro_paciente(sexo, municipio, macrorregiao,
+                             banco_painel.macrorregiao_dos_municipios() if macrorregiao else None)
     linhas = [r for r in _salas_periodo(dt_ini, dt_fim)
               if (not especialidade or r["especialidade"] == especialidade)
-              and (not status or r["status"] == status)]
+              and (not status or r["status"] == status)
+              and (filtro is None or filtro(r["sexo"], r["municipio"]))]
     salas = [x["nome"] for x in _contar(linhas, "sala")]
     status_ordem = [x["nome"] for x in _contar(linhas, "status")]
     idx = {s: i for i, s in enumerate(salas)}
@@ -424,24 +450,34 @@ def _contar(linhas, campo):
     return sorted(({"nome": k, "qtd": v} for k, v in tot.items()), key=lambda x: (-x["qtd"], x["nome"]))
 
 
-def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
+def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
+                    sexo=None, municipio=None, macrorregiao=None):
     dt_ini = date.fromisoformat(data_ini)
     dt_fim = date.fromisoformat(data_fim)
     if dt_ini > dt_fim:
         dt_ini, dt_fim = dt_fim, dt_ini
 
     resumo = _resumo_periodo(dt_ini, dt_fim)
+    macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
 
     # opções dos filtros: tudo o que aparece no período (sem filtro aplicado)
+    municipios = {r["municipio"] for r in resumo}
     opcoes = {
         "especialidades": sorted({r["especialidade"] for r in resumo}),
         "status": [x["nome"] for x in _contar(resumo, "status")],
+        "sexos": [x["nome"] for x in _contar(resumo, "sexo")],
+        "municipios": sorted(municipios),
+        "macrorregioes": sorted({macrorregiao_do_municipio(m, macro_do_municipio) for m in municipios}),
     }
 
+    # sexo, município e macrorregião: filtram as listas antes dos demais
+    # cálculos (que já recebem especialidade e status)
+    filtro = filtro_paciente(sexo, municipio, macrorregiao, macro_do_municipio)
     linhas = [
         r for r in resumo
         if (not especialidade or r["especialidade"] == especialidade)
         and (not status or r["status"] == status)
+        and (filtro is None or filtro(r["sexo"], r["municipio"]))
     ]
 
     dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
@@ -452,8 +488,10 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
 
     # horário: início da consulta registrado no atendimento médico
     consultas = _consultas_periodo(dt_ini, dt_fim)
+    if filtro is not None:
+        consultas = [c for c in consultas if filtro(c[4], c[5])]
     por_hora = [0] * 24
-    for esp, st, hora, _ in consultas:
+    for esp, st, hora, *_ in consultas:
         if hora is not None and (not especialidade or esp == especialidade) and (not status or st == status):
             por_hora[hora] += 1
 
@@ -476,6 +514,8 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
 
     por_status = _contar(linhas, "status")
     visitas = _visitas_periodo(dt_ini, dt_fim)
+    if filtro is not None:
+        visitas = [v for v in visitas if filtro(v[5], v[4])]
     prontuario_linhas, prontuario_total = por_prontuario(visitas, especialidade, status)
     total = sum(por_dia)
     qtd_status = {x["nome"].upper(): x["qtd"] for x in por_status}
@@ -515,5 +555,5 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None):
         "por_sexo": por_sexo(visitas, especialidade, status),
         "por_idade": por_idade(visitas, especialidade, status),
         "por_municipio": por_municipio(visitas, especialidade, status),
-        "por_macrorregiao": por_macrorregiao(visitas, banco_painel.macrorregiao_dos_municipios(), especialidade, status),
+        "por_macrorregiao": por_macrorregiao(visitas, macro_do_municipio, especialidade, status),
     }

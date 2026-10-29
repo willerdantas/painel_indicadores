@@ -178,9 +178,12 @@ def test_lancamento_custos_agrupa_por_categoria_e_subcategoria():
 def test_ambulatorio_consultas_por_status_por_sala(monkeypatch):
     import ambulatorio
     linhas = [
-        {'sala': 'SL-01', 'especialidade': 'Cardiologia', 'status': 'CONCLUÍDO', 'qtd': 5},
-        {'sala': 'SL-01', 'especialidade': 'Cardiologia', 'status': 'FALTOU', 'qtd': 2},
-        {'sala': 'SL-02', 'especialidade': 'Pneumologia', 'status': 'CONCLUÍDO', 'qtd': 9},
+        {'sala': 'SL-01', 'especialidade': 'Cardiologia', 'status': 'CONCLUÍDO',
+         'sexo': 'Feminino', 'municipio': 'FORTALEZA/CE', 'qtd': 5},
+        {'sala': 'SL-01', 'especialidade': 'Cardiologia', 'status': 'FALTOU',
+         'sexo': 'Feminino', 'municipio': 'FORTALEZA/CE', 'qtd': 2},
+        {'sala': 'SL-02', 'especialidade': 'Pneumologia', 'status': 'CONCLUÍDO',
+         'sexo': 'Masculino', 'municipio': 'SOBRAL/CE', 'qtd': 9},
     ]
     monkeypatch.setattr(ambulatorio, '_salas_periodo', lambda ini, fim: linhas)
     d = ambulatorio.get_salas('2026-10-01', '2026-10-31')
@@ -188,6 +191,26 @@ def test_ambulatorio_consultas_por_status_por_sala(monkeypatch):
     assert d['series'] == [{'status': 'CONCLUÍDO', 'valores': [9, 5]}, {'status': 'FALTOU', 'valores': [0, 2]}]
     d = ambulatorio.get_salas('2026-10-01', '2026-10-31', especialidade='Cardiologia')
     assert d['salas'] == ['SL-01']
+    d = ambulatorio.get_salas('2026-10-01', '2026-10-31', sexo='Masculino')
+    assert d['salas'] == ['SL-02'] and d['series'] == [{'status': 'CONCLUÍDO', 'valores': [9]}]
+    d = ambulatorio.get_salas('2026-10-01', '2026-10-31', municipio='FORTALEZA/CE')
+    assert d['salas'] == ['SL-01']
+
+
+def test_ambulatorio_filtro_sexo_municipio_macrorregiao():
+    import ambulatorio
+    mapa = {'FORTALEZA': '1ª Fortaleza', 'SOBRAL': '2ª Sobral'}
+    assert ambulatorio.filtro_paciente() is None
+    f = ambulatorio.filtro_paciente(sexo='Feminino')
+    assert f('Feminino', 'SOBRAL/CE') and not f('Masculino', 'SOBRAL/CE')
+    f = ambulatorio.filtro_paciente(macrorregiao='2ª Sobral', macro_do_municipio=mapa)
+    assert f('Masculino', 'SOBRAL/CE') and not f('Masculino', 'FORTALEZA/CE')
+    f = ambulatorio.filtro_paciente(macrorregiao='Outros estados', macro_do_municipio=mapa)
+    assert f('Feminino', 'SOBRAL/PI') and not f('Feminino', 'SOBRAL/CE')
+    f = ambulatorio.filtro_paciente(sexo='Feminino', municipio='FORTALEZA/CE')
+    assert f('Feminino', 'FORTALEZA/CE') and not f('Feminino', 'SOBRAL/CE') and not f('Masculino', 'FORTALEZA/CE')
+    assert ambulatorio.macrorregiao_do_municipio('Sem município', mapa) == 'Sem município'
+    assert ambulatorio.macrorregiao_do_municipio('IGUATU/CE', mapa) == 'Ceará (não classificado)'
 
 
 def test_ambulatorio_por_prontuario_e_intervalo_medio():
@@ -293,3 +316,12 @@ def test_macrorregioes_do_ceara_tem_os_184_municipios():
     assert list(m) == ['Fortaleza', 'Norte', 'Cariri', 'Sertão Central', 'Litoral Leste/Jaguaribe']
     nomes = [n for v in m.values() for n in v]
     assert len(nomes) == len(set(nomes)) == 184
+
+
+def test_macrorregioes_sem_banco_pronto_usa_a_lista_oficial(monkeypatch):
+    # logo depois de iniciar o servidor o banco do painel ainda está conectando:
+    # os municípios continuam classificados
+    monkeypatch.setattr(banco_painel, 'pronto', lambda: False)
+    mapa = banco_painel.macrorregiao_dos_municipios()
+    assert len(mapa) == 184
+    assert mapa['FORTALEZA'] == 'Fortaleza' and mapa['SOBRAL'] == 'Norte' and mapa['VICOSA DO CEARA'] == 'Norte'

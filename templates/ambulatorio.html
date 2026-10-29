@@ -45,6 +45,18 @@
       <select id="status"><option value="">Todos</option></select>
     </div>
     <div>
+      <label for="sexo">Sexo</label>
+      <select id="sexo"><option value="">Todos</option></select>
+    </div>
+    <div>
+      <label for="macrorregiao">Macrorregião</label>
+      <select id="macrorregiao"><option value="">Todas</option></select>
+    </div>
+    <div>
+      <label for="municipio">Município</label>
+      <select id="municipio"><option value="">Todos</option></select>
+    </div>
+    <div>
       <label>&nbsp;</label>
       <button class="btn-apply" onclick="carregar()">Atualizar</button>
     </div>
@@ -682,6 +694,7 @@ function carregar() {
   const params = new URLSearchParams({
     data_ini: v('data_ini'), data_fim: v('data_fim'),
     especialidade: v('especialidade'), status: v('status'),
+    sexo: v('sexo'), macrorregiao: v('macrorregiao'), municipio: v('municipio'),
   });
   document.getElementById('kpis').classList.add('loading');
   document.getElementById('graficos').classList.add('loading');
@@ -701,6 +714,9 @@ function carregar() {
       const d = res.dados;
       preencherSelect('especialidade', d.opcoes.especialidades, 'Todas');
       preencherSelect('status', d.opcoes.status, 'Todos');
+      preencherSelect('sexo', d.opcoes.sexos, 'Todos');
+      preencherSelect('macrorregiao', d.opcoes.macrorregioes, 'Todas');
+      preencherSelect('municipio', d.opcoes.municipios, 'Todos');
       render(d);
       carregarSalas(params);  // depois dos demais, para não atrasar a página
     })
@@ -713,8 +729,8 @@ function carregar() {
     });
 }
 
-// especialidade e status filtram na hora (o servidor guarda o período)
-['especialidade', 'status'].forEach(id =>
+// os filtros (menos as datas) aplicam na hora (o servidor guarda o período)
+['especialidade', 'status', 'sexo', 'macrorregiao', 'municipio'].forEach(id =>
   document.getElementById(id).addEventListener('change', carregar));
 
 carregar();

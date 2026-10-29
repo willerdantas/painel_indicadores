@@ -991,15 +991,21 @@ def _criar_regioes_saude(cur):
 
 def macrorregiao_dos_municipios():
     """{nome do município (sem acento, maiúsculas): macrorregião} dos
-    municípios do Ceará ativos no cadastro; vazio sem o banco do painel."""
-    if not pronto():
-        return {}
-    s = schema()
-    with _cursor() as cur:
-        cur.execute(f"""SELECT m.nome, r.nome AS macro FROM {s}.municipio_regiao m
-                        JOIN {s}.macrorregiao r ON r.id = m.macrorregiao_id
-                        WHERE m.ativo AND r.ativo""")
-        return {_chave_nome(row['nome']): row['macro'] for row in cur.fetchall()}
+    municípios do Ceará ativos no cadastro. Enquanto o banco do painel não
+    está pronto (logo depois de iniciar o servidor) ou se a leitura falhar,
+    usa a lista oficial MACRORREGIOES_CE, para os municípios não aparecerem
+    todos como não classificados."""
+    if pronto():
+        try:
+            s = schema()
+            with _cursor() as cur:
+                cur.execute(f"""SELECT m.nome, r.nome AS macro FROM {s}.municipio_regiao m
+                                JOIN {s}.macrorregiao r ON r.id = m.macrorregiao_id
+                                WHERE m.ativo AND r.ativo""")
+                return {_chave_nome(row['nome']): row['macro'] for row in cur.fetchall()}
+        except Exception as e:
+            print(f'[painel] AVISO: cadastro de macrorregiões indisponível, usando a lista oficial: {e}')
+    return {_chave_nome(m): macro for macro, municipios in MACRORREGIOES_CE.items() for m in municipios}
 
 
 def _criar_controle_migracao(cur):
