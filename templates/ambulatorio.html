@@ -150,6 +150,17 @@
           especialidade conta uma vez.</div>
       </div>
       <div class="graf-card full">
+        <h3>Consultas por tipo de consulta e por especialidade</h3>
+        <div class="tabela-info tabela-prontuario">
+          <table class="tabela">
+            <thead id="th_tipo"></thead>
+            <tbody id="tb_tipo"></tbody>
+          </table>
+        </div>
+        <div class="nota">Atendimentos agendados no período pelo tipo de consulta da marcação. Os nomes vêm do cadastro
+          Tipos de Consulta, na área restrita; código sem nome no cadastro aparece como "Código N".</div>
+      </div>
+      <div class="graf-card full">
         <h3>Atendimentos por macrorregião de saúde</h3>
         <div class="nota">Municípios agrupados pelo cadastro Regiões de Saúde (Ceará), na área restrita.</div>
         <div class="municipios">
@@ -581,6 +592,17 @@ function render(d) {
   document.getElementById('tb_prontuario').innerHTML = d.por_prontuario.length
     ? d.por_prontuario.map(l => linhaProntuario(l)).join('') + linhaProntuario(d.por_prontuario_total, 'total')
     : '<tr><td colspan="6">Nenhum atendimento no período.</td></tr>';
+
+  // especialidade × tipo de consulta (nomes do banco e do cadastro: escapados)
+  const pt = d.por_tipo_consulta;
+  document.getElementById('th_tipo').innerHTML = `<tr><th>Especialidade</th>` +
+    pt.tipos.map(t => `<th class="num">${esc(t)}</th>`).join('') + `<th class="num">Total</th></tr>`;
+  const linhaTipo = (l, classe = '') => `<tr class="${classe}"><td>${esc(l.nome)}</td>` +
+    l.valores.map(q => `<td class="num">${q ? fmt(q) : '<span class="sem-dado">—</span>'}</td>`).join('') +
+    `<td class="num"><strong>${fmt(l.total)}</strong></td></tr>`;
+  document.getElementById('tb_tipo').innerHTML = pt.linhas.length
+    ? pt.linhas.map(l => linhaTipo(l)).join('') + linhaTipo(pt.total, 'total')
+    : '<tr><td colspan="2">Nenhum atendimento no período.</td></tr>';
 
   novoGrafico('chart_semana', {
     type: 'bar',

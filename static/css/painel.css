@@ -899,6 +899,7 @@ img { max-width: 100%; }
 .pg-ambulatorio .tabela-prontuario thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
 .pg-ambulatorio .tabela-prontuario tr.total td { position: sticky; bottom: 0; background: #fff; }
 .pg-ambulatorio .tabela-prontuario th.num { text-align: right; }
+.pg-ambulatorio .tabela-prontuario .sem-dado { color: var(--muted); }
 /* por município: gráfico (15 maiores) e tabela com todos, lado a lado */
 .pg-ambulatorio .municipios { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
 .pg-ambulatorio .tabela-municipio .tabela { font-size: .8rem; }
@@ -1026,7 +1027,7 @@ img { max-width: 100%; }
 .pg-exames-por-clinica .nota-origem { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
 .pg-exames-por-clinica #tabela-exames-classificacao th.grupo-origem, .pg-exames-por-clinica #tabela-tempo-realizacao th.grupo-origem { text-align: center; border-left: 2px solid var(--claro); }
 .pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th, .pg-exames-por-clinica #tabela-tempo-realizacao tr.sub-origem th { font-size: 11px; font-weight: 600; }
-.pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th:nth-child(4n+1), .pg-exames-por-clinica #tabela-tempo-realizacao tr.sub-origem th:nth-child(5n+1), .pg-exames-por-clinica #tabela-exames-classificacao td.inicio-grupo, .pg-exames-por-clinica #tabela-tempo-realizacao td.inicio-grupo { border-left: 2px solid var(--claro); }
+.pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th:nth-child(4n+1), .pg-exames-por-clinica #tabela-tempo-realizacao tr.sub-origem th:nth-child(11n+1), .pg-exames-por-clinica #tabela-exames-classificacao td.inicio-grupo, .pg-exames-por-clinica #tabela-tempo-realizacao td.inicio-grupo { border-left: 2px solid var(--claro); }
 .pg-exames-por-clinica #tabela-exames-classificacao td:nth-child(2), .pg-exames-por-clinica #tabela-tempo-realizacao td:nth-child(2) { text-align: left; white-space: normal; min-width: 180px; }
 .pg-exames-por-clinica #tabela-exames-classificacao td.col-total { font-weight: 700; background: rgba(0,161,162,.06); }
 .pg-exames-por-clinica .painel-sem-agend { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
@@ -1287,6 +1288,11 @@ img { max-width: 100%; }
 .pg-ambulatorio-tendencia .chart-container { height: 300px; }
 .pg-ambulatorio-tendencia .error-bar { display: none; }
 .pg-ambulatorio-tendencia .sem-dado { color: var(--muted); font-style: italic; }
+.pg-ambulatorio-tendencia .tabela-tipo { margin-top: 0; max-height: 520px; overflow: auto; }
+.pg-ambulatorio-tendencia .tabela-tipo thead th { position: sticky; top: 0; background: #fff; z-index: 1; }
+.pg-ambulatorio-tendencia .tabela-tipo th.num { text-align: right; }
+.pg-ambulatorio-tendencia .tabela-tipo tr.total td { position: sticky; bottom: 0; background: #fff; }
+.pg-ambulatorio-tendencia .nota-tipo { font-size: .78rem; color: var(--muted); margin-top: .75rem; }
 @media(max-width:900px) {
   .pg-ambulatorio-tendencia .charts-grid { grid-template-columns: 1fr; }
 }
@@ -1327,6 +1333,12 @@ img { max-width: 100%; }
 .pg-ambulatorio-comparativo table.comparativo tr.sub .indicador-nome { padding-left: 1.1rem; font-weight: 500; color: var(--muted); }
 .pg-ambulatorio-comparativo table.comparativo tr.sub .indicador-nome::before { content: '↳ '; color: var(--border); }
 .pg-ambulatorio-comparativo table.comparativo tr.sub .unidade { padding-left: 1.1rem; }
+/* por especialidade e tipo de consulta: a especialidade abre/fecha os seus tipos */
+.pg-ambulatorio-comparativo table.comparativo tr.oculto { display: none; }
+.pg-ambulatorio-comparativo table.comparativo tr.grupo-esp { cursor: pointer; }
+.pg-ambulatorio-comparativo table.comparativo tr.grupo-esp .indicador-nome::before { content: '▸ '; color: var(--muted); }
+.pg-ambulatorio-comparativo table.comparativo tr.grupo-esp.aberto .indicador-nome::before { content: '▾ '; }
+.pg-ambulatorio-comparativo table.comparativo tr.total-tipo td { background: var(--claro); }
 
 /* ---------- página: index ---------- */
 .pg-index .aviso-login { color: #fff; font-size: 17px; position: relative; }

@@ -64,6 +64,18 @@
   <h2 class="section-title">Atendimentos do Ambulatório</h2>
   <div class="charts-grid" id="charts_ambulatorio"></div>
 
+  <h2 class="section-title">Consultas por Tipo de Consulta e por Especialidade</h2>
+  <div class="chart-card">
+    <div class="saidas-info tabela-tipo">
+      <table class="tabela">
+        <thead id="th_tipo"></thead>
+        <tbody id="tb_tipo"></tbody>
+      </table>
+    </div>
+    <p class="nota-tipo">Atendimentos agendados em todos os meses escolhidos, pelo tipo de consulta da marcação
+      (nomes do cadastro Tipos de Consulta).</p>
+  </div>
+
 </div>
 
 <script>
@@ -86,7 +98,8 @@ const CORES_STATUS = {
   'RECEPÇÃO': '#00B2C9', 'ESPERA': '#2E758C', 'ANDAMENTO': '#0F9688',
 };
 const CORES_SEXO = { 'Feminino': '#C9577F', 'Masculino': '#2E758C' };
-const PALETA = ['#00B2C9', '#3BB5A3', '#2E758C', '#F3A133', '#EB600A', '#0F9688', '#53B7D9', '#6b7f86', '#C9577F'];
+const PALETA = ['#00B2C9', '#3BB5A3', '#2E758C', '#F3A133', '#EB600A', '#0F9688', '#53B7D9', '#6b7f86', '#C9577F',
+                '#7B6FB0', '#A3B86C', '#C99A2E', '#8C5E3C', '#4A6FA5', '#B0B8BC'];
 
 // Preenche um select com as opções do período, mantendo a escolha atual
 // quando ela ainda existe.
@@ -172,6 +185,19 @@ function criarGraficoEmpilhado(container, titulo, meses, series, cores, rotuloSe
   container.appendChild(info);
 }
 
+// especialidade × tipo de consulta no período todo (nomes do banco e do cadastro: escapados)
+function renderTabelaTipo(pt) {
+  const esc = s => String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+  document.getElementById('th_tipo').innerHTML = `<tr><th>Especialidade</th>` +
+    pt.tipos.map(t => `<th class="num">${esc(t)}</th>`).join('') + `<th class="num">Total</th></tr>`;
+  const linha = (l, classe = '') => `<tr class="${classe}"><td>${esc(l.nome)}</td>` +
+    l.valores.map(q => `<td class="num">${q ? fmtNum(q) : '<span class="sem-dado">—</span>'}</td>`).join('') +
+    `<td class="num"><strong>${fmtNum(l.total)}</strong></td></tr>`;
+  document.getElementById('tb_tipo').innerHTML = pt.linhas.length
+    ? pt.linhas.map(l => linha(l)).join('') + linha(pt.total, 'total')
+    : '<tr><td colspan="2" class="sem-dado">Nenhum atendimento nos meses escolhidos.</td></tr>';
+}
+
 function carregarGraficos() {
   const params = new URLSearchParams({
     especialidade: v('especialidade'), sexo: v('sexo'), macrorregiao: v('macrorregiao'), municipio: v('municipio'),
@@ -205,6 +231,7 @@ function carregarGraficos() {
         { key: 'atendimentos', titulo: 'Atendimentos', cor: '#2E758C' },
         { key: 'media_diaria', titulo: 'Média Diária de Atendimentos (por dia com atendimento)', cor: '#00A1A2' },
         { key: 'status', titulo: 'Atendimentos por Status', empilhado: CORES_STATUS, rotulo: 'Status' },
+        { key: 'tipo_consulta', titulo: 'Atendimentos por Tipo de Consulta', empilhado: {}, rotulo: 'Tipo de consulta' },
         { key: 'prontuarios', titulo: 'Prontuários Únicos', cor: '#0F9688' },
         { key: 'por_prontuario', titulo: 'Atendimentos por Prontuário', cor: '#53B7D9' },
         { key: 'taxa_alta', titulo: 'Taxa de Alta Ambulatorial (%)', cor: '#007C6B', sufixo: '%' },
@@ -240,6 +267,7 @@ function carregarGraficos() {
       if (!container.children.length) {
         container.innerHTML = '<p class="sem-dado">Nenhum atendimento nos meses escolhidos.</p>';
       }
+      renderTabelaTipo(d.tipo_especialidade);
     })
     .catch(err => {
       hideLoader();

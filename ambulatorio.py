@@ -109,7 +109,8 @@ _CTE_MARCACAO = """
                 tm.isn_internacao,
                 tm.isn_especialidade,
                 tm.dsc_especialidade,
-                tm.isn_marcacao_situacao
+                tm.isn_marcacao_situacao,
+                tm.isn_tipo_consulta
             FROM t_marcacao tm
             WHERE tm.isn_internacao IN (SELECT isn_internacao FROM atend)
             ORDER BY tm.isn_internacao, tm.isn_marcacao DESC
@@ -240,7 +241,7 @@ def tempo_consulta(consultas, especialidade=None, status=None):
 
 def _visitas_periodo(dt_ini, dt_fim):
     """Um registro por atendimento: (paciente, especialidade, status, dia,
-    município, sexo, idade, isn_internacao). É a única leitura de
+    município, sexo, idade, isn_internacao, isn_tipo_consulta). É a única leitura de
     t_internacao e t_marcacao da página: o resumo, as consultas e as salas
     partem daqui (com cache em memória). O município é o do atendimento
     (t_internacao.isn_municipio), com a UF: há nomes iguais em estados diferentes.
@@ -251,13 +252,14 @@ def _visitas_periodo(dt_ini, dt_fim):
         rows = _consultar('atendimentos', f"""{_CTE_ATENDIMENTOS}
             SELECT a.isn_internacao AS internacao, a.isn_paciente AS paciente,{_ESPECIALIDADE_STATUS}
                 a.dat_cadastro::date AS dia,{_MUNICIPIO_SEXO},
-                date_part('year', age(a.dat_cadastro::date, tp.dat_nascimento::date))::int AS idade
+                date_part('year', age(a.dat_cadastro::date, tp.dat_nascimento::date))::int AS idade,
+                m.isn_tipo_consulta AS tipo
             FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
         """, [dt_ini, dt_fim + timedelta(days=1)])
         return [
             (r["paciente"], r["especialidade"].strip(), r["status"].strip(), r["dia"], r["municipio"].strip(),
              r["sexo"].strip(), r["idade"] if r["idade"] is not None and 0 <= r["idade"] <= _IDADE_MAXIMA else None,
-             r["internacao"])
+             r["internacao"], r["tipo"])
             for r in rows
         ]
     return _em_cache(('visitas', dt_ini, dt_fim), calcular)
@@ -316,6 +318,36 @@ def por_macrorregiao(visitas, macro_do_municipio, especialidade=None, status=Non
             pacientes.setdefault(grupo, set()).add(paciente)
     return sorted(({"nome": g, "qtd": q, "prontuarios": len(pacientes.get(g, ()))} for g, q in atend.items()),
                   key=lambda x: (-x["qtd"], x["nome"]))
+
+
+def nome_tipo_consulta(codigo, nomes):
+    """Nome do tipo de consulta (t_marcacao.isn_tipo_consulta) pelo cadastro
+    Tipos de Consulta; código fora do cadastro aparece como "Código N"."""
+    if codigo is None:
+        return "Sem tipo"
+    return nomes.get(codigo) or f"Código {codigo}"
+
+
+def por_tipo_especialidade(visitas, nomes, especialidade=None, status=None):
+    """Atendimentos por especialidade × tipo de consulta. "tipos": colunas,
+    do tipo com mais atendimentos para o com menos; "linhas": uma por
+    especialidade (da maior para a menor), com um valor por tipo e o total;
+    "total": a soma de cada coluna."""
+    contagem = {}
+    for _, esp, st, *resto in visitas:
+        if (especialidade and esp != especialidade) or (status and st != status):
+            continue
+        chave = (esp, nome_tipo_consulta(resto[5], nomes))
+        contagem[chave] = contagem.get(chave, 0) + 1
+    por_tipo, por_esp = {}, {}
+    for (esp, tipo), qtd in contagem.items():
+        por_tipo[tipo] = por_tipo.get(tipo, 0) + qtd
+        por_esp[esp] = por_esp.get(esp, 0) + qtd
+    tipos = sorted(por_tipo, key=lambda t: (-por_tipo[t], t))
+    linhas = [{"nome": e, "valores": [contagem.get((e, t), 0) for t in tipos], "total": por_esp[e]}
+              for e in sorted(por_esp, key=lambda e: (-por_esp[e], e))]
+    return {"tipos": tipos, "linhas": linhas,
+            "total": {"nome": "Total", "valores": [por_tipo[t] for t in tipos], "total": sum(por_tipo.values())}}
 
 
 _ORDEM_SEXO = ('Feminino', 'Masculino')
@@ -454,7 +486,7 @@ def _salas_periodo(dt_ini, dt_fim):
         """, [dt_ini, dt_fim + timedelta(days=1)])
         sala_de = {r["internacao"]: r["sala"] for r in rows}
         grupos = {}
-        for _, esp, st, _, municipio, sexo, _, internacao in _visitas_periodo(dt_ini, dt_fim):
+        for _, esp, st, _, municipio, sexo, _, internacao, _ in _visitas_periodo(dt_ini, dt_fim):
             chave = ((sala_de.get(internacao) or 'Sem sala').strip(), esp, st, municipio, sexo)
             grupos[chave] = grupos.get(chave, 0) + 1
         return [{"sala": s, "especialidade": e, "status": st, "municipio": m, "sexo": x, "qtd": q}
@@ -594,6 +626,8 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         "por_idade": por_idade(visitas, especialidade, status),
         "por_municipio": por_municipio(visitas, especialidade, status),
         "por_macrorregiao": por_macrorregiao(visitas, macro_do_municipio, especialidade, status),
+        "por_tipo_consulta": por_tipo_especialidade(visitas, banco_painel.nomes_tipos_consulta(),
+                                                    especialidade, status),
     }
 
 
@@ -649,10 +683,11 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         return [0] * n
 
     visitas = _visitas_periodo(dt_ini, dt_fim)
+    nomes_tipo = banco_painel.nomes_tipos_consulta()
     dias_abertos = [set() for _ in meses]
     atend, pacientes, especs = serie(), [set() for _ in meses], [set() for _ in meses]
-    por_status, por_sexo_mes, por_macro = {}, {}, {}
-    for paciente, esp, st, dia, mun, sx, *_ in visitas:
+    por_status, por_sexo_mes, por_macro, por_tipo, por_esp_tipo = {}, {}, {}, {}, {}
+    for paciente, esp, st, dia, mun, sx, _, _, cod_tipo in visitas:
         i = idx[(dia.year, dia.month)]
         dias_abertos[i].add(dia)
         if not passa(esp, sx, mun):
@@ -661,9 +696,12 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         especs[i].add(esp)
         if paciente is not None:
             pacientes[i].add(paciente)
+        tipo = nome_tipo_consulta(cod_tipo, nomes_tipo)
         por_status.setdefault(st, serie())[i] += 1
         por_sexo_mes.setdefault(sx, serie())[i] += 1
         por_macro.setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
+        por_tipo.setdefault(tipo, serie())[i] += 1
+        por_esp_tipo.setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
 
     consultas, minutos = serie(), [[] for _ in meses]
     for esp, _, _, mins, sx, mun, dia in _consultas_periodo(dt_ini, dt_fim):
@@ -688,6 +726,7 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
     altas = do_status("ALTA AMBULATORIAL")
     faltas = do_status("FALTOU")
     status = series(por_status)
+    tipos = series(por_tipo)
     dados = {
         "meses": _meses_labels(meses),
         "meses_iso": _meses_iso(meses),
@@ -707,6 +746,9 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         "status": status,
         "sexo": series(por_sexo_mes, _ORDEM_SEXO),
         "macrorregiao": series(por_macro),
+        "tipo_consulta": tipos,
+        "tipo_especialidade": por_tipo_especialidade(
+            [v for v in visitas if passa(v[1], v[5], v[4])], nomes_tipo),
         # opções dos filtros: tudo o que aparece nos meses (sem filtro aplicado)
         "opcoes": {
             "especialidades": sorted({v[1] for v in visitas}),
@@ -720,5 +762,37 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         chave = "atendimentos_status_" + s["nome"]
         dados[chave] = s["valores"]
         campos.insert(campos.index(CAMPOS_MENSAL[0]) + 1 + status.index(s), (chave, s["nome"].capitalize(), "qtd"))
+    campos += _campos_tipo_especialidade(dados, atend, tipos, por_esp_tipo)
     dados["_campos"] = campos
     return dados
+
+
+# grupo das linhas do comparativo que vão para a tabela por especialidade e
+# tipo de consulta (4º elemento do campo; os demais vão para a tabela principal)
+GRUPO_TIPO_ESPECIALIDADE = "tipo_especialidade"
+
+
+def _campos_tipo_especialidade(dados, atend, tipos, por_esp_tipo):
+    """Linhas do comparativo por especialidade e tipo de consulta: o total do
+    ambulatório e cada especialidade (da maior para a menor), cada um seguido
+    dos seus tipos (chaves com "_tipo_", detalhe recuado). Grava as séries em
+    dados e devolve os campos."""
+    g = GRUPO_TIPO_ESPECIALIDADE
+    campos = [("tipoesp_total", "Total do ambulatório", "atendimentos", g)]
+    dados["tipoesp_total"] = atend
+    for t in tipos:
+        chave = "tipoesp_total_tipo_" + t["nome"]
+        dados[chave] = t["valores"]
+        campos.append((chave, t["nome"], "atendimentos", g))
+    ordem_tipo = [t["nome"] for t in tipos]
+    totais = {e: [sum(v) for v in zip(*por_tipo.values())] for e, por_tipo in por_esp_tipo.items()}
+    for esp in sorted(totais, key=lambda e: (-sum(totais[e]), e)):
+        chave = "tipoesp_esp_" + esp
+        dados[chave] = totais[esp]
+        campos.append((chave, esp, "atendimentos", g))
+        for t in ordem_tipo:
+            if t in por_esp_tipo[esp]:
+                chave_tipo = f"{chave}_tipo_{t}"
+                dados[chave_tipo] = por_esp_tipo[esp][t]
+                campos.append((chave_tipo, t, "atendimentos", g))
+    return campos

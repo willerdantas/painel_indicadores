@@ -6,8 +6,10 @@ associação de cada exame do sistema hospitalar (t_exame) a uma delas
 (tela /admin/classificacoes).
 
 Tabelas no schema dos dados do painel, criadas com as demais em
-banco_painel.iniciar (com as classificações padrão e, uma vez, as
-associações da antiga t_exame_classificacao do sistema hospitalar):
+banco_painel.iniciar, já montadas: classificações padrão e, uma vez, a
+classificação de cada exame que vem com o sistema
+(sql/classificacao_exames_padrao.csv) e a da antiga t_exame_classificacao do
+sistema hospitalar, quando existir:
 
   classificacao_exame (id, nome)
   exame_classificacao (isn_exame, classificacao_id, dat_classificacao)

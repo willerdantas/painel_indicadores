@@ -160,6 +160,53 @@ def test_cadastro_item_custo_tem_subcategoria_opcional():
     assert banco_painel.CADASTROS_POR_TABELA['tipo_custo'].titulo == 'Categorias de Custo'
 
 
+def test_classificacao_padrao_sem_arquivo_tenta_de_novo(monkeypatch):
+    # sem o CSV, a carga não é registrada em migracao (roda no próximo início)
+    class Cursor:
+        def __init__(self):
+            self.sqls = []
+
+        def execute(self, sql, params=None):
+            self.sqls.append(sql)
+
+        def fetchone(self):
+            return None
+    cur = Cursor()
+    monkeypatch.setattr(banco_painel, '_ler_classificacoes_padrao', lambda: [])
+    banco_painel._carregar_classificacoes_padrao(cur)
+    assert not any('INSERT' in s for s in cur.sqls)
+    # o arquivo do sistema vai junto com o projeto (pasta sql/)
+    monkeypatch.undo()
+    assert len(banco_painel._ler_classificacoes_padrao()) > 900
+
+
+def test_cadastro_tipo_consulta_com_codigo_do_sistema():
+    cad = banco_painel.CADASTROS_POR_TABELA['tipo_consulta']
+    assert cad.titulo == 'Tipos de Consulta' and cad.grupo == 'Ambulatório'
+    assert [(c.nome, c.formato) for c in cad.extras] == [('isn_tipo_consulta', 'inteiro')]
+    # carga inicial: arquivo do sistema em sql/ (um nome por código, sem repetir)
+    tipos = banco_painel.tipos_consulta_padrao()
+    assert tipos[34] == 'RETORNO' and tipos[31] == '1ª consulta' and tipos[29] == 'EXTRA'
+    assert tipos[36] == 'TELEATENDIMENTO' and tipos[38] == 'REGULAÇÃO'
+    assert len(set(tipos.values())) == len(tipos) == 10
+
+
+def test_tipos_consulta_sem_arquivo_tenta_de_novo(monkeypatch):
+    class Cursor:
+        def __init__(self):
+            self.sqls = []
+
+        def execute(self, sql, params=None):
+            self.sqls.append(sql)
+
+        def fetchone(self):
+            return None
+    cur = Cursor()
+    monkeypatch.setattr(banco_painel, 'tipos_consulta_padrao', lambda: {})
+    banco_painel._criar_tipos_consulta(cur)
+    assert not any('INSERT' in s for s in cur.sqls)  # nem a carga nem o registro em migracao
+
+
 def test_lancamento_custos_agrupa_por_categoria_e_subcategoria():
     import lancamento_custos
     linhas = [
@@ -201,11 +248,11 @@ def test_ambulatorio_mensal(monkeypatch):
     from datetime import date
     import ambulatorio
     s, o = date(2026, 9, 10), date(2026, 10, 5)
-    visitas = [  # (paciente, especialidade, status, dia, município, sexo, idade, internação)
-        (1, 'Cardiologia', 'CONCLUÍDO', s, 'FORTALEZA/CE', 'Feminino', 50, 11),
-        (1, 'Cardiologia', 'FALTOU', date(2026, 9, 11), 'FORTALEZA/CE', 'Feminino', 50, 12),
-        (2, 'Pneumologia', 'ALTA AMBULATORIAL', o, 'SOBRAL/CE', 'Masculino', 30, 13),
-        (3, 'Cardiologia', 'CONCLUÍDO', o, 'SOBRAL/CE', 'Feminino', 40, 14),
+    visitas = [  # (paciente, especialidade, status, dia, município, sexo, idade, internação, tipo de consulta)
+        (1, 'Cardiologia', 'CONCLUÍDO', s, 'FORTALEZA/CE', 'Feminino', 50, 11, 31),
+        (1, 'Cardiologia', 'FALTOU', date(2026, 9, 11), 'FORTALEZA/CE', 'Feminino', 50, 12, 34),
+        (2, 'Pneumologia', 'ALTA AMBULATORIAL', o, 'SOBRAL/CE', 'Masculino', 30, 13, 34),
+        (3, 'Cardiologia', 'CONCLUÍDO', o, 'SOBRAL/CE', 'Feminino', 40, 14, 34),
     ]
     consultas = [  # (especialidade, status, hora, minutos, sexo, município, dia)
         ('Cardiologia', 'CONCLUÍDO', 8, 10.0, 'Feminino', 'FORTALEZA/CE', s),
@@ -216,7 +263,18 @@ def test_ambulatorio_mensal(monkeypatch):
     monkeypatch.setattr(ambulatorio, '_consultas_periodo', lambda ini, fim: consultas)
     monkeypatch.setattr(ambulatorio.banco_painel, 'macrorregiao_dos_municipios',
                         lambda: {'FORTALEZA': 'Fortaleza', 'SOBRAL': 'Norte'})
+    monkeypatch.setattr(ambulatorio.banco_painel, 'nomes_tipos_consulta', lambda: {34: 'RETORNO'})
     d = ambulatorio.get_mensal('2026-10', '2026-09')  # meses em qualquer ordem
+    # por tipo de consulta: mês a mês, a tabela do período e as linhas do comparativo
+    assert d['tipo_consulta'] == [{'nome': 'RETORNO', 'valores': [1, 2]}, {'nome': 'Código 31', 'valores': [1, 0]}]
+    assert d['tipo_especialidade']['tipos'] == ['RETORNO', 'Código 31']
+    assert d['tipo_especialidade']['linhas'][0] == {'nome': 'Cardiologia', 'valores': [2, 1], 'total': 3}
+    grupo = [c for c in d['_campos'] if len(c) == 4]
+    assert [c[0] for c in grupo] == [
+        'tipoesp_total', 'tipoesp_total_tipo_RETORNO', 'tipoesp_total_tipo_Código 31',
+        'tipoesp_esp_Cardiologia', 'tipoesp_esp_Cardiologia_tipo_RETORNO', 'tipoesp_esp_Cardiologia_tipo_Código 31',
+        'tipoesp_esp_Pneumologia', 'tipoesp_esp_Pneumologia_tipo_RETORNO']
+    assert d['tipoesp_esp_Cardiologia'] == [2, 1] and d['tipoesp_esp_Pneumologia_tipo_RETORNO'] == [0, 1]
     assert d['meses_iso'] == ['2026-09', '2026-10']
     assert d['atendimentos'] == [2, 2] and d['prontuarios'] == [1, 2]
     assert d['media_diaria'] == [1.0, 2.0]  # 2 dias com atendimento em set, 1 em out
@@ -230,6 +288,42 @@ def test_ambulatorio_mensal(monkeypatch):
     assert n['atendimentos'] == [0, 2] and n['consultas'] == [0, 2]
     assert n['media_diaria'] == [0.0, 2.0]  # a média continua pelos dias em que o ambulatório atendeu
     assert ambulatorio.get_mensal('2026-09', '2026-10', especialidade='Pneumologia')['atendimentos'] == [0, 1]
+
+
+def test_ambulatorio_por_tipo_especialidade():
+    from datetime import date
+    import ambulatorio
+    d = date(2026, 10, 1)
+    visitas = [  # (paciente, especialidade, status, dia, município, sexo, idade, internação, tipo)
+        (1, 'Cardiologia', 'CONCLUÍDO', d, 'FORTALEZA/CE', 'Feminino', 50, 11, 34),
+        (2, 'Cardiologia', 'FALTOU', d, 'FORTALEZA/CE', 'Feminino', 50, 12, 31),
+        (3, 'Pneumologia', 'CONCLUÍDO', d, 'SOBRAL/CE', 'Masculino', 30, 13, 34),
+        (4, 'Pneumologia', 'CONCLUÍDO', d, 'SOBRAL/CE', 'Masculino', 30, 14, 34),
+        (5, 'Pneumologia', 'CONCLUÍDO', d, 'SOBRAL/CE', 'Masculino', 30, 15, None),
+    ]
+    nomes = {34: 'RETORNO', 31: '1ª consulta'}
+    t = ambulatorio.por_tipo_especialidade(visitas, nomes)
+    assert t['tipos'] == ['RETORNO', '1ª consulta', 'Sem tipo']
+    assert t['linhas'] == [{'nome': 'Pneumologia', 'valores': [2, 0, 1], 'total': 3},
+                           {'nome': 'Cardiologia', 'valores': [1, 1, 0], 'total': 2}]
+    assert t['total'] == {'nome': 'Total', 'valores': [3, 1, 1], 'total': 5}
+    assert ambulatorio.por_tipo_especialidade(visitas, nomes, status='FALTOU')['tipos'] == ['1ª consulta']
+    assert ambulatorio.nome_tipo_consulta(99, nomes) == 'Código 99'
+
+
+def test_comparativo_individual_linha_so_no_mes_b_fica_no_lugar(monkeypatch):
+    import painel
+    campos_a = [('a', 'A', 'qtd'), ('a_status_X', 'X', 'qtd'), ('b', 'B', 'qtd')]
+    campos_b = [('a', 'A', 'qtd'), ('a_status_Y', 'Y', 'qtd'), ('b', 'B', 'qtd')]
+
+    def mensal(ini, fim):
+        um = ini == '2026-09'
+        return {'meses': [ini], 'meses_iso': [ini], 'a': [1], 'b': [2],
+                'a_status_X' if um else 'a_status_Y': [1], '_campos': campos_a if um else campos_b}
+    with painel.app.test_request_context('/?mes_a=2026-09&mes_b=2026-10&modo=individual'):
+        r = painel._hcasg_comparativo_resposta(mensal, campos_a).get_json()
+    assert [l['chave'] for l in r['linhas']] == ['a', 'a_status_Y', 'a_status_X', 'b']
+    assert all(l['grupo'] is None for l in r['linhas'])
 
 
 def test_ambulatorio_pedidos_simultaneos_fazem_uma_consulta():
@@ -375,6 +469,18 @@ def test_macrorregioes_do_ceara_tem_os_184_municipios():
     assert list(m) == ['Fortaleza', 'Norte', 'Cariri', 'Sertão Central', 'Litoral Leste/Jaguaribe']
     nomes = [n for v in m.values() for n in v]
     assert len(nomes) == len(set(nomes)) == 184
+
+
+def test_classificacao_padrao_dos_exames_vem_com_o_sistema():
+    linhas = banco_painel._ler_classificacoes_padrao()
+    assert len(linhas) >= 900
+    codigos = [i for i, _, _ in linhas]
+    assert len(codigos) == len(set(codigos))  # um exame, uma classificação
+    assert {c for _, _, c in linhas} <= set(banco_painel.CLASSIFICACOES_EXAME_PADRAO)
+    # o mesmo nome nunca com classificações diferentes (a carga também casa pelo nome)
+    por_nome = {}
+    for _, nome, c in linhas:
+        assert nome and por_nome.setdefault(nome.upper(), c) == c
 
 
 def test_macrorregioes_sem_banco_pronto_usa_a_lista_oficial(monkeypatch):

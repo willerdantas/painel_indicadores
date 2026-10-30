@@ -657,6 +657,30 @@ def voltar_inicio():
     # Redireciona para a página inicial do painel
     return render_template('index.html')
 
+# Faixas do tempo do exame depois de 4 dias (até a realização e até a baixa):
+# 4 a 10, 10 a 15, 15 a 30, 30 a 60, 60 a 120, 120 a 180 e mais de 180 dias.
+# Até a realização (data e hora): intervalo (início, fim]. Até a baixa (só
+# data, dias inteiros): de início + 1 a fim dias, como as faixas até 4 dias.
+_FAIXAS_LONGAS_EXAME = [(4, 10), (10, 15), (15, 30), (30, 60), (60, 120), (120, 180), (180, None)]
+
+
+def _sql_faixas_longas(prefixo, diferenca, intervalo):
+    """COUNT(*) FILTER de cada faixa longa; intervalo=True compara como INTERVAL."""
+    partes = []
+    for ini, fim in _FAIXAS_LONGAS_EXAME:
+        lim = (lambda d: f"INTERVAL '{d} days'") if intervalo else str
+        cond = f"{diferenca} > {lim(ini)}" + (f" AND {diferenca} <= {lim(fim)}" if fim else '')
+        partes.append(f"COUNT(*) FILTER (WHERE {cond}) AS {prefixo}_{ini}_{fim}d" if fim
+                      else f"COUNT(*) FILTER (WHERE {cond}) AS {prefixo}_acima_{ini}d")
+    return ',\n                '.join(partes) + ','
+
+
+_SQL_FAIXAS_LONGAS_REALIZACAO = _sql_faixas_longas('tempo', 'tes.dat_realizacao - tes.dat_solicitacao', True)
+_SQL_FAIXAS_LONGAS_BAIXA = _sql_faixas_longas('baixa', 'tes.dat_agendamento - tes.dat_realizacao::date', False)
+_CHAVES_FAIXAS_LONGAS = [f"{p}_{i}_{f}d" if f else f"{p}_acima_{i}d"
+                         for p in ('tempo', 'baixa') for i, f in _FAIXAS_LONGAS_EXAME]
+
+
 @app.route('/exames_por_clinica', methods=['GET'])
 def exames_por_clinica():
     hoje = datetime.now().date()
@@ -721,7 +745,7 @@ def exames_por_clinica():
                                    AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '2 days') AS tempo_1_2d,
                 COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '2 days'
                                    AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '4 days') AS tempo_2_4d,
-                COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '4 days') AS tempo_acima_4d,
+                {_SQL_FAIXAS_LONGAS_REALIZACAO}
                 -- tempo da realização até a baixa, em dias de calendário
                 -- (dat_agendamento é só data): diferença entre as datas.
                 -- Baixa registrada antes da realização não entra em nenhuma faixa.
@@ -729,7 +753,7 @@ def exames_por_clinica():
                 COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date BETWEEN 0 AND 1) AS baixa_ate_1d,
                 COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date = 2) AS baixa_1_2d,
                 COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date BETWEEN 3 AND 4) AS baixa_2_4d,
-                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date > 4) AS baixa_acima_4d,
+                {_SQL_FAIXAS_LONGAS_BAIXA}
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
@@ -762,12 +786,11 @@ def exames_por_clinica():
             'tempo_ate_1d': int(r['tempo_ate_1d']),
             'tempo_1_2d': int(r['tempo_1_2d']),
             'tempo_2_4d': int(r['tempo_2_4d']),
-            'tempo_acima_4d': int(r['tempo_acima_4d']),
             'com_realizacao_e_baixa': int(r['com_realizacao_e_baixa']),
             'baixa_ate_1d': int(r['baixa_ate_1d']),
             'baixa_1_2d': int(r['baixa_1_2d']),
             'baixa_2_4d': int(r['baixa_2_4d']),
-            'baixa_acima_4d': int(r['baixa_acima_4d']),
+            **{k: int(r[k]) for k in _CHAVES_FAIXAS_LONGAS},
             'sem_agendamento': int(r['sem_agendamento']),
         }
         for r in detalhe_rows
@@ -1031,7 +1054,7 @@ def _hcasg_montar_comparativo_periodo(dados, campos):
     mês contra o último)."""
     meses = dados.get("meses") or []
     linhas = []
-    for chave, rotulo, unidade in campos:
+    for chave, rotulo, unidade, *grupo in campos:
         serie = list(dados.get(chave) or [])
         serie += [None] * (len(meses) - len(serie))
         valores = [float(v) if v is not None else None for v in serie[:len(meses)]]
@@ -1039,8 +1062,10 @@ def _hcasg_montar_comparativo_periodo(dados, campos):
             "chave": chave,
             "indicador": rotulo,
             "unidade": unidade,
-            # detalhe de um total (classificação de risco, destino, status): recuado na tabela
-            "sub": "_risco_" in chave or "_destino_" in chave or "_status_" in chave,
+            # tabela em que a linha entra (campo com 4º elemento); sem grupo: a principal
+            "grupo": grupo[0] if grupo else None,
+            # detalhe de um total (classificação de risco, destino, status, tipo de consulta): recuado na tabela
+            "sub": any(m in chave for m in ("_risco_", "_destino_", "_status_", "_tipo_")),
             "valores": valores,
             "variacoes": [None] + [_hcasg_variacao(valores[i - 1], valores[i]) for i in range(1, len(valores))],
             "variacao_periodo": _hcasg_variacao(valores[0], valores[-1]) if valores else None,
@@ -1400,13 +1425,20 @@ def _hcasg_comparativo_resposta(funcao_mensal, campos):
             # cada mês consultado sozinho: meses distantes não calculam o intervalo todo
             dados_a = funcao_mensal(mes_a, mes_a)
             dados_b = funcao_mensal(mes_b, mes_b)
-            campos = dados_a.get('_campos') or campos
-            # linha que só existe no Mês B (ex.: um status sem atendimento em A)
+            campos = list(dados_a.get('_campos') or campos)
+            # linha que só existe no Mês B (ex.: um status sem atendimento em A):
+            # entra logo depois da linha que vem antes dela no Mês B
             chaves = {c[0] for c in campos}
-            campos = campos + [c for c in dados_b.get('_campos') or [] if c[0] not in chaves]
+            anterior = None
+            for c in dados_b.get('_campos') or []:
+                if c[0] not in chaves:
+                    pos = next((i + 1 for i, x in enumerate(campos) if x[0] == anterior), 0)
+                    campos.insert(pos, c)
+                    chaves.add(c[0])
+                anterior = c[0]
             dados = {'meses': dados_a['meses'] + dados_b['meses'],
                      'meses_iso': dados_a['meses_iso'] + dados_b['meses_iso']}
-            for chave, _, _ in campos:
+            for chave, *_ in campos:
                 dados[chave] = (dados_a.get(chave) or [None]) + (dados_b.get(chave) or [None])
             opcoes = [dados_a.get('opcoes'), dados_b.get('opcoes')]
         else:

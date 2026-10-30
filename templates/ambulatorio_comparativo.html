@@ -74,6 +74,16 @@
     </table>
   </div>
 
+  <h2 class="section-title">Consultas por Tipo de Consulta e por Especialidade</h2>
+  <div class="tabela-card">
+    <p class="nota-comparativo">Atendimentos agendados pelo tipo de consulta da marcação. Clique numa especialidade
+      para ver os tipos dela (<a href="#" id="abrir-todas">abrir todas</a> · <a href="#" id="fechar-todas">fechar todas</a>).</p>
+    <table class="comparativo">
+      <thead id="thead-tipo"></thead>
+      <tbody id="tbody-tipo"></tbody>
+    </table>
+  </div>
+
 </div>
 
 <script>
@@ -168,18 +178,14 @@ function carregarComparativo() {
       document.getElementById('titulo-tabela').textContent = individual
         ? `Comparativo — ${primeiro} x ${ultimo}`
         : `Comparativo mês a mês — ${primeiro} a ${ultimo}`;
-      document.getElementById('thead-comparativo').innerHTML = `<tr><th>Indicador</th>` +
-        meses.map(m => `<th class="num">${m}</th>`).join('') +
+      const colunas = meses.map(m => `<th class="num">${m}</th>`).join('') +
         (individual
           ? `<th class="num periodo">Variação<br><small>${primeiro} → ${ultimo}</small></th></tr>`
           : `<th class="num periodo">Variação no período<br><small>${primeiro} → ${ultimo}</small></th></tr>`);
+      document.getElementById('thead-comparativo').innerHTML = `<tr><th>Indicador</th>` + colunas;
+      document.getElementById('thead-tipo').innerHTML = `<tr><th>Especialidade / tipo de consulta</th>` + colunas;
 
-      const tbody = document.getElementById('tbody-comparativo');
-      if (!res.linhas || res.linhas.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="${meses.length + 2}" class="sem-dado">Sem dados para os meses escolhidos.</td></tr>`;
-        return;
-      }
-      tbody.innerHTML = res.linhas.map(l => {
+      const linhaHtml = (l, classe, atributos) => {
         const sufixo = l.unidade === '%' ? '%' : (l.unidade === 'min' ? 'min' : '');
         // no período, a variação sobre o mês anterior fica abaixo de cada mês;
         // no individual, só a variação A → B, na última coluna
@@ -188,7 +194,7 @@ function carregarComparativo() {
             <div class="valor-mes">${formatarValor(valor, sufixo)}</div>
             ${individual ? '' : `<div class="var-mes">${i > 0 ? formatarVariacao(l.variacoes[i]) : '&nbsp;'}</div>`}
           </td>`).join('');
-        return `<tr class="${l.sub ? 'sub' : ''}">
+        return `<tr class="${classe}" ${atributos || ''}>
           <td>
             <div class="indicador-nome">${esc(l.indicador)}</div>
             ${l.unidade ? `<div class="unidade">${esc(l.unidade)}</div>` : ''}
@@ -196,7 +202,27 @@ function carregarComparativo() {
           ${celulas}
           <td class="num periodo">${formatarVariacao(l.variacao_periodo)}</td>
         </tr>`;
-      }).join('');
+      };
+
+      const tbody = document.getElementById('tbody-comparativo');
+      const tbodyTipo = document.getElementById('tbody-tipo');
+      const vazio = `<tr><td colspan="${meses.length + 2}" class="sem-dado">Sem dados para os meses escolhidos.</td></tr>`;
+      const principais = (res.linhas || []).filter(l => !l.grupo);
+      const porTipo = (res.linhas || []).filter(l => l.grupo === 'tipo_especialidade');
+      tbody.innerHTML = principais.length ? principais.map(l => linhaHtml(l, l.sub ? 'sub' : '')).join('') : vazio;
+
+      // cada especialidade seguida dos seus tipos (fechados até o clique);
+      // os tipos do total do ambulatório ficam sempre abertos
+      let grupo = null;
+      tbodyTipo.innerHTML = porTipo.length ? porTipo.map(l => {
+        if (!l.sub) {
+          grupo = l.chave.startsWith('tipoesp_esp_') ? l.chave : null;
+          return grupo
+            ? linhaHtml(l, 'grupo-esp', `data-grupo="${esc(grupo)}" title="Clique para ver os tipos de consulta"`)
+            : linhaHtml(l, 'total-tipo');
+        }
+        return grupo ? linhaHtml(l, 'sub oculto', `data-pai="${esc(grupo)}"`) : linhaHtml(l, 'sub');
+      }).join('') : vazio;
     })
     .catch(err => {
       hideLoader();
@@ -204,6 +230,23 @@ function carregarComparativo() {
       erroEl.style.display = 'block';
     });
 }
+
+// abre/fecha os tipos de consulta de uma especialidade (ou de todas)
+function abrirGrupo(tr, abrir) {
+  tr.classList.toggle('aberto', abrir);
+  document.querySelectorAll('#tbody-tipo tr.sub[data-pai]').forEach(sub => {
+    if (sub.dataset.pai === tr.dataset.grupo) sub.classList.toggle('oculto', !abrir);
+  });
+}
+document.getElementById('tbody-tipo').addEventListener('click', e => {
+  const tr = e.target.closest('tr.grupo-esp');
+  if (tr) abrirGrupo(tr, !tr.classList.contains('aberto'));
+});
+[['abrir-todas', true], ['fechar-todas', false]].forEach(([id, abrir]) =>
+  document.getElementById(id).addEventListener('click', e => {
+    e.preventDefault();
+    document.querySelectorAll('#tbody-tipo tr.grupo-esp').forEach(tr => abrirGrupo(tr, abrir));
+  }));
 
 // modo e filtros aplicam na hora
 ['modo', 'especialidade', 'sexo', 'macrorregiao', 'municipio'].forEach(id =>

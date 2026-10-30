@@ -21,3 +21,16 @@ CREATE SCHEMA IF NOT EXISTS painel AUTHORIZATION painel;
 --
 -- Todas com id, atualizado_em e atualizado_por, e UNIQUE (mes, chaves do item).
 -- "mes" é DATE no dia 1 do mês de referência.
+--
+-- Tabelas do sistema, já carregadas na primeira configuração do banco
+-- (cada carga registrada em painel.migracao: roda uma vez só):
+--
+-- painel.tipo_consulta        (nome, ativo, isn_tipo_consulta)
+--     nome de cada t_marcacao.isn_tipo_consulta, carregado de
+--     tipos_consulta_padrao.csv (nesta pasta). Editável em Cadastros.
+--     Sem o arquivo, a carga fica para o próximo início.
+-- painel.classificacao_exame  (nome)
+-- painel.exame_classificacao  (isn_exame, classificacao_id, dat_classificacao)
+--     classificação de cada exame, carregada de classificacao_exames_padrao.csv
+--     (nesta pasta; o exame é achado em t_exame pelo nome). Editável em
+--     Classificação de Exames. Sem o arquivo, a carga fica para o próximo início.

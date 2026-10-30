@@ -58,7 +58,7 @@ usuarios.py            usuários e perfis (SQLite)
 templates/             páginas (Jinja2); _layout.html é o layout comum
 static/                CSS único (css/painel.css), JS e imagens
 dados/                 planilhas de origem (fora do git: só no servidor que já as tem)
-sql/                   SQL de apoio (criação do schema painel)
+sql/                   SQL de apoio (criação do schema painel), tipos de consulta e classificação padrão dos exames
 tests/                 testes (pytest)
 ```
 
@@ -79,6 +79,7 @@ tests/                 testes (pytest)
 5. **Testar conexão** confere, painel a painel, se as tabelas do sistema hospitalar existem. Também verifica se o usuário pode criar o schema do painel.
 6. **Salvar** grava a configuração (criptografada) e cria o schema e as tabelas:
    - de lançamento manual: custos por unidade, produção, SIMAQ e cadastros;
+   - tabelas do sistema, já preenchidas: **Tipos de Consulta** (nome de cada código de `t_marcacao.isn_tipo_consulta`, de [sql/tipos_consulta_padrao.csv](sql/tipos_consulta_padrao.csv)) e **Classificação de Exames** (de [sql/classificacao_exames_padrao.csv](sql/classificacao_exames_padrao.csv)), editáveis depois na área restrita;
    - de importação de planilhas;
    - na primeira vez, carrega as planilhas de `dados/`.
 

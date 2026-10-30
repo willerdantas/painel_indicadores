@@ -19,6 +19,7 @@ telas de lançamento mostram o que falta fazer.
 Cada tabela guarda um valor por mês e item: (mes, chaves...) é único.
 """
 
+import csv
 import math
 import os
 import sqlite3
@@ -657,7 +658,11 @@ class Cadastro:
                                 list(valores.values()) + [registro_id])
                     if cur.rowcount == 0:
                         return 'Registro não encontrado.'
-        except pg_erros.UniqueViolation:
+        except pg_erros.UniqueViolation as e:
+            # coluna extra única (ex.: código do tipo de consulta) repetida
+            repetida = next((c for c in self.extras if c.nome in (e.diag.constraint_name or '')), None)
+            if repetida:
+                return f'{repetida.rotulo} já está em outro registro.'
             return f'"{nome}" já está cadastrado' + (' com esses mesmos ' + ' e '.join(r.lower() for _, r in self.pais)
                                                      if self.pais else '') + '.'
         except pg_erros.ForeignKeyViolation:
@@ -702,6 +707,9 @@ CADASTROS = [
     Cadastro('macrorregiao', 'Macrorregiões de Saúde', 'Regiões de Saúde (Ceará)',
              uso=('municipio_regiao', 'macrorregiao_id', 'municípios')),
     Cadastro('municipio_regiao', 'Municípios', 'Regiões de Saúde (Ceará)', pais=[('macrorregiao', 'Macrorregião')]),
+    # nome de cada t_marcacao.isn_tipo_consulta (o sistema hospitalar só guarda o código)
+    Cadastro('tipo_consulta', 'Tipos de Consulta', 'Ambulatório',
+             extras=[Coluna('isn_tipo_consulta', 'Código no sistema (isn_tipo_consulta)', 'inteiro')]),
 ]
 CADASTROS_POR_TABELA = {c.tabela: c for c in CADASTROS}
 
@@ -869,6 +877,66 @@ def _criar_tabelas_classificacao(cur):
         print(f'[painel] exame_classificacao: {linhas} exames classificados (de t_exame_classificacao)')
 
 
+# Classificação de cada exame que vem com o sistema (versionada no projeto,
+# junto do SQL de apoio; gerada da classificação existente em 29/10/2026):
+# isn_exame;exame;classificacao
+ARQUIVO_CLASSIFICACOES_EXAME = os.path.join(BASE_DIR, 'sql', 'classificacao_exames_padrao.csv')
+
+
+def _ler_classificacoes_padrao():
+    """[(isn_exame, exame, classificacao)] do arquivo do sistema; vazio sem ele."""
+    if not os.path.exists(ARQUIVO_CLASSIFICACOES_EXAME):
+        return []
+    with open(ARQUIVO_CLASSIFICACOES_EXAME, encoding='utf-8', newline='') as f:
+        return [(int(r['isn_exame']), r['exame'].strip(), r['classificacao'].strip())
+                for r in csv.DictReader(f, delimiter=';')]
+
+
+def _carregar_classificacoes_padrao(cur):
+    """Uma vez (registrado em migracao), monta a classificação dos exames com
+    o arquivo do sistema, para um servidor novo já começar com os exames
+    classificados (sem depender da antiga t_exame_classificacao). Só entra em
+    exame ainda sem classificação: o que foi feito em /admin/classificacoes
+    não muda. O exame é achado em t_exame pelo nome, preferindo o mesmo código
+    (outra base pode ter outros códigos); sem acesso a t_exame, pelo código.
+    Depende de _criar_tabelas_classificacao."""
+    s = schema()
+    cur.execute(f"SELECT 1 FROM {s}.migracao WHERE tabela = 'exame_classificacao_padrao'")
+    if cur.fetchone():
+        return
+    padrao = _ler_classificacoes_padrao()
+    if not padrao:
+        # sem o arquivo não registra a carga: tenta de novo no próximo início
+        print(f'[painel] AVISO: {ARQUIVO_CLASSIFICACOES_EXAME} não encontrado; '
+              'exames sem a classificação padrão do sistema')
+        return
+    execute_batch(cur, f'INSERT INTO {s}.classificacao_exame (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING',
+                  [(c,) for c in sorted({c for _, _, c in padrao})])
+    cur.execute('CREATE TEMP TABLE classificacao_padrao (isn_exame BIGINT, exame TEXT, classificacao TEXT) '
+                'ON COMMIT DROP')
+    execute_batch(cur, 'INSERT INTO classificacao_padrao VALUES (%s, %s, %s)', padrao)
+    cur.execute('SAVEPOINT classificacao_padrao')
+    try:
+        cur.execute(f"""INSERT INTO {s}.exame_classificacao (isn_exame, classificacao_id)
+                       SELECT DISTINCT ON (te.isn_exame) te.isn_exame, c.id
+                       FROM classificacao_padrao p
+                       JOIN t_exame te ON upper(trim(te.dsc_exame)) = upper(p.exame)
+                       JOIN {s}.classificacao_exame c ON c.nome = p.classificacao
+                       ORDER BY te.isn_exame, (te.isn_exame = p.isn_exame) DESC
+                       ON CONFLICT (isn_exame) DO NOTHING""")
+    except psycopg2.Error as e:  # t_exame inacessível: pelo código
+        cur.execute('ROLLBACK TO SAVEPOINT classificacao_padrao')
+        print(f'[painel] AVISO: t_exame indisponível, classificação padrão pelo código do exame: {e}')
+        cur.execute(f"""INSERT INTO {s}.exame_classificacao (isn_exame, classificacao_id)
+                       SELECT p.isn_exame, c.id FROM classificacao_padrao p
+                       JOIN {s}.classificacao_exame c ON c.nome = p.classificacao
+                       ON CONFLICT (isn_exame) DO NOTHING""")
+    linhas = cur.rowcount
+    cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('exame_classificacao_padrao', %s)", [linhas])
+    if linhas:
+        print(f'[painel] exame_classificacao: {linhas} exames classificados (classificação padrão do sistema)')
+
+
 # Subcategoria inicial: Cooperativa (categoria Pessoal) com os itens que
 # começam por estes nomes; os demais itens ficam sem subcategoria até
 # serem associados na tela Cadastros.
@@ -989,6 +1057,59 @@ def _criar_regioes_saude(cur):
     print(f'[painel] macrorregiões de saúde: {linhas} municípios do Ceará')
 
 
+# Tipos de consulta do sistema hospitalar (t_marcacao.isn_tipo_consulta) que
+# vêm com o sistema (versionados no projeto, junto do SQL de apoio; gerados do
+# cadastro Tipos de Consulta em 30/10/2026): isn_tipo_consulta;nome
+ARQUIVO_TIPOS_CONSULTA = os.path.join(BASE_DIR, 'sql', 'tipos_consulta_padrao.csv')
+
+
+def tipos_consulta_padrao():
+    """{isn_tipo_consulta: nome} do arquivo do sistema; vazio sem ele."""
+    if not os.path.exists(ARQUIVO_TIPOS_CONSULTA):
+        return {}
+    with open(ARQUIVO_TIPOS_CONSULTA, encoding='utf-8', newline='') as f:
+        return {int(r['isn_tipo_consulta']): r['nome'].strip() for r in csv.DictReader(f, delimiter=';')}
+
+
+def _criar_tipos_consulta(cur):
+    """tipo_consulta (nome de cada isn_tipo_consulta), mantida na tela
+    Cadastros. Na primeira vez carrega o arquivo do sistema (registrado em
+    migracao; sem o arquivo, tenta de novo no próximo início). Depende de
+    migracao."""
+    s = schema()
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.tipo_consulta (
+                       id                SERIAL PRIMARY KEY,
+                       nome              TEXT NOT NULL UNIQUE,
+                       ativo             BOOLEAN NOT NULL DEFAULT true,
+                       isn_tipo_consulta INTEGER UNIQUE)""")
+    cur.execute(f"SELECT 1 FROM {s}.migracao WHERE tabela = 'tipo_consulta'")
+    if cur.fetchone():
+        return
+    padrao = tipos_consulta_padrao()
+    if not padrao:
+        print(f'[painel] AVISO: {ARQUIVO_TIPOS_CONSULTA} não encontrado; tipos de consulta sem carga inicial')
+        return
+    execute_batch(cur, f'INSERT INTO {s}.tipo_consulta (isn_tipo_consulta, nome) VALUES (%s, %s) '
+                       'ON CONFLICT DO NOTHING', list(padrao.items()))
+    cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('tipo_consulta', %s)", [len(padrao)])
+    print(f'[painel] tipos de consulta: {len(padrao)} cadastrados')
+
+
+def nomes_tipos_consulta():
+    """{isn_tipo_consulta: nome} dos tipos de consulta ativos no cadastro.
+    Enquanto o banco do painel não está pronto ou se a leitura falhar, usa
+    o arquivo do sistema (tipos_consulta_padrao)."""
+    if pronto():
+        try:
+            with _cursor() as cur:
+                cur.execute(f"""SELECT isn_tipo_consulta, nome FROM {schema()}.tipo_consulta
+                                WHERE ativo AND isn_tipo_consulta IS NOT NULL""")
+                return {row['isn_tipo_consulta']: row['nome'] for row in cur.fetchall()}
+        except Exception as e:
+            print(f'[painel] AVISO: cadastro de tipos de consulta indisponível, usando a lista padrão: {e}')
+    return tipos_consulta_padrao()
+
+
 def macrorregiao_dos_municipios():
     """{nome do município (sem acento, maiúsculas): macrorregião} dos
     municípios do Ceará ativos no cadastro. Enquanto o banco do painel não
@@ -1063,8 +1184,10 @@ def iniciar(forcar=False):
                 _criar_tabelas_unidade(cur)
                 _criar_controle_migracao(cur)
                 _criar_tabelas_classificacao(cur)
+                _carregar_classificacoes_padrao(cur)
                 _criar_subcategorias_custo(cur)
                 _criar_regioes_saude(cur)
+                _criar_tipos_consulta(cur)
             for t in TABELAS:
                 if _migracao_feita(t):
                     continue
