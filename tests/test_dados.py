@@ -188,7 +188,7 @@ def test_cadastro_tipo_consulta_com_codigo_do_sistema():
     tipos = banco_painel.tipos_consulta_padrao()
     assert tipos[34] == 'RETORNO' and tipos[31] == '1ª consulta' and tipos[29] == 'EXTRA'
     assert tipos[36] == 'TELEATENDIMENTO' and tipos[38] == 'REGULAÇÃO'
-    assert len(set(tipos.values())) == len(tipos) == 10
+    assert len(set(tipos.values())) == len(tipos) == 12
 
 
 def test_tipos_consulta_sem_arquivo_tenta_de_novo(monkeypatch):
