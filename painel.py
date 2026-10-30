@@ -657,28 +657,32 @@ def voltar_inicio():
     # Redireciona para a página inicial do painel
     return render_template('index.html')
 
-# Faixas do tempo do exame depois de 4 dias (até a realização e até a baixa):
-# 4 a 10, 10 a 15, 15 a 30, 30 a 60, 60 a 120, 120 a 180 e mais de 180 dias.
-# Até a realização (data e hora): intervalo (início, fim]. Até a baixa (só
-# data, dias inteiros): de início + 1 a fim dias, como as faixas até 4 dias.
-_FAIXAS_LONGAS_EXAME = [(4, 10), (10, 15), (15, 30), (30, 60), (60, 120), (120, 180), (180, None)]
+# Tempo do exame da solicitação até a realização ou, sem realização, até a
+# baixa (dat_agendamento), em dias de calendário: a baixa só tem data (e é o
+# fim de quase todos os exames). Só os realizados (com realização ou baixa).
+_DIAS_ATE_REALIZACAO_OU_BAIXA = ('(COALESCE(tes.dat_realizacao::date, tes.dat_agendamento)'
+                                 ' - tes.dat_solicitacao::date)')
+# Faixas em dias (início exclusivo, fim inclusivo; até 1 dia inclui o mesmo
+# dia): até 1, 1 a 2, 2 a 4, 4 a 10, 10 a 15, 15 a 30, 30 a 60, 60 a 120,
+# 120 a 180 e mais de 180 dias. Fim antes da solicitação não entra em nenhuma.
+_FAIXAS_TEMPO_EXAME = [(None, 1), (1, 2), (2, 4), (4, 10), (10, 15), (15, 30),
+                       (30, 60), (60, 120), (120, 180), (180, None)]
+_CHAVES_FAIXAS_TEMPO = ['tempo_ate_1d' if ini is None else f'tempo_acima_{ini}d' if fim is None
+                        else f'tempo_{ini}_{fim}d' for ini, fim in _FAIXAS_TEMPO_EXAME]
 
 
-def _sql_faixas_longas(prefixo, diferenca, intervalo):
-    """COUNT(*) FILTER de cada faixa longa; intervalo=True compara como INTERVAL."""
-    lim = (lambda d: f"INTERVAL '{d} days'") if intervalo else str
+def _sql_faixas_tempo():
+    """COUNT(*) FILTER de cada faixa de _FAIXAS_TEMPO_EXAME."""
+    d = _DIAS_ATE_REALIZACAO_OU_BAIXA
     partes = []
-    for ini, fim in _FAIXAS_LONGAS_EXAME:
-        cond = f"{diferenca} > {lim(ini)}" + (f" AND {diferenca} <= {lim(fim)}" if fim else '')
-        partes.append(f"COUNT(*) FILTER (WHERE {cond}) AS {prefixo}_{ini}_{fim}d" if fim
-                      else f"COUNT(*) FILTER (WHERE {cond}) AS {prefixo}_acima_{ini}d")
+    for (ini, fim), chave in zip(_FAIXAS_TEMPO_EXAME, _CHAVES_FAIXAS_TEMPO):
+        cond = ' AND '.join([f'{d} > {ini}' if ini is not None else f'{d} >= 0']
+                            + ([f'{d} <= {fim}'] if fim is not None else []))
+        partes.append(f'COUNT(*) FILTER (WHERE {cond}) AS {chave}')
     return ',\n                '.join(partes) + ','
 
 
-_SQL_FAIXAS_LONGAS_REALIZACAO = _sql_faixas_longas('tempo', 'tes.dat_realizacao - tes.dat_solicitacao', True)
-_SQL_FAIXAS_LONGAS_BAIXA = _sql_faixas_longas('baixa', 'tes.dat_agendamento - tes.dat_realizacao::date', False)
-_CHAVES_FAIXAS_LONGAS = [f"{p}_{i}_{f}d" if f else f"{p}_acima_{i}d"
-                         for p in ('tempo', 'baixa') for i, f in _FAIXAS_LONGAS_EXAME]
+_SQL_FAIXAS_TEMPO = _sql_faixas_tempo()
 
 
 @app.route('/exames_por_clinica', methods=['GET'])
@@ -734,26 +738,8 @@ def exames_por_clinica():
                 -- realizados: com realização ou com baixa (os baixados contam como realizados)
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
-                -- base do tempo até a realização: só quem tem data/hora de realização
-                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL) AS com_realizacao,
-                -- tempo da solicitação até a realização (a baixa, dat_agendamento,
-                -- só tem data). Faixas sem sobreposição; realização registrada
-                -- antes da solicitação não entra em nenhuma.
-                COUNT(*) FILTER (WHERE tes.dat_realizacao >= tes.dat_solicitacao
-                                   AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '1 day') AS tempo_ate_1d,
-                COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '1 day'
-                                   AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '2 days') AS tempo_1_2d,
-                COUNT(*) FILTER (WHERE tes.dat_realizacao - tes.dat_solicitacao > INTERVAL '2 days'
-                                   AND tes.dat_realizacao - tes.dat_solicitacao <= INTERVAL '4 days') AS tempo_2_4d,
-                {_SQL_FAIXAS_LONGAS_REALIZACAO}
-                -- tempo da realização até a baixa, em dias de calendário
-                -- (dat_agendamento é só data): diferença entre as datas.
-                -- Baixa registrada antes da realização não entra em nenhuma faixa.
-                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NOT NULL AND tes.dat_realizacao IS NOT NULL) AS com_realizacao_e_baixa,
-                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date BETWEEN 0 AND 1) AS baixa_ate_1d,
-                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date = 2) AS baixa_1_2d,
-                COUNT(*) FILTER (WHERE tes.dat_agendamento - tes.dat_realizacao::date BETWEEN 3 AND 4) AS baixa_2_4d,
-                {_SQL_FAIXAS_LONGAS_BAIXA}
+                -- tempo até a realização ou baixa, em dias (_DIAS_ATE_REALIZACAO_OU_BAIXA)
+                {_SQL_FAIXAS_TEMPO}
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
@@ -782,15 +768,7 @@ def exames_por_clinica():
             'solicitados': int(r['solicitados']),
             'realizados': int(r['realizados']),
             'cancelados': int(r['cancelados']),
-            'com_realizacao': int(r['com_realizacao']),
-            'tempo_ate_1d': int(r['tempo_ate_1d']),
-            'tempo_1_2d': int(r['tempo_1_2d']),
-            'tempo_2_4d': int(r['tempo_2_4d']),
-            'com_realizacao_e_baixa': int(r['com_realizacao_e_baixa']),
-            'baixa_ate_1d': int(r['baixa_ate_1d']),
-            'baixa_1_2d': int(r['baixa_1_2d']),
-            'baixa_2_4d': int(r['baixa_2_4d']),
-            **{k: int(r[k]) for k in _CHAVES_FAIXAS_LONGAS},
+            **{k: int(r[k]) for k in _CHAVES_FAIXAS_TEMPO},
             'sem_agendamento': int(r['sem_agendamento']),
         }
         for r in detalhe_rows

@@ -114,22 +114,19 @@
         <div class="content">
             <div class="chart-container">
                 <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame)</h4>
-                <p class="nota-origem">Realizados contam também os exames baixados. Até a realização: da solicitação até a realização (data e hora), sobre os exames com data de realização. Até a baixa: da realização até a baixa, pela diferença entre as datas (a baixa não tem hora), sobre os exames com realização e baixa.</p>
+                <p class="nota-origem">Da solicitação até a realização ou, sem realização, até a baixa, sobre os exames realizados (com realização ou baixa). Em dias de calendário, pela diferença entre as datas: a baixa não tem hora. "Até 1 dia" inclui os do mesmo dia.</p>
                 <div class="tabela-rolagem">
                 <table id="tabela-tempo-realizacao">
                     <thead>
                         <tr>
                             <th rowspan="2">Classificação</th>
                             <th rowspan="2">Exame</th>
-                            <th colspan="11" class="grupo-origem">Até a Realização</th>
-                            <th colspan="11" class="grupo-origem">Até a Baixa</th>
+                            <th colspan="11" class="grupo-origem">Até a Realização ou Baixa</th>
                         </tr>
                         <tr class="sub-origem">
-                            {% for base in ['Com realização', 'Com baixa'] %}
-                            <th>{{ base }}</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th>
+                            <th>Realizados</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th>
                             <th>4 a 10 dias</th><th>10 a 15 dias</th><th>15 a 30 dias</th><th>30 a 60 dias</th>
                             <th>60 a 120 dias</th><th>120 a 180 dias</th><th>Mais de 180 dias</th>
-                            {% endfor %}
                         </tr>
                     </thead>
                     <tbody></tbody>
@@ -338,13 +335,11 @@
             tbody.innerHTML = html;
         }
 
-        // Tabela de tempo por classificação e exame, com duas categorias lado a
-        // lado: até a realização (solicitação → realização) e até a baixa
-        // (realização → baixa). `base` é a coluna de referência dos percentuais.
-        const FAIXAS_LONGAS = ['4_10d', '10_15d', '15_30d', '30_60d', '60_120d', '120_180d', 'acima_180d'];
+        // Tabela de tempo por classificação e exame: da solicitação até a
+        // realização ou baixa. `base` é a coluna de referência dos percentuais.
         const CATEGORIAS_TEMPO = [
-            { base: 'com_realizacao', faixas: ['tempo_ate_1d', 'tempo_1_2d', 'tempo_2_4d', ...FAIXAS_LONGAS.map(f => 'tempo_' + f)] },
-            { base: 'com_realizacao_e_baixa', faixas: ['baixa_ate_1d', 'baixa_1_2d', 'baixa_2_4d', ...FAIXAS_LONGAS.map(f => 'baixa_' + f)] },
+            { base: 'realizados', faixas: ['ate_1d', '1_2d', '2_4d', '4_10d', '10_15d', '15_30d', '30_60d',
+                                           '60_120d', '120_180d', 'acima_180d'].map(f => 'tempo_' + f) },
         ];
         function atualizarTabelaTempo() {
             const campos = CATEGORIAS_TEMPO.flatMap(c => [c.base, ...c.faixas]);
@@ -365,7 +360,7 @@
                 `<td class="inicio-grupo">${formatarNumero(v[c.base])}</td>` +
                 c.faixas.map(k => `<td>${formatarNumero(v[k])}${pct(v[k], v[c.base])}</td>`).join('')).join('');
             const temDados = v => CATEGORIAS_TEMPO.some(c => v[c.base] > 0);
-            const ordem = v => v.com_realizacao;
+            const ordem = v => v.realizados;
 
             const tbody = document.querySelector('#tabela-tempo-realizacao tbody');
             let html = '';
@@ -389,7 +384,7 @@
             if (html) {
                 html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
             } else {
-                html = '<tr><td colspan="24" style="text-align:center;color:#999;">Nenhum exame no período selecionado.</td></tr>';
+                html = '<tr><td colspan="13" style="text-align:center;color:#999;">Nenhum exame no período selecionado.</td></tr>';
             }
             tbody.innerHTML = html;
         }
