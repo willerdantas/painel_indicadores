@@ -180,6 +180,34 @@ def test_classificacao_padrao_sem_arquivo_tenta_de_novo(monkeypatch):
     assert len(banco_painel._ler_classificacoes_padrao()) > 900
 
 
+def test_planilha_mes_em_texto_iso_e_brasileiro(tmp_path):
+    import pandas as pd
+    caminho = tmp_path / 'producao.xlsx'
+    pd.DataFrame([['2026-08-01', 'IMAGEM', 'EXAME', 'Tomografia', 10],   # ISO: agosto (não 8 de janeiro)
+                  ['01/09/2026', 'IMAGEM', 'EXAME', 'Tomografia', 20],   # dia primeiro: setembro
+                  ['2026-10', 'IMAGEM', 'EXAME', 'Tomografia', 30]],
+                 columns=['Mês', 'Serviço', 'Tipo', 'Procedimento', 'Qtd']).to_excel(caminho, index=False)
+    linhas = banco_painel.PRODUCAO.ler_planilha(str(caminho))
+    assert [(l['mes'], l['quantidade']) for l in linhas] == [('2026-08', 10), ('2026-09', 20), ('2026-10', 30)]
+
+
+def test_importacao_cadastra_itens_novos(monkeypatch):
+    t = banco_painel.SIMAQ
+    linhas = [{'mes': '2026-09', 'tipo': 'ESTRATÉGICO', 'indicador': 'Novo', 'numerador': 1, 'denominador': 2},
+              {'mes': '2026-09', 'tipo': 'ESTRATÉGICO', 'indicador': 'Antigo', 'numerador': 3, 'denominador': 4}]
+    chamadas = {}
+    monkeypatch.setattr(t, 'ler_planilha', lambda caminho: linhas)
+    monkeypatch.setattr(t, 'itens_faltando', lambda ls: [('ESTRATÉGICO', 'Novo')])
+    monkeypatch.setattr(t, 'salvar', lambda ls, usuario, criar_cadastros: chamadas.update(criar=criar_cadastros) or len(ls))
+    monkeypatch.setattr(t, '_depois_de_cadastrar', lambda ls: chamadas.update(fator=[l['indicador'] for l in ls]))
+    assert t.importar_cadastrando('x.xlsx', 'teste') == (2, [('ESTRATÉGICO', 'Novo')])
+    assert chamadas == {'criar': True, 'fator': ['Novo']}  # fator deduzido só do indicador novo
+    import area_restrita
+    novos = [('ESTRATÉGICO', f'I{n}') for n in range(7)]
+    assert area_restrita._texto_itens_novos([]) == ''
+    assert '7 item(ns) novo(s)' in area_restrita._texto_itens_novos(novos) and 'e mais 2' in area_restrita._texto_itens_novos(novos)
+
+
 def test_cadastro_tipo_consulta_com_codigo_do_sistema():
     cad = banco_painel.CADASTROS_POR_TABELA['tipo_consulta']
     assert cad.titulo == 'Tipos de Consulta' and cad.grupo == 'Ambulatório'

@@ -94,7 +94,7 @@
             <input type="file" name="planilha" accept=".xlsx" required style="font-size:13px; max-width:100%;">
             <div class="dica">Primeira aba, com cabeçalho e as colunas nesta ordem:
                 {% for c in t.colunas_planilha %}{{ t.rotulo_campo(c) }}{{ ', ' if not loop.last }}{% endfor %}
-                (mesmo formato da planilha {{ t.planilha }}). Lançamentos do mesmo mês e item são substituídos; todos os itens precisam estar cadastrados.</div>
+                (mesmo formato da planilha {{ t.planilha }}). Lançamentos do mesmo mês e item são substituídos; itens e categorias que ainda não existirem são cadastrados (confira-os depois na tela de Cadastros).</div>
             <div class="acoes"><button type="submit" class="btn secundario">Importar</button></div>
         </form>
 

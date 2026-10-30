@@ -683,12 +683,21 @@ def admin_lancamento_importar(chave):
         caminho = os.path.join(pasta, 'planilha.xlsx')
         arquivo.save(caminho)
         try:
-            qtd = t.importar_planilha(caminho, g.usuario['login'])
+            qtd, novos = t.importar_cadastrando(caminho, g.usuario['login'])
         except Exception as e:
             flash(f'Não foi possível importar a planilha: {e}', 'erro')
             return redirect(url_for(f'admin_{chave}'))
-    flash(f'Planilha importada: {qtd} lançamentos gravados.', 'ok')
+    flash(f'Planilha importada: {qtd} lançamentos gravados.' + _texto_itens_novos(novos), 'ok')
     return redirect(url_for(f'admin_{chave}'))
+
+
+def _texto_itens_novos(novos):
+    """Aviso dos itens que a importação cadastrou (para conferir em Cadastros)."""
+    if not novos:
+        return ''
+    amostra = '; '.join(' / '.join(k) for k in novos[:5])
+    mais = f' e mais {len(novos) - 5}' if len(novos) > 5 else ''
+    return f' {len(novos)} item(ns) novo(s) cadastrado(s): {amostra}{mais}. Confira na tela de Cadastros.'
 
 
 # ---- lançamento de custos por unidade (lancamento_custos.py) ----

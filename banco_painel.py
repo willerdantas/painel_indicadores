@@ -22,6 +22,7 @@ Cada tabela guarda um valor por mês e item: (mes, chaves...) é único.
 import csv
 import math
 import os
+import re
 import sqlite3
 import statistics
 import threading
@@ -255,7 +256,11 @@ class TabelaMensal:
         formatos = {c.nome: c.formato for c in self.colunas if c.nome in self.colunas_planilha}
         linhas = {}
         for r in df.to_dict(orient='records'):
-            mes = pd.to_datetime(r['mes'], errors='coerce', dayfirst=isinstance(r['mes'], str))
+            # texto: dia primeiro (01/08/2026), menos no formato ISO (2026-08-01),
+            # que com dayfirst o pandas lê como 8 de janeiro
+            texto = isinstance(r['mes'], str)
+            iso = texto and re.match(r'\s*\d{4}-\d{1,2}', r['mes'])
+            mes = pd.to_datetime(r['mes'], errors='coerce', dayfirst=texto and not iso)
             if pd.isna(mes):
                 continue
             linha = {'mes': mes.strftime('%Y-%m')}
@@ -440,9 +445,32 @@ class TabelaNormalizada(TabelaMensal):
 
     # ---------------------------------------------------------------- escrita
 
+    def itens_faltando(self, linhas):
+        """Chaves dos itens das linhas que ainda não estão nos cadastros."""
+        nomes = ', '.join(f'{e} AS {c}' for c, e in self._expr.items())
+        with _cursor() as cur:
+            cur.execute(f'SELECT {nomes} FROM {self._t(self.item[0])} it {self._joins}')
+            existentes = {self.chave_de(r) for r in cur.fetchall()}
+        return sorted({self.chave_de(l) for l in linhas} - existentes)
+
+    def importar_cadastrando(self, caminho, usuario):
+        """Importação da tela: grava a planilha e cadastra os itens (e as
+        categorias deles) que ainda não existirem. Retorna (lançamentos
+        gravados, [chaves dos itens cadastrados agora])."""
+        linhas = self.ler_planilha(caminho)
+        novos = self.itens_faltando(linhas)
+        qtd = self.salvar(linhas, usuario, criar_cadastros=bool(novos))
+        if novos:
+            self._depois_de_cadastrar([l for l in linhas if self.chave_de(l) in set(novos)])
+        return qtd, novos
+
+    def _depois_de_cadastrar(self, linhas):
+        """Ajuste dos itens recém-cadastrados pela importação (linhas só deles)."""
+
     def _ids_itens(self, cur, linhas, criar_cadastros=False):
-        """{chave: id do item}. Os itens vêm da tela de Cadastros; só a
-        migração inicial (criar_cadastros=True) cadastra o que não existir."""
+        """{chave: id do item}. Os itens vêm da tela de Cadastros; a migração
+        inicial e a importação de planilha (criar_cadastros=True) cadastram o
+        que não existir."""
         if criar_cadastros:
             for tab, campo in self.cadastros:
                 execute_batch(cur, f'INSERT INTO {self._t(tab)} (nome) VALUES (%s) ON CONFLICT (nome) DO NOTHING',
@@ -534,6 +562,12 @@ class TabelaSimaq(TabelaNormalizada):
             with _cursor() as cur:
                 self._aplicar_fatores(cur, linhas)
         return qtd
+
+    def _depois_de_cadastrar(self, linhas):
+        # indicador novo: fator deduzido da planilha (os já cadastrados mantêm
+        # o fator da tela de Cadastros)
+        with _cursor() as cur:
+            self._aplicar_fatores(cur, linhas)
 
     def _aplicar_fatores(self, cur, linhas):
         """Deduz o fator de cada indicador pelos resultados da planilha: se
