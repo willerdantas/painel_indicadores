@@ -1105,12 +1105,15 @@ img { max-width: 100%; }
 .pg-financeiro .tabela td { vertical-align: top; }
 .pg-financeiro .tabela tfoot td { position: sticky; bottom: 0; background: #fff; font-weight: 700; border-top: 2px solid var(--border); }
 .pg-financeiro .nowrap { white-space: nowrap; }
-.pg-financeiro td.fonte { max-width: 220px; }
+.pg-financeiro td.fonte { min-width: 260px; max-width: 320px; }
 .pg-financeiro #tabela-empenhos td:nth-child(2) { min-width: 260px; }
 .pg-financeiro .doc { font-size: .72rem; color: var(--muted); }
 .pg-financeiro .etiqueta-rel { display: inline-block; margin-top: 2px; padding: 1px 6px; border-radius: 4px; background: var(--claro); color: var(--green); font-size: .68rem; }
 .pg-financeiro .sem-dado { color: var(--muted); }
 .pg-financeiro .acoes-tabela { margin-top: 10px; text-align: center; }
+.pg-financeiro .barra-relatorio { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px; }
+.pg-financeiro .barra-relatorio .nota { margin: 0; }
+.pg-financeiro .barra-relatorio .btn-apply { text-decoration: none; display: inline-block; }
 @media (max-width: 900px) {
   .pg-financeiro .graficos { grid-template-columns: 1fr; }
   .pg-financeiro .filtros-tabela { grid-template-columns: 1fr; }

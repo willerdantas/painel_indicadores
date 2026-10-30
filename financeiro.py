@@ -34,6 +34,7 @@ Tabelas (schema do painel, criadas em banco_painel.iniciar):
                valor_pago, valor_a_pagar)
 """
 
+import io
 import json
 import os
 import re
@@ -394,3 +395,139 @@ def get_financeiro():
     return {'importacoes': imps, 'empenhos': empenhos, 'pagamentos_mes': pagamentos_mes,
             'fontes_restos': fontes_restos, 'fontes_empenhos': fontes_empenhos, 'credores': credores,
             'kpis': kpis}
+
+
+# ---------------------------------------------------------------- relatório (Excel)
+
+SITUACOES = ('dois', 'aberto', 'restos', 'a_pagar')
+
+
+def _so_letras_e_digitos(texto):
+    """Texto para a busca: sem acento, minúsculo, sem ".", "-", "/" e espaços
+    (o mesmo critério da busca da tabela na página)."""
+    return re.sub(r'[.\-/\s]', '', _sem_acento(texto or ''))
+
+
+def filtrar_empenhos(empenhos, busca='', situacao='', fonte=''):
+    """Os filtros da tabela da página Financeiro, aplicados no servidor."""
+    busca = _so_letras_e_digitos(busca)
+    resultado = []
+    for e in empenhos:
+        if situacao == 'dois' and not (e['em_aberto'] and e['em_restos']):
+            continue
+        if situacao == 'aberto' and not (e['em_aberto'] and not e['em_restos']):
+            continue
+        if situacao == 'restos' and not (e['em_restos'] and not e['em_aberto']):
+            continue
+        if situacao == 'a_pagar' and not (e['a_pagar'] or 0) > 0:
+            continue
+        if fonte and fonte not in (e['fonte_empenho'], e['fonte_resto']):
+            continue
+        if busca:
+            alvo = ' '.join(str(e.get(k) or '') for k in ('empenho', 'credor', 'documento', 'processo', 'contrato'))
+            if busca not in _so_letras_e_digitos(alvo):
+                continue
+        resultado.append(e)
+    return resultado
+
+
+def _documento_formatado(d):
+    if d and len(d) == 14:
+        return f'{d[:2]}.{d[2:5]}.{d[5:8]}/{d[8:12]}-{d[12:]}'
+    if d and len(d) == 11:
+        return f'{d[:3]}.{d[3:6]}.{d[6:9]}-{d[9:]}'
+    return d or ''
+
+
+# colunas da lista: (título, largura, campo ou função, formato)
+_MOEDA = '#,##0.00'
+_COLUNAS_RELATORIO = [
+    ('Empenho', 16, 'empenho', None),
+    ('Credor', 46, lambda e: e['credor'] or '', None),
+    ('CNPJ / CPF', 20, lambda e: _documento_formatado(e['documento']), None),
+    ('Fonte de recursos', 40, 'fonte_empenho', None),
+    ('A liquidar', 16, lambda e: e['a_liquidar'] or 0, _MOEDA),
+    ('Liquidado a pagar', 16, lambda e: e['liquidado_a_pagar'] or 0, _MOEDA),
+    ('Total em aberto', 16, lambda e: (e['a_liquidar'] or 0) + (e['liquidado_a_pagar'] or 0), _MOEDA),
+    ('Processo', 20, 'processo', None),
+    ('Contrato', 14, 'contrato', None),
+    ('Fonte (restos a pagar)', 14, 'fonte_resto', None),
+    ('RP inscrito', 16, lambda e: e['inscrito'], _MOEDA),
+    ('RP pago', 16, lambda e: e['pago'], _MOEDA),
+    ('RP a pagar', 16, lambda e: e['a_pagar'], _MOEDA),
+    ('Ordens bancárias', 10, 'ordens', '0'),
+    ('Última OB', 12, 'ultima_ob', None),
+]
+
+
+def relatorio_empenhos_xlsx(busca='', situacao='', fonte=''):
+    """Excel com a lista dos empenhos em aberto (último relatório importado),
+    com os filtros da tabela da página e o cruzamento com os restos a pagar.
+    Retorna (BytesIO, nome do arquivo)."""
+    from openpyxl import Workbook
+    from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
+    from openpyxl.utils import get_column_letter
+
+    dados = get_financeiro()
+    imp = dados['importacoes']['empenhos']
+    lista = [e for e in filtrar_empenhos(dados['empenhos'], busca, situacao, fonte) if e['em_aberto']]
+    lista.sort(key=lambda e: (-((e['a_liquidar'] or 0) + (e['liquidado_a_pagar'] or 0)), e['empenho']))
+
+    wb = Workbook()
+    ws = wb.active
+    ws.title = 'Empenhos em aberto'
+    negrito = Font(bold=True)
+    ws['A1'] = 'Relatório de Empenhos em Aberto'
+    ws['A1'].font = Font(bold=True, size=14)
+    info = [
+        f'Período do relatório do SIAFE: {imp["referencia"] or "—"} (dados do SIAFE de {imp["atualizado_siafe"] or "—"})'
+        if imp else 'Nenhum relatório de empenhos importado.',
+        f'Gerado em {datetime.now().strftime("%d/%m/%Y %H:%M")} pelo Painel de Indicadores.',
+    ]
+    filtros = [f'busca "{busca}"' if busca else '', f'fonte "{fonte}"' if fonte else '',
+               {'dois': 'nos dois relatórios', 'aberto': 'só empenhos em aberto', 'restos': 'só restos a pagar',
+                'a_pagar': 'com restos a pagar a pagar'}.get(situacao, '')]
+    if any(filtros):
+        info.append('Filtros: ' + '; '.join(f for f in filtros if f) + '.')
+    if imp and not imp['totais']['confere'].get('valor_liquidado_a_pagar', True):
+        total = imp['totais']['relatorio']['valor_liquidado_a_pagar']
+        info.append('O relatório do SIAFE só detalha os empenhos com valor a liquidar: o liquidado a pagar total '
+                    f'(R$ {total:,.2f}'.replace(',', 'X').replace('.', ',').replace('X', '.')
+                    + ') inclui empenhos que não aparecem nesta lista.')
+    for i, texto in enumerate(info, start=2):
+        ws.cell(row=i, column=1, value=texto)
+
+    cab = len(info) + 3
+    fundo = PatternFill('solid', start_color='007C6B')
+    linha_fina = Side(style='thin', color='BFCFD3')
+    for c, (titulo, largura, _, _) in enumerate(_COLUNAS_RELATORIO, start=1):
+        cel = ws.cell(row=cab, column=c, value=titulo)
+        cel.font = Font(bold=True, color='FFFFFF')
+        cel.fill = fundo
+        cel.alignment = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        ws.column_dimensions[get_column_letter(c)].width = largura
+    for r, e in enumerate(lista, start=cab + 1):
+        for c, (_, _, campo, formato) in enumerate(_COLUNAS_RELATORIO, start=1):
+            valor = campo(e) if callable(campo) else e.get(campo)
+            cel = ws.cell(row=r, column=c, value=valor)
+            cel.border = Border(bottom=linha_fina)
+            if formato:
+                cel.number_format = formato
+    fim = cab + len(lista)
+    total = fim + 1
+    ws.cell(row=total, column=1, value=f'Total ({len(lista)} empenhos)').font = negrito
+    for c, (_, _, _, formato) in enumerate(_COLUNAS_RELATORIO, start=1):
+        if formato and lista:
+            letra = get_column_letter(c)
+            cel = ws.cell(row=total, column=c, value=f'=SUBTOTAL(9,{letra}{cab + 1}:{letra}{fim})')
+            cel.number_format = formato
+            cel.font = negrito
+    ws.freeze_panes = ws.cell(row=cab + 1, column=2)
+    if lista:
+        ws.auto_filter.ref = f'A{cab}:{get_column_letter(len(_COLUNAS_RELATORIO))}{fim}'
+    ws.row_dimensions[cab].height = 32
+
+    arquivo = io.BytesIO()
+    wb.save(arquivo)
+    arquivo.seek(0)
+    return arquivo, f'empenhos_em_aberto_{date.today().strftime("%Y-%m-%d")}.xlsx'

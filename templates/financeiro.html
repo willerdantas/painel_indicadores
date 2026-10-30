@@ -88,7 +88,11 @@
           </select></div>
         <div><label for="fonte">Fonte</label><select id="fonte"><option value="">Todas</option></select></div>
       </div>
-      <p class="nota" id="resumo-tabela"></p>
+      <div class="barra-relatorio">
+        <p class="nota" id="resumo-tabela"></p>
+        <a class="btn-apply" id="baixar-relatorio" href="/financeiro/relatorio-empenhos.xlsx"
+           title="Excel com os empenhos em aberto, com a busca e a fonte escolhidas acima">Baixar empenhos em aberto (Excel)</a>
+      </div>
       <div class="tabela-rolagem">
         <table class="tabela" id="tabela-empenhos">
           <thead><tr>
@@ -337,8 +341,18 @@ document.querySelectorAll('#tabela-empenhos th[data-ordem]').forEach(th => th.ad
   ordem = { campo, desc: ordem.campo === campo ? !ordem.desc : numerico };
   renderTabela();
 }));
+// o relatório em Excel leva os mesmos filtros da tabela (sempre só os empenhos em aberto)
+function atualizarLinkRelatorio() {
+  const params = new URLSearchParams();
+  ['busca', 'situacao', 'fonte'].forEach(id => {
+    const v = document.getElementById(id).value;
+    if (v) params.set(id, v);
+  });
+  document.getElementById('baixar-relatorio').href =
+    '/financeiro/relatorio-empenhos.xlsx' + (params.toString() ? '?' + params : '');
+}
 ['busca', 'situacao', 'fonte'].forEach(id => document.getElementById(id).addEventListener('input', () => {
-  limite = PAGINA; renderTabela();
+  limite = PAGINA; renderTabela(); atualizarLinkRelatorio();
 }));
 document.getElementById('mais').addEventListener('click', () => { limite += PAGINA * 5; renderTabela(); });
 document.getElementById('busca-credor').addEventListener('input', renderCredores);

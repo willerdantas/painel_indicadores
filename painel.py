@@ -1,5 +1,5 @@
 from psycopg2.extras import RealDictCursor
-from flask import Flask, render_template, jsonify, request
+from flask import Flask, render_template, jsonify, request, send_file
 import secrets
 import pandas as pd
 import os
@@ -317,6 +317,21 @@ def api_financeiro_dados():
         return jsonify({'ok': True, 'dados': financeiro.get_financeiro()})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/financeiro/relatorio-empenhos.xlsx')
+def financeiro_relatorio_empenhos():
+    """Excel dos empenhos em aberto, com os filtros da tabela da página."""
+    situacao = request.args.get('situacao') or ''
+    try:
+        arquivo, nome = financeiro.relatorio_empenhos_xlsx(
+            busca=(request.args.get('busca') or '')[:200],
+            situacao=situacao if situacao in financeiro.SITUACOES else '',
+            fonte=request.args.get('fonte') or '')
+    except Exception as e:
+        return render_template('error.html', message=f'Erro ao gerar o relatório de empenhos em aberto: {e}'), 500
+    return send_file(arquivo, as_attachment=True, download_name=nome,
+                     mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 
 @app.route('/faturamento', methods=['GET', 'POST'])

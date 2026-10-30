@@ -218,6 +218,55 @@ def test_financeiro_le_restos_repetindo_mescladas(tmp_path):
     assert all(lido['totais']['confere'].values())
 
 
+def _empenho_cruzado(empenho, credor, doc, a_liquidar, em_restos=True, a_pagar=0.0, fonte='500 - RECURSOS'):
+    return {'empenho': empenho, 'credor': credor, 'documento': doc, 'fonte_empenho': fonte,
+            'fonte_resto': '5009100000' if em_restos else None, 'processo': '24001006317/202493' if em_restos else None,
+            'contrato': None, 'a_liquidar': a_liquidar, 'liquidado_a_pagar': 0.0,
+            'inscrito': a_liquidar if em_restos else None, 'pago': 0.0 if em_restos else None,
+            'a_pagar': a_pagar if em_restos else None, 'ordens': 0, 'ultima_ob': None,
+            'em_aberto': a_liquidar is not None, 'em_restos': em_restos}
+
+
+def test_financeiro_filtros_do_relatorio():
+    import financeiro
+    es = [_empenho_cruzado('2025NE000001', 'ESSITY', '54858014000927', 100.0),
+          _empenho_cruzado('2025NE000002', 'JOSÉ FARMÁCIA', '20301535000100', 50.0, em_restos=False, fonte='600 - SUS'),
+          _empenho_cruzado('2024NE000009', 'ESSITY', '54858014000927', None, a_pagar=30.0)]
+    nomes = lambda lista: [e['empenho'] for e in lista]  # noqa: E731
+    assert nomes(financeiro.filtrar_empenhos(es, busca='jose farmacia')) == ['2025NE000002']  # sem acento
+    assert nomes(financeiro.filtrar_empenhos(es, busca='54.858.014/0009-27')) == ['2025NE000001', '2024NE000009']
+    assert nomes(financeiro.filtrar_empenhos(es, situacao='aberto')) == ['2025NE000002']
+    assert nomes(financeiro.filtrar_empenhos(es, situacao='a_pagar')) == ['2024NE000009']
+    assert nomes(financeiro.filtrar_empenhos(es, fonte='600 - SUS')) == ['2025NE000002']
+
+
+def test_financeiro_relatorio_excel_so_empenhos_em_aberto(monkeypatch):
+    import openpyxl
+    import financeiro
+    es = [_empenho_cruzado('2025NE000001', 'ESSITY', '54858014000927', 100.0),
+          _empenho_cruzado('2025NE000002', 'JB FARMA', '20301535000100', 250.0, em_restos=False),
+          _empenho_cruzado('2024NE000009', 'ESSITY', '54858014000927', None, a_pagar=30.0)]  # só restos: fora
+    imp = {'referencia': 'Até 12 de 2025', 'atualizado_siafe': '23/10/2026 10:41:05',
+           'totais': {'confere': {'valor_liquidado_a_pagar': False},
+                      'relatorio': {'valor_liquidado_a_pagar': 2934525.93}}}
+    monkeypatch.setattr(financeiro, 'get_financeiro',
+                        lambda: {'empenhos': es, 'importacoes': {'empenhos': imp, 'restos': None}})
+    arquivo, nome = financeiro.relatorio_empenhos_xlsx()
+    assert nome.startswith('empenhos_em_aberto_') and nome.endswith('.xlsx')
+    ws = openpyxl.load_workbook(arquivo).active
+    textos = [ws.cell(row=r, column=1).value for r in range(1, ws.max_row + 1)]
+    cab = textos.index('Empenho') + 1
+    assert any('Até 12 de 2025' in (t or '') for t in textos[:cab])
+    assert any('2.934.525,93' in (t or '') for t in textos[:cab])  # aviso dos liquidados não detalhados
+    linhas = [[c.value for c in row] for row in ws.iter_rows(min_row=cab + 1, max_row=ws.max_row)]
+    assert [l[0] for l in linhas[:-1]] == ['2025NE000002', '2025NE000001']  # do maior em aberto para o menor
+    assert linhas[0][2] == '20.301.535/0001-00' and linhas[0][6] == 250.0
+    assert linhas[-1][0] == 'Total (2 empenhos)' and linhas[-1][4].startswith('=SUBTOTAL(9,E')
+    so_essity, _ = financeiro.relatorio_empenhos_xlsx(busca='essity')
+    ws = openpyxl.load_workbook(so_essity).active
+    assert sum(1 for row in ws.iter_rows(values_only=True) if row[0] and str(row[0]).startswith('20')) == 1
+
+
 def test_financeiro_recusa_outra_planilha(tmp_path):
     import financeiro
     import pytest
