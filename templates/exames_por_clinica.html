@@ -518,6 +518,13 @@
                 const fade = document.getElementById('fadeout-animation');
                 if (fade) { fade.classList.remove('active'); fade.style.display = 'none'; }
             });
+
+            // link do cabeçalho (Gráficos Mensais): a página é montada no
+            // servidor e demora; o carregamento fica na tela até ela abrir
+            // (Ctrl/Shift/botão do meio abrem em outra aba: sem carregamento)
+            document.querySelectorAll('.cabecalho-link').forEach(a => a.addEventListener('click', e => {
+                if (!(e.ctrlKey || e.metaKey || e.shiftKey || e.button !== 0)) mostrarCarregamento();
+            }));
         });
     </script>
     {{ rodape() }}

@@ -669,6 +669,8 @@ _FAIXAS_TEMPO_EXAME = [(None, 1), (1, 2), (2, 4), (4, 10), (10, 15), (15, 30),
                        (30, 60), (60, 120), (120, 180), (180, None)]
 _CHAVES_FAIXAS_TEMPO = ['tempo_ate_1d' if ini is None else f'tempo_acima_{ini}d' if fim is None
                         else f'tempo_{ini}_{fim}d' for ini, fim in _FAIXAS_TEMPO_EXAME]
+_ROTULOS_FAIXAS_TEMPO = [f'Até {fim} dia' if ini is None else f'Mais de {ini} dias' if fim is None
+                         else f'{ini} a {fim} dias' for ini, fim in _FAIXAS_TEMPO_EXAME]
 
 
 def _sql_faixas_tempo():
@@ -876,7 +878,10 @@ def graficos_mensais():
         """)
         exames = [r['dsc_exame'] for r in cur.fetchall()]
 
-        params = [data_inicial, data_final]
+        # faixa de ids das solicitações do período: sem ela a consulta lê a
+        # t_exame_solic inteira (sem índice em dat_solicitacao) e passa de minutos
+        id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial, data_final)
+        params = [data_inicial, data_final, id_ini, id_fim]
         filtros_sql = ""
 
         if clinica_filtro != 'todos' and clinica_filtro in clinicas:
@@ -902,12 +907,15 @@ def graficos_mensais():
                 -- realizados: com realização ou com baixa (os baixados contam como realizados)
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
+                -- tempo até a realização ou baixa: mesmas faixas da tabela de Exames
+                {_SQL_FAIXAS_TEMPO}
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame
             LEFT JOIN {classificacao_exames.subconsulta_sql()} tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
+              AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
               {filtros_sql}
             GROUP BY 1, 2
         """, params)
@@ -930,12 +938,16 @@ def graficos_mensais():
 
     classificacoes_graf = sorted({r['classificacao'] for r in rows})
     series = {m: {c: [0] * len(meses) for c in classificacoes_graf} for m in metricas}
+    # tempo até a realização ou baixa: por faixa e mês (todas as classificações)
+    tempo = {k: [0] * len(meses) for k in _CHAVES_FAIXAS_TEMPO}
     for r in rows:
         i = idx_mes.get(r['mes'])
         if i is None:
             continue
         for m in metricas:
             series[m][r['classificacao']][i] += int(r[m])
+        for k in _CHAVES_FAIXAS_TEMPO:
+            tempo[k][i] += int(r[k])
 
     total_geral = {m: sum(sum(v) for v in series[m].values()) for m in metricas}
 
@@ -963,6 +975,8 @@ def graficos_mensais():
             'meses': [m.strftime('%m/%Y') for m in meses],
             'classificacoes': classificacoes_graf,
             'series': series,
+            'faixas_tempo': [{'chave': k, 'rotulo': r} for k, r in zip(_CHAVES_FAIXAS_TEMPO, _ROTULOS_FAIXAS_TEMPO)],
+            'tempo': tempo,
         },
         'total_geral': total_geral,
     }

@@ -1076,6 +1076,7 @@ img { max-width: 100%; }
 .pg-financeiro .kpi-box { flex: 1; min-width: 200px; }
 
 /* ---------- página: graficos_mensais ---------- */
+.pg-graficos-mensais .nota-tempo { font-size: 12px; color: var(--muted); margin: 4px 0 8px; }
 .pg-graficos-mensais .filters { display: flex; flex-wrap: wrap; gap: 20px; max-width: 100%; align-items: flex-end; }
 .pg-graficos-mensais .filter-actions { display: flex; flex-direction: column; gap: 10px; min-width: 160px; justify-content: flex-end; }
 .pg-graficos-mensais .filter-actions button, .pg-graficos-mensais .filter-actions a { display: inline-block; }
