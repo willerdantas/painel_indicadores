@@ -1,224 +1,362 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
-<!doctype html>
+<!DOCTYPE html>
 <html lang="pt-BR">
-    <head>
-        <meta charset="utf-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>Financeiro</title>
-        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
-        {{ recursos() }}
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Financeiro</title>
+<script src="/static/chart.umd.min.js"></script>
+<script>
+  // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
+    {{ recursos() }}
 </head>
-    <body class="pg-financeiro">
-        <div id="loader-overlay">
-            <div class="loader-ring">
-                <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
-                <img src="{{ logo('carregando') }}" alt="Carregando...">
-            </div>
-        </div>
-        {{ cabecalho('Financeiro', 'Painel de acompanhamento', id_voltar='btn-voltar') }}
-    <div class="page-content">
+<body class="pg-financeiro">
 
-        <!-- Filters -->
-        <div class="filters">
-            <div class="filter-group">
-                <label for="data-inicial">Data Inicial:</label>
-                <input type="date" id="data-inicial" value="{{ data_inicial }}" onchange="atualizarDados()">
-            </div>
-            <div class="filter-group">
-                <label for="data-final">Data Final:</label>
-                <input type="date" id="data-final" value="{{ data_final }}" onchange="atualizarDados()">
-            </div>
-            <div class="filter-group">
-                <label for="fonte-despesa">Fonte do Recurso:</label>
-                <select id="fonte-despesa" onchange="atualizarDados()">
-                    <option value="todos">Todos</option>
-                    {% for fonte in fontes_despesa %}
-                    <option value="{{ fonte }}">{{ fonte }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="natureza-despesa">Natureza da Despesa:</label>
-                <select id="natureza-despesa" onchange="atualizarDados()">
-                    <option value="todos">Todos</option>
-                    {% for natureza in naturezas_despesa %}
-                    <option value="{{ natureza }}">{{ natureza }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-            <div class="filter-group">
-                <label for="despesa">Despesa:</label>
-                <select id="despesa" onchange="atualizarDados()">
-                    <option value="todos">Todos</option>
-                    {% for despesa in despesas %}
-                    <option value="{{ despesa }}">{{ despesa }}</option>
-                    {% endfor %}
-                </select>
-            </div>
-        </div>
+<div id="loader-overlay" class="active">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="{{ logo('carregando') }}" alt="Carregando...">
+  </div>
+</div>
 
-        <!-- KPIs -->
-        <div class="kpi-container">
-            <div class="kpi-box">
-                <h5>Maior Despesa</h5>
-                <p>R$ {{ "{:,.2f}".format(maior_despesa['valor']).replace(',', 'X').replace('.', ',').replace('X', '.') }}</p>
-                <p class="description">{{ maior_despesa['descricao'] }}</p>
-            </div>
-            <div class="kpi-box">
-                <h5>Valor Médio</h5>
-                <p>R$ {{ "{:,.2f}".format(valor_medio).replace(',', 'X').replace('.', ',').replace('X', '.') }}</p>
-            </div>
-            <div class="kpi-box">
-                <h5>Valor Total</h5>
-                <p>R$ {{ "{:,.2f}".format(valor_total).replace(',', 'X').replace('.', ',').replace('X', '.') }}</p>
-            </div>
-        </div>
+{{ cabecalho('Financeiro', 'Empenhos em aberto e restos a pagar (SIAFE)') }}
 
-        <!-- Bar Chart -->
-        <div class="chart-container">
-            <h4>Valores por Mês</h4>
-            <div id="bar-chart"></div>
-        </div>
+<div class="wrapper">
+  <div class="error-bar" id="erro"></div>
+  <p class="origem" id="origem"></p>
 
-        <script>
-            function formatValue(value) {
-                if (value >= 1_000_000) {
-                    return `R$ ${(value / 1_000_000).toFixed(2).replace('.', ',')} Mi`;
-                } else if (value >= 1_000) {
-                    return `R$ ${(value / 1_000).toFixed(2).replace('.', ',')} mil`;
-                } else {
-                    return `R$ ${value.toFixed(2).replace('.', ',')}`;
-                }
-            }
+  <div id="sem-dados" class="sem-dados" hidden>
+    Nenhum relatório importado ainda. Os relatórios do SIAFE são importados em
+    Área Restrita &gt; Lançar Dados do Financeiro.
+  </div>
 
-            function renderStackedBarChart(data) {
-                let meses = [];
-                if (data['MesReferencia']) {
-                    meses = data['MesReferencia'].slice();
-                    // NÃO ordene, apenas pegue os últimos 12 meses na ordem original
-                    if (meses.length > 12) {
-                        meses = meses.slice(-12);
-                    }
-                }
+  <div id="conteudo" hidden>
+    <h2 class="section-title">Empenhos em aberto</h2>
+    <div class="fin-kpis">
+      <div class="fin-kpi"><span class="rotulo">A liquidar</span><span class="valor" id="k_a_liquidar">—</span></div>
+      <div class="fin-kpi"><span class="rotulo">Liquidado a pagar</span><span class="valor" id="k_liquidado">—</span></div>
+      <div class="fin-kpi"><span class="rotulo">Empenhos em aberto</span><span class="valor" id="k_empenhos">—</span>
+        <span class="nota" id="k_empenhos_nota"></span></div>
+    </div>
 
-                const despesas = Object.keys(data).filter(key => key !== 'MesReferencia' && key !== 'Total');
-                const traces = despesas.map(despesa => {
-                    let valores = data[despesa] || [];
-                    // Ajusta para pegar apenas os 12 últimos valores
-                    if (valores.length > 12) {
-                        valores = valores.slice(-12);
-                    }
-                    // Garante que o array de valores tenha o mesmo tamanho que meses
-                    if (valores.length < meses.length) {
-                        valores = Array(meses.length - valores.length).fill(0).concat(valores);
-                    } else if (valores.length > meses.length) {
-                        valores = valores.slice(-meses.length);
-                    }
-                    return {
-                        x: meses,
-                        y: valores,
-                        name: despesa,
-                        type: 'bar',
-                        hoverinfo: 'text',
-                        text: valores.map((value, index) => value > 0 ? `${despesa}: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}` : ''),
-                        marker: { opacity: 0.8 }
-                    };
-                });
+    <h2 class="section-title">Restos a pagar</h2>
+    <div class="fin-kpis">
+      <div class="fin-kpi"><span class="rotulo">Inscrito</span><span class="valor" id="k_inscrito">—</span></div>
+      <div class="fin-kpi"><span class="rotulo">Pago</span><span class="valor" id="k_pago">—</span>
+        <span class="nota" id="k_pago_nota"></span></div>
+      <div class="fin-kpi"><span class="rotulo">A pagar</span><span class="valor" id="k_a_pagar">—</span></div>
+      <div class="fin-kpi"><span class="rotulo">Empenhos em restos a pagar</span><span class="valor" id="k_rp_empenhos">—</span>
+        <span class="nota" id="k_nos_dois"></span></div>
+    </div>
 
-                let total = data['Total'] || [];
-                if (total.length > 12) {
-                    total = total.slice(-12);
-                }
-                if (total.length < meses.length) {
-                    total = Array(meses.length - total.length).fill(0).concat(total);
-                } else if (total.length > meses.length) {
-                    total = total.slice(-meses.length);
-                }
-                const totalTrace = {
-                    x: meses,
-                    y: total,
-                    name: 'Total',
-                    type: 'scatter',
-                    mode: 'lines+markers',
-                    line: { color: '#EB600A', width: 2 },
-                    marker: { size: 8 },
-                    hoverinfo: 'text',
-                    text: total.map(value => `Total: R$ ${value.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`)
-                };
+    <div class="graficos">
+      <div class="card largura-total">
+        <h3>Pagamentos de restos a pagar por mês (data da ordem bancária)</h3>
+        <div class="chart-box"><canvas id="g_pagamentos"></canvas></div>
+      </div>
+      <div class="card">
+        <h3>Empenhos em aberto por fonte de recursos</h3>
+        <div class="chart-box"><canvas id="g_fontes_empenhos"></canvas></div>
+        <p class="nota">Totais do relatório (o liquidado a pagar inclui empenhos não detalhados no relatório).</p>
+      </div>
+      <div class="card">
+        <h3>Restos a pagar por fonte</h3>
+        <div class="chart-box"><canvas id="g_fontes_restos"></canvas></div>
+      </div>
+      <div class="card largura-total">
+        <h3>Maiores credores (em aberto + restos a pagar a pagar)</h3>
+        <div class="chart-box" id="box_credores"><canvas id="g_credores"></canvas></div>
+      </div>
+    </div>
 
-                const layout = {
-                    title: 'Despesas por Mês (Empilhado)',
-                    barmode: 'stack',
-                    xaxis: { 
-                        title: 'Mês',
-                        tickangle: -45,
-                        automargin: true
-                    },
-                    yaxis: { 
-                        title: 'Valor Total (R$)', 
-                        tickformat: '~s',
-                        tickprefix: 'R$ ' 
-                    },
-                    showlegend: false,
-                    plot_bgcolor: 'rgba(0,0,0,0)',
-                    paper_bgcolor: 'rgba(0,0,0,0)'
-                };
+    <h2 class="section-title">Empenhos — os dois relatórios cruzados pelo número do empenho</h2>
+    <div class="card">
+      <div class="filtros-tabela">
+        <div><label for="busca">Buscar</label>
+          <input type="search" id="busca" placeholder="Empenho, credor, CNPJ, processo ou contrato"></div>
+        <div><label for="situacao">Situação</label>
+          <select id="situacao">
+            <option value="">Todos</option>
+            <option value="dois">Nos dois relatórios</option>
+            <option value="aberto">Só empenhos em aberto</option>
+            <option value="restos">Só restos a pagar</option>
+            <option value="a_pagar">Com restos a pagar a pagar</option>
+          </select></div>
+        <div><label for="fonte">Fonte</label><select id="fonte"><option value="">Todas</option></select></div>
+      </div>
+      <p class="nota" id="resumo-tabela"></p>
+      <div class="tabela-rolagem">
+        <table class="tabela" id="tabela-empenhos">
+          <thead><tr>
+            <th data-ordem="empenho">Empenho</th>
+            <th data-ordem="credor">Credor</th>
+            <th data-ordem="processo">Processo</th>
+            <th data-ordem="contrato">Contrato</th>
+            <th data-ordem="fonte">Fonte</th>
+            <th class="num" data-ordem="a_liquidar">A liquidar</th>
+            <th class="num" data-ordem="liquidado_a_pagar">Liquidado a pagar</th>
+            <th class="num" data-ordem="inscrito">RP inscrito</th>
+            <th class="num" data-ordem="pago">RP pago</th>
+            <th class="num" data-ordem="a_pagar">RP a pagar</th>
+            <th class="num" data-ordem="ordens">OBs</th>
+            <th data-ordem="ultima_ob">Última OB</th>
+          </tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
+      </div>
+      <div class="acoes-tabela"><button type="button" class="btn-apply" id="mais" hidden>Mostrar mais</button></div>
+    </div>
 
-                Plotly.newPlot('bar-chart', [...traces, totalTrace], layout);
-            }
+    <h2 class="section-title">Credores</h2>
+    <div class="card">
+      <div class="filtros-tabela">
+        <div><label for="busca-credor">Buscar</label>
+          <input type="search" id="busca-credor" placeholder="Nome ou CNPJ"></div>
+      </div>
+      <div class="tabela-rolagem tabela-credores">
+        <table class="tabela">
+          <thead><tr>
+            <th>Credor</th><th>CNPJ / CPF</th><th class="num">Empenhos</th><th class="num">Em aberto</th>
+            <th class="num">RP inscrito</th><th class="num">RP pago</th><th class="num">RP a pagar</th>
+          </tr></thead>
+          <tbody id="tb_credores"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
 
-            function atualizarDados() {
-                const dataInicial = document.getElementById('data-inicial').value;
-                const dataFinal = document.getElementById('data-final').value;
-                const fonteDespesa = document.getElementById('fonte-despesa').value;
-                const naturezaDespesa = document.getElementById('natureza-despesa').value;
-                const despesa = document.getElementById('despesa').value;
+<script>
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
 
-                fetch('/financeiro', {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                    },
-                    body: JSON.stringify({
-                        data_inicial: dataInicial,
-                        data_final: dataFinal,
-                        fonte_despesa: fonteDespesa,
-                        natureza_despesa: naturezaDespesa,
-                        despesa: despesa
-                    }),
-                })
-                .then(response => response.json())
-                .then(data => {
-                    document.querySelector('.kpi-box:nth-child(1) p').textContent = `R$ ${data.maior_despesa.valor.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-                    document.querySelector('.kpi-box:nth-child(1) .description').textContent = data.maior_despesa.descricao;
-                    document.querySelector('.kpi-box:nth-child(2) p').textContent = `R$ ${data.valor_medio.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-                    document.querySelector('.kpi-box:nth-child(3) p').textContent = `R$ ${data.valor_total.toLocaleString('pt-BR', { minimumFractionDigits: 2 })}`;
-                    renderStackedBarChart(data.despesas_por_mes);
-                })
-                .catch(error => {
-                    console.error('Erro ao atualizar dados:', error);
-                });
-            }
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 300);
+});
 
-            // bfcache fix
-            window.addEventListener('pageshow', function(e) {
-                const lo = document.getElementById('loader-overlay');
-                if (lo) lo.classList.remove('active');
-            });
+// textos vêm do banco e das planilhas (credor, processo...): escapados
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const moeda = v => (v === null || v === undefined) ? '—'
+  : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+const inteiro = v => (v === null || v === undefined) ? '—' : Number(v).toLocaleString('pt-BR');
+const vazio = v => (v === null || v === undefined || v === 0) ? '<span class="sem-dado">—</span>' : moeda(v);
+function documento(d) {
+  if (!d) return '';
+  if (d.length === 14) return d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5');
+  if (d.length === 11) return d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4');
+  return d;
+}
+const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const rotuloMes = m => `${MES[Number(m.slice(5)) - 1]}/${m.slice(2, 4)}`;
+// rótulo longo do eixo (nome da fonte, do credor) quebrado em até 3 linhas
+function quebrar(texto, largura = 26) {
+  const linhas = [];
+  for (const palavra of String(texto).split(' ')) {
+    const ultima = linhas[linhas.length - 1];
+    if (ultima !== undefined && (ultima + ' ' + palavra).length <= largura) linhas[linhas.length - 1] = ultima + ' ' + palavra;
+    else linhas.push(palavra);
+  }
+  return linhas.length > 3 ? [...linhas.slice(0, 2), linhas[2] + '…'] : linhas;
+}
 
-            // Animação ao clicar no botão voltar
-            document.getElementById('btn-voltar').addEventListener('click', function(e) {
-                e.preventDefault();
-                const lo = document.getElementById('loader-overlay');
-                if (lo) lo.classList.add('active');
-                setTimeout(() => { window.location.href = '/'; }, 600);
-            });
+const graficos = {};
+function grafico(id, config) {
+  if (graficos[id]) graficos[id].destroy();
+  graficos[id] = new Chart(document.getElementById(id), config);
+}
+const eixoMoeda = { ticks: { callback: v => Number(v).toLocaleString('pt-BR', { notation: 'compact', maximumFractionDigits: 1 }) } };
+const dicaMoeda = { callbacks: { label: ctx => ` ${ctx.dataset.label}: ${moeda(ctx.parsed[ctx.chart.options.indexAxis === 'y' ? 'x' : 'y'])}` } };
 
-            // Render the initial chart with the last 12 months of data
-            const initialData = JSON.parse('{{ despesas_por_mes | tojson | safe }}');
-            renderStackedBarChart(initialData);
-        </script>
-        </div><!-- /.page-content -->
-        {{ rodape() }}
+let dados = null;
+
+function render(d) {
+  dados = d;
+  const imp = d.importacoes;
+  const origem = Object.entries({ empenhos: 'Empenhos em aberto', restos: 'Restos a pagar' })
+    .filter(([t]) => imp[t])
+    .map(([t, nome]) => `${nome}: ${esc(imp[t].referencia || '—')} (SIAFE de ${esc(imp[t].atualizado_siafe || '—')})`);
+  document.getElementById('origem').innerHTML = origem.join(' · ');
+  const tem = imp.empenhos || imp.restos;
+  document.getElementById('sem-dados').hidden = !!tem;
+  document.getElementById('conteudo').hidden = !tem;
+  if (!tem) return;
+
+  const k = d.kpis;
+  document.getElementById('k_a_liquidar').textContent = moeda(k.a_liquidar);
+  document.getElementById('k_liquidado').textContent = moeda(k.liquidado_a_pagar);
+  document.getElementById('k_empenhos').textContent = inteiro(k.empenhos_abertos);
+  document.getElementById('k_empenhos_nota').textContent = `${inteiro(k.credores)} credores (somando os dois relatórios)`;
+  document.getElementById('k_inscrito').textContent = moeda(k.rp_inscrito);
+  document.getElementById('k_pago').textContent = moeda(k.rp_pago);
+  document.getElementById('k_pago_nota').textContent = k.rp_perc_pago !== null && k.rp_perc_pago !== undefined
+    ? `${k.rp_perc_pago.toLocaleString('pt-BR')}% do inscrito` : '';
+  document.getElementById('k_a_pagar').textContent = moeda(k.rp_a_pagar);
+  document.getElementById('k_rp_empenhos').textContent = inteiro(k.rp_empenhos);
+  document.getElementById('k_nos_dois').textContent = `${inteiro(k.nos_dois)} também em aberto`;
+
+  grafico('g_pagamentos', {
+    type: 'bar',
+    data: { labels: d.pagamentos_mes.map(p => rotuloMes(p.mes)),
+            datasets: [{ label: 'Pago', data: d.pagamentos_mes.map(p => p.pago), backgroundColor: '#00A1A2cc',
+                         borderColor: '#00A1A2', borderWidth: 1, borderRadius: 4 }] },
+    options: { responsive: true, maintainAspectRatio: false, scales: { y: { beginAtZero: true, ...eixoMoeda } },
+               plugins: { legend: { display: false }, tooltip: { callbacks: {
+                 label: ctx => ` Pago: ${moeda(ctx.parsed.y)}`,
+                 afterLabel: ctx => ` ${inteiro(d.pagamentos_mes[ctx.dataIndex].ordens)} ordens bancárias` } } } }
+  });
+  grafico('g_fontes_empenhos', {
+    type: 'bar',
+    data: { labels: d.fontes_empenhos.map(f => quebrar(f.fonte)),
+            datasets: [
+              { label: 'A liquidar', data: d.fontes_empenhos.map(f => f.a_liquidar), backgroundColor: '#2E758Ccc', stack: 's' },
+              { label: 'Liquidado a pagar', data: d.fontes_empenhos.map(f => f.liquidado_a_pagar), backgroundColor: '#F3A133cc', stack: 's' }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+               scales: { x: { stacked: true, ...eixoMoeda }, y: { stacked: true } },
+               plugins: { legend: { position: 'bottom' }, tooltip: { ...dicaMoeda, callbacks: {
+                 ...dicaMoeda.callbacks, title: itens => d.fontes_empenhos[itens[0].dataIndex].fonte } } } }
+  });
+  grafico('g_fontes_restos', {
+    type: 'bar',
+    data: { labels: d.fontes_restos.map(f => f.fonte),
+            datasets: [
+              { label: 'Pago', data: d.fontes_restos.map(f => f.pago), backgroundColor: '#007C6Bcc', stack: 's' },
+              { label: 'A pagar', data: d.fontes_restos.map(f => f.a_pagar), backgroundColor: '#EB600Acc', stack: 's' }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+               scales: { x: { stacked: true, ...eixoMoeda }, y: { stacked: true } },
+               plugins: { legend: { position: 'bottom' }, tooltip: dicaMoeda } }
+  });
+  const top = d.credores.filter(c => c.em_aberto + c.a_pagar > 0).slice(0, 15);
+  document.getElementById('box_credores').style.height = Math.max(240, top.length * 46 + 70) + 'px';
+  grafico('g_credores', {
+    type: 'bar',
+    data: { labels: top.map(c => quebrar(c.credor, 40)),
+            datasets: [
+              { label: 'Em aberto', data: top.map(c => c.em_aberto), backgroundColor: '#2E758Ccc', stack: 's' },
+              { label: 'Restos a pagar a pagar', data: top.map(c => c.a_pagar), backgroundColor: '#EB600Acc', stack: 's' }] },
+    options: { indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+               scales: { x: { stacked: true, ...eixoMoeda }, y: { stacked: true, ticks: { autoSkip: false, font: { size: 11 } } } },
+               plugins: { legend: { position: 'bottom' }, tooltip: { ...dicaMoeda, callbacks: {
+                 ...dicaMoeda.callbacks, title: itens => `${top[itens[0].dataIndex].credor} (${documento(top[itens[0].dataIndex].documento)})` } } } }
+  });
+
+  const fontes = [...new Set(d.empenhos.flatMap(e => [e.fonte_empenho, e.fonte_resto]).filter(Boolean))].sort();
+  const sel = document.getElementById('fonte');
+  sel.innerHTML = '<option value="">Todas</option>' + fontes.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
+  limite = PAGINA;
+  renderTabela();
+  renderCredores();
+}
+
+// ---- tabela de empenhos: filtros, ordenação e "mostrar mais" ----
+const PAGINA = 100;
+let limite = PAGINA;
+let ordem = { campo: 'empenho', desc: false };
+const texto = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+
+function filtrados() {
+  const busca = texto(document.getElementById('busca').value).replace(/[.\-\/\s]/g, '');
+  const sit = document.getElementById('situacao').value;
+  const fonte = document.getElementById('fonte').value;
+  return dados.empenhos.filter(e => {
+    if (sit === 'dois' && !(e.em_aberto && e.em_restos)) return false;
+    if (sit === 'aberto' && !(e.em_aberto && !e.em_restos)) return false;
+    if (sit === 'restos' && !(e.em_restos && !e.em_aberto)) return false;
+    if (sit === 'a_pagar' && !(e.a_pagar > 0)) return false;
+    if (fonte && e.fonte_empenho !== fonte && e.fonte_resto !== fonte) return false;
+    if (busca) {
+      const alvo = texto([e.empenho, e.credor, e.documento, e.processo, e.contrato].join(' ')).replace(/[.\-\/\s]/g, '');
+      if (!alvo.includes(busca)) return false;
+    }
+    return true;
+  });
+}
+
+function valorOrdem(e, campo) {
+  if (campo === 'fonte') return e.fonte_empenho || e.fonte_resto || '';
+  if (campo === 'ultima_ob') return e.ultima_ob ? e.ultima_ob.split('/').reverse().join('') : '';
+  return e[campo] ?? (['empenho', 'credor', 'processo', 'contrato'].includes(campo) ? '' : -Infinity);
+}
+
+function renderTabela() {
+  const lista = filtrados();
+  const { campo, desc } = ordem;
+  lista.sort((a, b) => {
+    const x = valorOrdem(a, campo), y = valorOrdem(b, campo);
+    const r = typeof x === 'number' && typeof y === 'number' ? x - y : String(x).localeCompare(String(y), 'pt-BR');
+    return desc ? -r : r;
+  });
+  const soma = c => lista.reduce((s, e) => s + (e[c] || 0), 0);
+  document.querySelector('#tabela-empenhos tbody').innerHTML = lista.slice(0, limite).map(e => `<tr>
+      <td class="nowrap">${esc(e.empenho)}${e.em_aberto && e.em_restos ? '' : `<br><span class="etiqueta-rel">${e.em_aberto ? 'só em aberto' : 'só restos a pagar'}</span>`}</td>
+      <td>${esc(e.credor || '—')}<br><span class="doc">${esc(documento(e.documento))}</span></td>
+      <td class="nowrap">${esc(e.processo || '—')}</td>
+      <td class="nowrap">${esc(e.contrato || '—')}</td>
+      <td class="fonte">${esc(e.fonte_empenho || e.fonte_resto || '—')}${e.fonte_empenho && e.fonte_resto ? `<br><span class="doc">RP: ${esc(e.fonte_resto)}</span>` : ''}</td>
+      <td class="num">${vazio(e.a_liquidar)}</td>
+      <td class="num">${vazio(e.liquidado_a_pagar)}</td>
+      <td class="num">${vazio(e.inscrito)}</td>
+      <td class="num">${vazio(e.pago)}</td>
+      <td class="num">${vazio(e.a_pagar)}</td>
+      <td class="num">${e.ordens ? inteiro(e.ordens) : '<span class="sem-dado">—</span>'}</td>
+      <td class="nowrap">${esc(e.ultima_ob || '—')}</td>
+    </tr>`).join('') || '<tr><td colspan="12" class="sem-dado">Nenhum empenho com esses filtros.</td></tr>';
+  document.querySelector('#tabela-empenhos tfoot').innerHTML = lista.length ? `<tr class="total">
+      <td colspan="5">Total (${inteiro(lista.length)} empenhos)</td>
+      <td class="num">${moeda(soma('a_liquidar'))}</td><td class="num">${moeda(soma('liquidado_a_pagar'))}</td>
+      <td class="num">${moeda(soma('inscrito'))}</td><td class="num">${moeda(soma('pago'))}</td>
+      <td class="num">${moeda(soma('a_pagar'))}</td><td class="num">${inteiro(soma('ordens'))}</td><td></td></tr>` : '';
+  document.getElementById('resumo-tabela').textContent =
+    `${inteiro(Math.min(limite, lista.length))} de ${inteiro(lista.length)} empenhos. Clique no título de uma coluna para ordenar.`;
+  document.getElementById('mais').hidden = lista.length <= limite;
+  document.querySelectorAll('#tabela-empenhos th[data-ordem]').forEach(th => {
+    th.classList.toggle('ordenada', th.dataset.ordem === campo);
+    th.dataset.seta = th.dataset.ordem === campo ? (desc ? '▼' : '▲') : '';
+  });
+}
+
+function renderCredores() {
+  const busca = texto(document.getElementById('busca-credor').value).replace(/[.\-\/\s]/g, '');
+  const lista = dados.credores.filter(c => !busca || texto((c.credor || '') + (c.documento || '')).replace(/[.\-\/\s]/g, '').includes(busca));
+  document.getElementById('tb_credores').innerHTML = lista.map(c => `<tr>
+      <td>${esc(c.credor)}</td><td class="nowrap">${esc(documento(c.documento))}</td>
+      <td class="num">${inteiro(c.empenhos)}</td><td class="num">${vazio(c.em_aberto)}</td>
+      <td class="num">${vazio(c.inscrito)}</td><td class="num">${vazio(c.pago)}</td><td class="num">${vazio(c.a_pagar)}</td>
+    </tr>`).join('') || '<tr><td colspan="7" class="sem-dado">Nenhum credor com essa busca.</td></tr>';
+}
+
+document.querySelectorAll('#tabela-empenhos th[data-ordem]').forEach(th => th.addEventListener('click', () => {
+  const campo = th.dataset.ordem;
+  // texto começa em ordem crescente; valores, do maior para o menor
+  const numerico = th.classList.contains('num');
+  ordem = { campo, desc: ordem.campo === campo ? !ordem.desc : numerico };
+  renderTabela();
+}));
+['busca', 'situacao', 'fonte'].forEach(id => document.getElementById(id).addEventListener('input', () => {
+  limite = PAGINA; renderTabela();
+}));
+document.getElementById('mais').addEventListener('click', () => { limite += PAGINA * 5; renderTabela(); });
+document.getElementById('busca-credor').addEventListener('input', renderCredores);
+
+fetch('/api/financeiro/dados')
+  .then(r => r.json())
+  .then(res => {
+    hideLoader();
+    if (!res.ok) throw new Error(res.erro);
+    render(res.dados);
+  })
+  .catch(err => {
+    hideLoader();
+    const el = document.getElementById('erro');
+    el.textContent = 'Erro ao carregar os dados financeiros: ' + err.message;
+    el.style.display = 'block';
+  });
+</script>
+    {{ rodape() }}
 </body>
 </html>

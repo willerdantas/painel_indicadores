@@ -4,6 +4,8 @@ flask==3.1.3
 werkzeug==3.1.9
 pandas==3.0.6
 openpyxl==3.1.5
+# relatórios .xls do SIAFE (Lançar Dados do Financeiro): formato antigo do Excel, com células mescladas
+xlrd==2.0.1
 psycopg2-binary==2.9.13
 cryptography==50.0.2
 

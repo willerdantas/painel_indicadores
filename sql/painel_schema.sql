@@ -22,6 +22,15 @@ CREATE SCHEMA IF NOT EXISTS painel AUTHORIZATION painel;
 -- Todas com id, atualizado_em e atualizado_por, e UNIQUE (mes, chaves do item).
 -- "mes" é DATE no dia 1 do mês de referência.
 --
+-- Financeiro (relatórios do SIAFE importados em Lançar Dados do Financeiro;
+-- cada importação substitui a anterior do mesmo relatório):
+--
+-- painel.credor                (documento, nome)            CNPJ/CPF só com dígitos
+-- painel.importacao_financeiro (tipo, arquivo, referencia, totais...)  'empenhos' ou 'restos'
+-- painel.empenho_aberto        (empenho, fonte, credor_documento, valor_a_liquidar, valor_liquidado_a_pagar)
+-- painel.resto_pagar           (empenho, processo, fonte, contrato, credor_documento,
+--                               ordem_bancaria, data_ob, valor_inscrito, valor_pago, valor_a_pagar)
+--
 -- Tabelas do sistema, já carregadas na primeira configuração do banco
 -- (cada carga registrada em painel.migracao: roda uma vez só):
 --

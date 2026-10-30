@@ -1131,6 +1131,54 @@ def _criar_tipos_consulta(cur):
     print(f'[painel] tipos de consulta: {len(padrao)} cadastrados')
 
 
+def _criar_tabelas_financeiro(cur):
+    """Relatórios do SIAFE importados na tela Lançar Dados do Financeiro
+    (financeiro.py): cada importação substitui a anterior do mesmo tipo
+    (as linhas saem junto, ON DELETE CASCADE); credor é o cadastro dos
+    credores (documento só com dígitos)."""
+    s = schema()
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.credor (
+                       documento     TEXT PRIMARY KEY,
+                       nome          TEXT NOT NULL,
+                       atualizado_em TIMESTAMP NOT NULL DEFAULT now())""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.importacao_financeiro (
+                       id               SERIAL PRIMARY KEY,
+                       tipo             TEXT NOT NULL UNIQUE CHECK (tipo IN ('empenhos', 'restos')),
+                       arquivo          TEXT NOT NULL,
+                       referencia       TEXT,
+                       atualizado_siafe TEXT,
+                       linhas           INTEGER NOT NULL,
+                       totais           JSONB NOT NULL,
+                       importado_em     TIMESTAMP NOT NULL DEFAULT now(),
+                       importado_por    TEXT NOT NULL)""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.empenho_aberto (
+                       id                      SERIAL PRIMARY KEY,
+                       importacao_id           INTEGER NOT NULL
+                                               REFERENCES {s}.importacao_financeiro (id) ON DELETE CASCADE,
+                       empenho                 TEXT NOT NULL,
+                       fonte                   TEXT,
+                       credor_documento        TEXT REFERENCES {s}.credor (documento),
+                       valor_a_liquidar        NUMERIC(15, 2) NOT NULL DEFAULT 0,
+                       valor_liquidado_a_pagar NUMERIC(15, 2) NOT NULL DEFAULT 0)""")
+    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.resto_pagar (
+                       id               SERIAL PRIMARY KEY,
+                       importacao_id    INTEGER NOT NULL
+                                        REFERENCES {s}.importacao_financeiro (id) ON DELETE CASCADE,
+                       empenho          TEXT NOT NULL,
+                       processo         TEXT,
+                       fonte            TEXT,
+                       contrato         TEXT,
+                       credor_documento TEXT REFERENCES {s}.credor (documento),
+                       ordem_bancaria   TEXT,
+                       data_ob          DATE,
+                       valor_inscrito   NUMERIC(15, 2) NOT NULL DEFAULT 0,
+                       valor_pago       NUMERIC(15, 2) NOT NULL DEFAULT 0,
+                       valor_a_pagar    NUMERIC(15, 2) NOT NULL DEFAULT 0)""")
+    # cruzamento dos dois relatórios pelo número do empenho
+    cur.execute(f'CREATE INDEX IF NOT EXISTS empenho_aberto_empenho_idx ON {s}.empenho_aberto (empenho)')
+    cur.execute(f'CREATE INDEX IF NOT EXISTS resto_pagar_empenho_idx ON {s}.resto_pagar (empenho)')
+
+
 def nomes_tipos_consulta():
     """{isn_tipo_consulta: nome} dos tipos de consulta ativos no cadastro.
     Enquanto o banco do painel não está pronto ou se a leitura falhar, usa
@@ -1224,6 +1272,7 @@ def iniciar(forcar=False):
                 _criar_subcategorias_custo(cur)
                 _criar_regioes_saude(cur)
                 _criar_tipos_consulta(cur)
+                _criar_tabelas_financeiro(cur)
             for t in TABELAS:
                 if _migracao_feita(t):
                     continue

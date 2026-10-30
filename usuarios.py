@@ -40,6 +40,7 @@ PAGINAS = [
     ('custos', 'Lançar Dados de Custos', ['/admin/custos']),
     ('producao', 'Lançar Dados de Produção', ['/admin/producao']),
     ('simaq', 'Lançar Dados do SIMAQ', ['/admin/simaq']),
+    ('financeiro', 'Lançar Dados do Financeiro', ['/admin/financeiro']),
     # inclui a Classificação de Exames, que é uma seção da tela Cadastros
     ('cadastros', 'Cadastros', ['/admin/cadastros', '/admin/classificacoes']),
 ]

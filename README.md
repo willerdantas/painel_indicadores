@@ -19,11 +19,17 @@ planilhas da pasta `dados/` e dos lançamentos feitos na área restrita.
 | Indicadores da Emergência | `/hcasg/emergencia` (+ tendência e comparativo) | sistema hospitalar |
 | Ambulatório | `/ambulatorio` | sistema hospitalar |
 | Custos | `/custos` | schema `painel` |
+| Financeiro | `/financeiro` | schema `painel` (relatórios do SIAFE importados) |
 
 **Área restrita** (`/admin`, com login):
 
 - Lançamento de custos por unidade, de produção hospitalar e do SIMAQ.
 - Importação da planilha mensal de custos (aba GERAL), com pré-visualização antes de gravar.
+- Lançar Dados do Financeiro: importação de dois relatórios do SIAFE (.xls ou .xlsx), cruzados pelo número do empenho na página Financeiro:
+  - Empenhos em aberto por fonte de recursos;
+  - Restos a Pagar Inscritos, Pagos e A Pagar (por nota de empenho e ordem bancária).
+
+  Cada importação substitui a anterior do mesmo relatório. A tela mostra a última importação e confere a soma das linhas com o total do relatório.
 - Cadastros: categorias, subcategorias e itens de custo, unidades e grupos de unidades, SIMAQ e produção, e ainda:
   - Regiões de Saúde (Ceará): as 5 macrorregiões de saúde e os 184 municípios de cada uma (usadas no gráfico por macrorregião do Ambulatório);
   - Classificação de Exames: cadastro das classificações e associação de cada exame a uma delas (usada no painel Exames).
@@ -47,6 +53,7 @@ area_restrita.py       login, permissões e telas de /admin
 indicadores_hcasg.py   consultas dos indicadores hospitalares e da emergência
 ambulatorio.py         consultas do ambulatório
 custos.py              painel de custos
+financeiro.py          painel financeiro e importação dos relatórios do SIAFE (empenhos e restos a pagar)
 classificacao_exames.py classificação dos exames (schema painel)
 banco_painel.py        schema "painel" (lançamentos) e migração das planilhas
 lancamento_custos.py   lançamento de custos por unidade

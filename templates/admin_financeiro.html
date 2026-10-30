@@ -1,0 +1,83 @@
+{% extends 'admin_base.html' %}
+{% block classe_pagina %}pg-admin-financeiro{% endblock %}
+{% block titulo %}Lançar Dados do Financeiro{% endblock %}
+{% block cabecalho %}Lançar Dados do Financeiro{% endblock %}
+{% block conteudo %}
+
+{% if indisponivel %}
+<div class="painel" style="position:relative; max-width:820px;">
+    <h2>Schema "painel" indisponível</h2>
+    <p>{{ indisponivel }}</p>
+    <p style="margin-top:12px;">O usuário do painel não tem permissão para criar schemas. Peça a um administrador do PostgreSQL
+        para executar, uma única vez (também está em <code>sql/painel_schema.sql</code>):</p>
+    <pre class="sql">{{ sql }}</pre>
+</div>
+{% else %}
+{# um cartão por relatório do SIAFE: envio da planilha e a última importação #}
+{% set orientacoes = {
+    'empenhos': 'Relatório de Empenhos em aberto por fonte de recursos. Linhas 1 a 8 são cabeçalho; '
+                'A = empenho, B = credor (CNPJ - nome), C = a liquidar, D = liquidados a pagar.',
+    'restos': 'Restos a Pagar Inscritos, Pagos e A Pagar (Nota de Empenho e Ordem Bancária). Linhas 1 a 7 são '
+              'cabeçalho; uma linha por ordem bancária, com empenho, processo, fonte, contrato e credor nas '
+              'células mescladas (repetidos em cada linha). As colunas são achadas pelo nome do cabeçalho.',
+} %}
+{# ordem fixa: o JSONB do banco não guarda a ordem das chaves #}
+{% set campos = {
+    'empenhos': ['valor_a_liquidar', 'valor_liquidado_a_pagar'],
+    'restos': ['valor_inscrito', 'valor_pago', 'valor_a_pagar'],
+} %}
+{% set rotulos = {
+    'valor_a_liquidar': 'A liquidar', 'valor_liquidado_a_pagar': 'Liquidado a pagar',
+    'valor_inscrito': 'Inscrito', 'valor_pago': 'Pago', 'valor_a_pagar': 'A pagar',
+} %}
+<div class="grade-financeiro">
+    {% for tipo, nome in tipos.items() %}
+    {% set imp = importacoes[tipo] %}
+    <section class="painel">
+        <h2>{{ nome }}</h2>
+        <form method="post" action="{{ url_for('admin_financeiro_importar', tipo=tipo) }}" enctype="multipart/form-data">
+            <input type="hidden" name="csrf" value="{{ csrf_token }}">
+            <input type="file" name="planilha" accept=".xls,.xlsx" required style="font-size:13px; max-width:100%;">
+            <div class="dica">{{ orientacoes[tipo] }} Planilha exportada do SIAFE (.xls ou .xlsx), primeira aba.
+                A importação substitui a anterior deste relatório.</div>
+            <div class="acoes"><button type="submit" class="btn">Importar</button></div>
+        </form>
+
+        <h3 class="ultima">Última importação</h3>
+        {% if imp %}
+        <table class="resumo">
+            <tr><th>Período</th><td>{{ imp.referencia or '—' }}</td></tr>
+            <tr><th>Dados do SIAFE de</th><td>{{ imp.atualizado_siafe or '—' }}</td></tr>
+            <tr><th>Arquivo</th><td class="arquivo">{{ imp.arquivo }}</td></tr>
+            <tr><th>Linhas</th><td>{{ imp.linhas | num_br('inteiro') }}</td></tr>
+            <tr><th>Importado</th><td>{{ imp.importado_em }} por {{ imp.importado_por }}</td></tr>
+        </table>
+        <table class="totais">
+            <thead><tr><th></th><th class="num">Total do relatório</th><th class="num">Soma das linhas</th><th></th></tr></thead>
+            <tbody>
+            {% for campo in campos[tipo] %}
+            <tr>
+                <td>{{ rotulos[campo] }}</td>
+                <td class="num">{{ imp.totais.relatorio[campo] | moeda_br }}</td>
+                <td class="num">{{ imp.totais.detalhado[campo] | moeda_br }}</td>
+                <td>{% if imp.totais.confere[campo] %}<span class="etiqueta ok">confere</span>{% else %}<span class="etiqueta aviso">difere</span>{% endif %}</td>
+            </tr>
+            {% endfor %}
+            </tbody>
+        </table>
+        {% if tipo == 'empenhos' and not imp.totais.confere.valor_liquidado_a_pagar %}
+        <div class="dica">O relatório só detalha os empenhos com valor a liquidar: os liquidados a pagar dos demais entram
+            no total do relatório (e no total de cada fonte), mas não aparecem empenho a empenho. A página Financeiro usa
+            o total do relatório.</div>
+        {% endif %}
+        {% else %}
+        <p class="dica">Nenhuma planilha importada ainda.</p>
+        {% endif %}
+    </section>
+    {% endfor %}
+</div>
+<p class="dica rodape-financeiro">Os dois relatórios se cruzam pelo número do empenho na página
+    <a href="{{ url_for('financeiro_pagina') }}">Financeiro</a>. O credor é separado em CNPJ e nome; o processo fica sem "NUP",
+    espaços, "-" e ".".</p>
+{% endif %}
+{% endblock %}

@@ -12,6 +12,7 @@ import config_banco
 import ambulatorio
 import banco_painel
 import custos
+import financeiro
 import area_restrita
 import paginas_visiveis
 import classificacao_exames
@@ -303,178 +304,20 @@ def _sem_planilha(nome):
     return render_template('error.html', message=f'Sem dados: a planilha "{nome}" não está na pasta dados/ do servidor.'), 404
 
 
-@app.route('/financeiro', methods=['GET', 'POST'])
-def financeiro():
-    caminho_planilha = os.path.join(PASTA_DADOS, 'DESPESAS EMPENHADAS.xlsx')
-    if not os.path.exists(caminho_planilha):
-        return _sem_planilha('DESPESAS EMPENHADAS.xlsx')
+@app.route('/financeiro')
+def financeiro_pagina():
+    """Empenhos em aberto e restos a pagar (relatórios do SIAFE importados em
+    Lançar Dados do Financeiro), cruzados pelo número do empenho."""
+    return render_template('financeiro.html')
+
+
+@app.route('/api/financeiro/dados')
+def api_financeiro_dados():
     try:
-        df_original = pd.read_excel(
-            caminho_planilha,
-            header=0,
-            dtype=str,
-            engine='openpyxl'
-        )
-
-        # Ajuste robusto para encontrar as colunas, independentemente de acentuação/capitalização
-        def encontrar_coluna(df, nomes_possiveis):
-            for nome in df.columns:
-                nome_normalizado = nome.strip().lower().replace('ã', 'a').replace('é', 'e').replace('ê', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace('ç', 'c').replace('ô', 'o')
-                for alvo in nomes_possiveis:
-                    alvo_normalizado = alvo.strip().lower().replace('ã', 'a').replace('é', 'e').replace('ê', 'e').replace('í', 'i').replace('ó', 'o').replace('ú', 'u').replace('ç', 'c').replace('ô', 'o')
-                    if nome_normalizado == alvo_normalizado:
-                        return nome
-            return None
-
-        # Defina os nomes possíveis para cada coluna
-        nomes_mes = ['Mês', 'Mes']
-        nomes_fonte = ['Fonte do Recurso', 'Fonte', 'Fonte Recurso']
-        nomes_natureza = ['Natureza da Despesa', 'Natureza', 'Natureza Despesa']
-        nomes_despesa = ['Despesa']
-        nomes_valor = ['Valor R$ no mês', 'Valor R$ no Mês', 'Valor', 'Valor R$', 'Valor no mês', 'Valor no Mês']
-
-        col_mes = encontrar_coluna(df_original, nomes_mes)
-        col_fonte = encontrar_coluna(df_original, nomes_fonte)
-        col_natureza = encontrar_coluna(df_original, nomes_natureza)
-        col_despesa = encontrar_coluna(df_original, nomes_despesa)
-        col_valor = encontrar_coluna(df_original, nomes_valor)
-
-        # Verifica se todas as colunas necessárias foram encontradas
-        for nome, col in [('Mês', col_mes), ('Fonte do Recurso', col_fonte), ('Natureza da Despesa', col_natureza), ('Despesa', col_despesa), ('Valor R$ no mês', col_valor)]:
-            if col is None:
-                raise Exception(f"Coluna '{nome}' não encontrada na planilha.")
-
-        # Renomeia as colunas para nomes padronizados
-        df_original = df_original.rename(columns={
-            col_mes: 'Mês',
-            col_fonte: 'Fonte do Recurso',
-            col_natureza: 'Natureza da Despesa',
-            col_despesa: 'Despesa',
-            col_valor: 'Valor R$ no mês'
-        })
-
-        # Use sempre 'Valor R$ no mês' (com "mês" minúsculo) como nome padrão
-        # Ajuste todas as ocorrências abaixo para usar 'Valor R$ no mês'
-        def normalizar_valor(valor):
-            if isinstance(valor, str):
-                valor = valor.replace('R$', '').replace(' ', '').replace('.', '').replace(',', '.')
-                try:
-                    return float(valor)
-                except Exception:
-                    return 0.0
-            try:
-                return float(valor)
-            except Exception:
-                return 0.0
-
-        df_original['Valor R$ no mês'] = df_original['Valor R$ no mês'].apply(normalizar_valor)
-        df_original['Mês'] = pd.to_datetime(df_original['Mês'], format='%Y-%m', errors='coerce')
-        if df_original['Mês'].isnull().all():
-            df_original['Mês'] = pd.to_datetime(df_original['Mês'], errors='coerce')
-        df_original = df_original.dropna(subset=['Mês', 'Valor R$ no mês'])
-
-        # Sempre define o padr�o como os �ltimos 12 meses dispon�veis
-        if not df_original.empty:
-            data_final_padrao = df_original['Mês'].max()
-            data_inicial_padrao = (data_final_padrao - pd.DateOffset(months=12) + pd.DateOffset(days=1)).replace(day=1)
-        else:
-            data_final_padrao = datetime.now()
-            data_inicial_padrao = data_final_padrao - timedelta(days=365)
-
-        if request.method == 'POST':
-            filtros = request.get_json()
-            data_inicial = pd.to_datetime(filtros.get('data_inicial'), errors='coerce')
-            data_final = pd.to_datetime(filtros.get('data_final'), errors='coerce')
-            if pd.isnull(data_inicial):
-                data_inicial = data_inicial_padrao
-            if pd.isnull(data_final):
-                data_final = data_final_padrao
-            fonte_despesa = filtros.get('fonte_despesa')
-            natureza_despesa = filtros.get('natureza_despesa')
-            despesa = filtros.get('despesa')
-        else:
-            data_inicial = data_inicial_padrao
-            data_final = data_final_padrao
-            fonte_despesa = None
-            natureza_despesa = None
-            despesa = None
-
-        fontes_despesa = sorted(df_original['Fonte do Recurso'].dropna().unique())
-        naturezas_despesa = sorted(df_original['Natureza da Despesa'].dropna().unique())
-        despesas = sorted(df_original['Despesa'].dropna().unique())
-
-        df = df_original.copy()
-        df = df[(df['Mês'] >= data_inicial) & (df['Mês'] <= data_final)]
-        if fonte_despesa and fonte_despesa != 'todos':
-            df = df[df['Fonte do Recurso'] == fonte_despesa]
-        if natureza_despesa and natureza_despesa != 'todos':
-            df = df[df['Natureza da Despesa'] == natureza_despesa]
-        if despesa and despesa != 'todos':
-            df = df[df['Despesa'] == despesa]
-
-        valor_total = float(df['Valor R$ no mês'].sum()) if not df.empty else 0.0
-        if not df.empty and df['Valor R$ no mês'].max() > 0:
-            maior_despesa_row = df.loc[df['Valor R$ no mês'].idxmax()]
-            maior_despesa = {
-                'descricao': str(maior_despesa_row['Despesa']),
-                'valor': float(maior_despesa_row['Valor R$ no mês'])
-            }
-        else:
-            maior_despesa = {'descricao': '', 'valor': 0.0}
-        valor_medio = float(df['Valor R$ no mês'].mean()) if not df.empty else 0.0
-
-        # Dados para gráfico: garantir todos os meses no Período, mesmo sem despesa
-        if not df.empty:
-            date_range = pd.date_range(start=data_inicial, end=data_final, freq='MS')
-            all_months = date_range.strftime('%Y-%m').tolist()
-            all_despesas = sorted(set(df['Despesa'].dropna().astype(str).unique()))
-            df['MesReferencia'] = df['Mês'].dt.strftime('%Y-%m')
-
-            # Gera DataFrame base com todos os meses e todas as despesas
-            base = pd.MultiIndex.from_product([all_months, all_despesas], names=['MesReferencia', 'Despesa'])
-            df_grouped = (
-                df.groupby(['MesReferencia', 'Despesa'])['Valor R$ no mês']
-                .sum()
-                .reindex(base, fill_value=0)
-                .reset_index()
-            )
-
-            # Pivot para formato de gráfico empilhado
-            despesas_por_mes_df = df_grouped.pivot(index='MesReferencia', columns='Despesa', values='Valor R$ no mês').fillna(0)
-            despesas_por_mes_df = despesas_por_mes_df.reset_index()
-
-            # Adiciona coluna Total
-            despesas_por_mes_df['Total'] = despesas_por_mes_df[all_despesas].sum(axis=1)
-
-            # Garante que todos os meses estejam presentes e ordenados
-            despesas_por_mes_df = despesas_por_mes_df.set_index('MesReferencia').reindex(all_months, fill_value=0).reset_index()
-
-            despesas_por_mes = despesas_por_mes_df.to_dict(orient='list')
-        else:
-            despesas_por_mes = {}
-
-        if request.method == 'POST':
-            return jsonify({
-                'valor_total': valor_total,
-                'maior_despesa': maior_despesa,
-                'valor_medio': valor_medio,
-                'despesas_por_mes': despesas_por_mes
-            })
-
-        context = {
-            'data_inicial': data_inicial.strftime('%Y-%m-%d') if pd.notnull(data_inicial) else '',
-            'data_final': data_final.strftime('%Y-%m-%d') if pd.notnull(data_final) else '',
-            'fontes_despesa': fontes_despesa,
-            'naturezas_despesa': naturezas_despesa,
-            'despesas': despesas,
-            'valor_total': valor_total,
-            'maior_despesa': maior_despesa,
-            'valor_medio': valor_medio,
-            'despesas_por_mes': despesas_por_mes
-        }
-        return render_template('financeiro.html', **context)
+        return jsonify({'ok': True, 'dados': financeiro.get_financeiro()})
     except Exception as e:
-        return f"Erro ao carregar dados financeiros: {e}", 500
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
 
 @app.route('/faturamento', methods=['GET', 'POST'])
 def faturamento():

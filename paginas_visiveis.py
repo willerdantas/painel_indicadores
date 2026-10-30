@@ -30,6 +30,7 @@ PAGINAS = [
      ['/hcasg/emergencia', '/api/hcasg/emergencia']),
     ('ambulatorio', 'Ambulatório', 'ambulatorio_pagina', 'estetoscopio', ['/ambulatorio', '/api/ambulatorio']),
     ('custos', 'Custos', 'custos_pagina', 'moeda', ['/custos', '/api/custos']),
+    ('financeiro', 'Financeiro', 'financeiro_pagina', 'carteira', ['/financeiro', '/api/financeiro']),
 ]
 CHAVES = [p[0] for p in PAGINAS]
 

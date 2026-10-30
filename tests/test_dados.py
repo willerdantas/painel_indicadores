@@ -140,9 +140,92 @@ def test_paginas_sem_dados_nao_quebram(cliente, tmp_path, monkeypatch):
     assert cliente.get('/producao_hospitalar').status_code == 200
     assert cliente.get('/indicadores').status_code == 200
     assert cliente.get('/custos').status_code == 200
-    r = cliente.get('/financeiro')
-    assert r.status_code == 404 and 'Sem dados' in r.get_data(as_text=True)
+    assert cliente.get('/financeiro').status_code == 200
+    r = cliente.get('/api/financeiro/dados').get_json()  # sem banco: página vazia, sem erro
+    assert r['ok'] and r['dados']['empenhos'] == [] and r['dados']['importacoes'] == {'empenhos': None, 'restos': None}
     assert cliente.get('/faturamento').status_code == 404
+
+
+def _planilha_siafe(caminho, linhas, mesclas=()):
+    """xlsx com as linhas dadas (lista de listas, a partir da linha 1) e as
+    mesclas ('A8:A10'...), no formato dos relatórios do SIAFE."""
+    import openpyxl
+    wb = openpyxl.Workbook()
+    ws = wb.active
+    for linha in linhas:
+        ws.append(linha)
+    for m in mesclas:
+        ws.merge_cells(m)
+    wb.save(caminho)
+    return str(caminho)
+
+
+def test_financeiro_etl_credor_e_processo():
+    import financeiro
+    assert financeiro.separar_credor('54.858.014/0009-27 - ESSITY DO BRASIL - FILIAL') == \
+        ('54858014000927', 'ESSITY DO BRASIL - FILIAL')  # só o primeiro " - " separa
+    assert financeiro.separar_credor('SEM DOCUMENTO') == ('', 'SEM DOCUMENTO')
+    assert financeiro.limpar_processo('NUP 24001.006317/2024-93 ') == '24001006317/202493'
+    assert financeiro.limpar_processo(' - ') is None
+
+
+def test_financeiro_le_empenhos_por_fonte(tmp_path):
+    import financeiro
+    cab = [['', 'Governo'], ['', 'Sefaz'], ['', 'Tesouro'],
+           ['', 'Relatório de Empenhos em aberto por fonte de recursos - Período: Até 12 de 2025'], ['', ''],
+           ['Despesa', '', 'Empenhos a Liquidar', 'Empenhos Liquidadas a Pagar'],
+           ['241291 - HOSPITAL', '', 300.0, 70.0],
+           ['   500 - RECURSOS NÃO VINCULADOS', '', 100.0, 50.0]]          # linha 8: fonte (mesclada A:B)
+    dados = [['      2025NE000029', '54858014000927 - ESSITY', 100.0, 0.0],
+             ['   600 - TRANSFERÊNCIAS', '', 200.0, 20.0],
+             ['      2025NE000031', '20301535000100 - JB FARMA', 150.0, 20.0],
+             ['      2025NE000032', '20301535000100 - JB FARMA', 50.0, 0.0],
+             ['Impresso em 26/10/2026 - Dados atualizados em: 23/10/2026 10:41:05']]
+    caminho = _planilha_siafe(tmp_path / 'empenhos.xlsx', cab + dados, ['A8:B8'])
+    lido = financeiro.ler_empenhos(caminho)
+    assert [(l['empenho'], l['fonte'][:3], l['credor_documento']) for l in lido['linhas']] == [
+        ('2025NE000029', '500', '54858014000927'), ('2025NE000031', '600', '20301535000100'),
+        ('2025NE000032', '600', '20301535000100')]
+    assert lido['referencia'] == 'Até 12 de 2025' and lido['atualizado_siafe'] == '23/10/2026 10:41:05'
+    t = lido['totais']
+    assert t['confere'] == {'valor_a_liquidar': True, 'valor_liquidado_a_pagar': False}  # 50 não detalhado
+    assert t['fontes']['500 - RECURSOS NÃO VINCULADOS']['valor_liquidado_a_pagar'] == 50.0
+
+
+def test_financeiro_le_restos_repetindo_mescladas(tmp_path):
+    import financeiro
+    cab = [['', 'Governo'], ['', 'Sefaz'], ['', 'Tesouro'],
+           ['', 'Restos a Pagar Inscritos, Pagos e A Pagar - UG: 241291 Até o Mês 10 / 2026'], [''],
+           ['Unidade Gestora / Nota de Empenho', 'Unid. Orçam.', 'Processo', 'Fonte ', 'Contrato', 'Credor',
+            'Ordem Bancária', 'Data Emissão OB', 'RP Processados', 'RP Não Processados', 'TOTAL INSCRITO',
+            'VALOR PAGO', 'VALOR A PAGAR'],
+           ['241291 - HOSPITAL', '', '', '', '', '', '', '', 0, 1000, 1000, 900, 100]]
+    # um empenho com duas ordens bancárias: A a F mescladas nas 3 linhas (8 a 10)
+    dados = [['   2024NE000272', '24200004214', 'NUP 24001.006317/2024-93', '6009200000', 'I001305848',
+              '23596733000136 - SEROPEDICA', ' - ', ' - ', 0, 1000, 1000, 0, 100],
+             ['', '', '', '', '', '', '2026OB002352', '24/03/2026', 0, 0, 0, 400, 0],
+             ['', '', '', '', '', '', '2026OB002362', '25/03/2026', 0, 0, 0, 500, 0]]
+    caminho = _planilha_siafe(tmp_path / 'restos.xlsx', cab + dados,
+                              [f'{c}8:{c}10' for c in 'ABCDEF'])
+    lido = financeiro.ler_restos(caminho)
+    ls = lido['linhas']
+    assert len(ls) == 3 and {l['empenho'] for l in ls} == {'2024NE000272'}
+    assert {(l['processo'], l['fonte'], l['contrato'], l['credor_documento']) for l in ls} == \
+        {('24001006317/202493', '6009200000', 'I001305848', '23596733000136')}  # repetidos nas mescladas
+    assert [(l['ordem_bancaria'], str(l['data_ob'])) for l in ls] == [
+        (None, 'None'), ('2026OB002352', '2026-03-24'), ('2026OB002362', '2026-03-25')]
+    assert lido['referencia'] == 'Até o Mês 10 / 2026'
+    assert all(lido['totais']['confere'].values())
+
+
+def test_financeiro_recusa_outra_planilha(tmp_path):
+    import financeiro
+    import pytest
+    caminho = _planilha_siafe(tmp_path / 'outra.xlsx', [['a', 'b']] * 8)
+    with pytest.raises(financeiro.PlanilhaInvalida):
+        financeiro.ler_restos(caminho)
+    with pytest.raises(financeiro.PlanilhaInvalida):
+        financeiro.ler_empenhos(caminho)
 
 
 def test_subcategoria_cooperativa_pelos_nomes_dos_itens():

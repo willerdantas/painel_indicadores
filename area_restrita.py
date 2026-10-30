@@ -25,6 +25,7 @@ from flask import abort, flash, g, jsonify, redirect, render_template, request, 
 import banco_painel
 import classificacao_exames
 import config_banco
+import financeiro
 import importacao_custos
 import lancamento_custos
 import logos
@@ -698,6 +699,57 @@ def _texto_itens_novos(novos):
     amostra = '; '.join(' / '.join(k) for k in novos[:5])
     mais = f' e mais {len(novos) - 5}' if len(novos) > 5 else ''
     return f' {len(novos)} item(ns) novo(s) cadastrado(s): {amostra}{mais}. Confira na tela de Cadastros.'
+
+
+# ---- lançar dados do financeiro (financeiro.py): relatórios do SIAFE ----
+
+@_rota('/admin/financeiro')
+def admin_financeiro():
+    if not banco_painel.pronto():
+        return render_template('admin_financeiro.html', indisponivel=banco_painel.erro()
+                               or 'Banco de dados dos lançamentos indisponível.', sql=banco_painel.sql_criar_schema())
+    return render_template('admin_financeiro.html', tipos=financeiro.TIPOS, importacoes=financeiro.importacoes())
+
+
+@_rota('/admin/financeiro/importar/<tipo>', methods=['POST'])
+def admin_financeiro_importar(tipo):
+    if tipo not in financeiro.TIPOS:
+        abort(404)
+    arquivo = request.files.get('planilha')
+    nome = arquivo.filename if arquivo else ''
+    if not nome or not nome.lower().endswith(financeiro.EXTENSOES):
+        flash('Escolha a planilha exportada do SIAFE (.xls ou .xlsx).', 'erro')
+        return redirect(url_for('admin_financeiro'))
+    if not banco_painel.pronto():
+        flash(banco_painel.erro() or 'Banco indisponível.', 'erro')
+        return redirect(url_for('admin_financeiro'))
+    import tempfile
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = os.path.join(pasta, 'planilha' + os.path.splitext(nome)[1].lower())
+        arquivo.save(caminho)
+        try:
+            lido = financeiro.importar(tipo, caminho, nome, g.usuario['login'])
+        except financeiro.PlanilhaInvalida as e:
+            flash(f'Planilha não importada: {e}', 'erro')
+            return redirect(url_for('admin_financeiro'))
+        except Exception as e:
+            flash(f'Não foi possível importar a planilha: {e}', 'erro')
+            return redirect(url_for('admin_financeiro'))
+    totais = lido['totais']
+    diferentes = [k for k, ok in totais['confere'].items() if not ok]
+    texto = (f'{financeiro.TIPOS[tipo]} importados ({lido["referencia"] or "sem período"}): '
+             f'{len(lido["linhas"])} linhas. ')
+    if not diferentes:
+        texto += 'A soma das linhas confere com o total do relatório.'
+    elif diferentes == ['valor_liquidado_a_pagar']:
+        # esperado: o relatório só detalha os empenhos com valor a liquidar
+        texto += ('O valor a liquidar confere com o total do relatório; o liquidado a pagar vem do total do '
+                  'relatório, que inclui empenhos não detalhados (veja abaixo).')
+    else:
+        texto += ('Atenção: a soma das linhas difere do total do relatório em '
+                  + ', '.join(k.replace('valor_', '').replace('_', ' ') for k in diferentes) + ' (veja abaixo).')
+    flash(texto, 'ok')
+    return redirect(url_for('admin_financeiro'))
 
 
 # ---- lançamento de custos por unidade (lancamento_custos.py) ----
