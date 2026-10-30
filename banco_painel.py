@@ -659,8 +659,10 @@ class Cadastro:
                     if cur.rowcount == 0:
                         return 'Registro não encontrado.'
         except pg_erros.UniqueViolation as e:
-            # coluna extra única (ex.: código do tipo de consulta) repetida
-            repetida = next((c for c in self.extras if c.nome in (e.diag.constraint_name or '')), None)
+            # coluna extra única (ex.: código do tipo de consulta) repetida; o
+            # UNIQUE da coluna tem o nome padrão do PostgreSQL: <tabela>_<coluna>_key
+            repetida = next((c for c in self.extras
+                             if e.diag.constraint_name == f'{self.tabela}_{c.nome}_key'), None)
             if repetida:
                 return f'{repetida.rotulo} já está em outro registro.'
             return f'"{nome}" já está cadastrado' + (' com esses mesmos ' + ' e '.join(r.lower() for _, r in self.pais)

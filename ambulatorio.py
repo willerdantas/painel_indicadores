@@ -671,81 +671,47 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
     início do atendimento médico, como na página do ambulatório; a média
     diária divide pelos dias em que o ambulatório atendeu (sem filtro)."""
     meses, dt_ini, dt_fim = _janela_meses(mes_ini, mes_fim)
-    n = len(meses)
-    idx = {(m.year, m.month): i for i, m in enumerate(meses)}
     macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
     filtro = filtro_paciente(sexo, municipio, macrorregiao, macro_do_municipio)
 
     def passa(esp, sx, mun):
         return (not especialidade or esp == especialidade) and (filtro is None or filtro(sx, mun))
 
-    def serie():
-        return [0] * n
-
     visitas = _visitas_periodo(dt_ini, dt_fim)
     nomes_tipo = banco_painel.nomes_tipos_consulta()
-    dias_abertos = [set() for _ in meses]
-    atend, pacientes, especs = serie(), [set() for _ in meses], [set() for _ in meses]
-    por_status, por_sexo_mes, por_macro, por_tipo, por_esp_tipo = {}, {}, {}, {}, {}
-    for paciente, esp, st, dia, mun, sx, _, _, cod_tipo in visitas:
-        i = idx[(dia.year, dia.month)]
-        dias_abertos[i].add(dia)
-        if not passa(esp, sx, mun):
-            continue
-        atend[i] += 1
-        especs[i].add(esp)
-        if paciente is not None:
-            pacientes[i].add(paciente)
-        tipo = nome_tipo_consulta(cod_tipo, nomes_tipo)
-        por_status.setdefault(st, serie())[i] += 1
-        por_sexo_mes.setdefault(sx, serie())[i] += 1
-        por_macro.setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
-        por_tipo.setdefault(tipo, serie())[i] += 1
-        por_esp_tipo.setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
-
-    consultas, minutos = serie(), [[] for _ in meses]
-    for esp, _, _, mins, sx, mun, dia in _consultas_periodo(dt_ini, dt_fim):
-        i = idx.get((dia.year, dia.month))
-        if i is None or not passa(esp, sx, mun):
-            continue
-        consultas[i] += 1
-        if mins is not None:
-            minutos[i].append(mins)
+    c = _contar_mes_a_mes(meses, visitas, _consultas_periodo(dt_ini, dt_fim), passa,
+                          nomes_tipo, macro_do_municipio)
+    atend = c["atendimentos"]
 
     def do_status(nome):
-        return next((v for k, v in por_status.items() if k.upper() == nome), serie())
+        return next((v for k, v in c["status"].items() if k.upper() == nome), [0] * len(meses))
 
     def taxa(partes, totais):
         return [round(p / t * 100, 1) if t else None for p, t in zip(partes, totais)]
 
-    def series(contagem, ordem=()):
-        nomes = [s for s in ordem if s in contagem] + sorted(
-            (s for s in contagem if s not in ordem), key=lambda s: (-sum(contagem[s]), s))
-        return [{"nome": s, "valores": contagem[s]} for s in nomes]
-
     altas = do_status("ALTA AMBULATORIAL")
     faltas = do_status("FALTOU")
-    status = series(por_status)
-    tipos = series(por_tipo)
+    status = _series(c["status"])
+    tipos = _series(c["tipo"])
     dados = {
         "meses": _meses_labels(meses),
         "meses_iso": _meses_iso(meses),
         "atendimentos": atend,
-        "media_diaria": [round(a / len(d), 1) if d else None for a, d in zip(atend, dias_abertos)],
-        "prontuarios": [len(p) for p in pacientes],
-        "por_prontuario": [round(a / len(p), 2) if p else None for a, p in zip(atend, pacientes)],
-        "concluidos": [c + a for c, a in zip(do_status("CONCLUÍDO"), altas)],
+        "media_diaria": [round(a / len(d), 1) if d else None for a, d in zip(atend, c["dias_abertos"])],
+        "prontuarios": [len(p) for p in c["pacientes"]],
+        "por_prontuario": [round(a / len(p), 2) if p else None for a, p in zip(atend, c["pacientes"])],
+        "concluidos": [x + a for x, a in zip(do_status("CONCLUÍDO"), altas)],
         "altas": altas,
         "faltas": faltas,
         "taxa_alta": taxa(altas, atend),
         "taxa_absenteismo": taxa(faltas, atend),
-        "consultas": consultas,
-        "tempo_medio": [round(statistics.mean(m), 1) if m else None for m in minutos],
-        "tempo_mediano": [round(statistics.median(m), 1) if m else None for m in minutos],
-        "especialidades": [len(e) for e in especs],
+        "consultas": c["consultas"],
+        "tempo_medio": [round(statistics.mean(m), 1) if m else None for m in c["minutos"]],
+        "tempo_mediano": [round(statistics.median(m), 1) if m else None for m in c["minutos"]],
+        "especialidades": [len(e) for e in c["especialidades"]],
         "status": status,
-        "sexo": series(por_sexo_mes, _ORDEM_SEXO),
-        "macrorregiao": series(por_macro),
+        "sexo": _series(c["sexo"], _ORDEM_SEXO),
+        "macrorregiao": _series(c["macrorregiao"]),
         "tipo_consulta": tipos,
         "tipo_especialidade": por_tipo_especialidade(
             [v for v in visitas if passa(v[1], v[5], v[4])], nomes_tipo),
@@ -762,9 +728,58 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         chave = "atendimentos_status_" + s["nome"]
         dados[chave] = s["valores"]
         campos.insert(campos.index(CAMPOS_MENSAL[0]) + 1 + status.index(s), (chave, s["nome"].capitalize(), "qtd"))
-    campos += _campos_tipo_especialidade(dados, atend, tipos, por_esp_tipo)
+    campos += _campos_tipo_especialidade(dados, atend, tipos, c["especialidade_tipo"])
     dados["_campos"] = campos
     return dados
+
+
+def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_municipio):
+    """Contagens de get_mensal, um valor por mês: atendimentos, prontuários e
+    especialidades (conjuntos), por status, sexo, macrorregião, tipo de
+    consulta e especialidade × tipo; consultas e minutos de cada consulta.
+    dias_abertos: dias em que o ambulatório atendeu (sem os filtros de passa)."""
+    n = len(meses)
+    idx = {(m.year, m.month): i for i, m in enumerate(meses)}
+
+    def serie():
+        return [0] * n
+
+    c = {"atendimentos": serie(), "consultas": serie(), "status": {}, "sexo": {}, "macrorregiao": {},
+         "tipo": {}, "especialidade_tipo": {}, "dias_abertos": [set() for _ in meses],
+         "pacientes": [set() for _ in meses], "especialidades": [set() for _ in meses],
+         "minutos": [[] for _ in meses]}
+    for paciente, esp, st, dia, mun, sx, _, _, cod_tipo in visitas:
+        i = idx[(dia.year, dia.month)]
+        c["dias_abertos"][i].add(dia)
+        if not passa(esp, sx, mun):
+            continue
+        c["atendimentos"][i] += 1
+        c["especialidades"][i].add(esp)
+        if paciente is not None:
+            c["pacientes"][i].add(paciente)
+        tipo = nome_tipo_consulta(cod_tipo, nomes_tipo)
+        c["status"].setdefault(st, serie())[i] += 1
+        c["sexo"].setdefault(sx, serie())[i] += 1
+        c["macrorregiao"].setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
+        c["tipo"].setdefault(tipo, serie())[i] += 1
+        c["especialidade_tipo"].setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
+
+    for esp, _, _, mins, sx, mun, dia in consultas:
+        i = idx.get((dia.year, dia.month))
+        if i is None or not passa(esp, sx, mun):
+            continue
+        c["consultas"][i] += 1
+        if mins is not None:
+            c["minutos"][i].append(mins)
+    return c
+
+
+def _series(contagem, ordem=()):
+    """[{"nome", "valores"}] de {nome: série mensal}: primeiro os de ordem,
+    depois do maior total para o menor."""
+    nomes = [s for s in ordem if s in contagem] + sorted(
+        (s for s in contagem if s not in ordem), key=lambda s: (-sum(contagem[s]), s))
+    return [{"nome": s, "valores": contagem[s]} for s in nomes]
 
 
 # grupo das linhas do comparativo que vão para a tabela por especialidade e
@@ -775,24 +790,24 @@ GRUPO_TIPO_ESPECIALIDADE = "tipo_especialidade"
 def _campos_tipo_especialidade(dados, atend, tipos, por_esp_tipo):
     """Linhas do comparativo por especialidade e tipo de consulta: o total do
     ambulatório e cada especialidade (da maior para a menor), cada um seguido
-    dos seus tipos (chaves com "_tipo_", detalhe recuado). Grava as séries em
+    dos seus tipos (5º elemento True: detalhe recuado). Grava as séries em
     dados e devolve os campos."""
     g = GRUPO_TIPO_ESPECIALIDADE
-    campos = [("tipoesp_total", "Total do ambulatório", "atendimentos", g)]
+    campos = [("tipoesp_total", "Total do ambulatório", "atendimentos", g, False)]
     dados["tipoesp_total"] = atend
     for t in tipos:
         chave = "tipoesp_total_tipo_" + t["nome"]
         dados[chave] = t["valores"]
-        campos.append((chave, t["nome"], "atendimentos", g))
+        campos.append((chave, t["nome"], "atendimentos", g, True))
     ordem_tipo = [t["nome"] for t in tipos]
     totais = {e: [sum(v) for v in zip(*por_tipo.values())] for e, por_tipo in por_esp_tipo.items()}
     for esp in sorted(totais, key=lambda e: (-sum(totais[e]), e)):
         chave = "tipoesp_esp_" + esp
         dados[chave] = totais[esp]
-        campos.append((chave, esp, "atendimentos", g))
+        campos.append((chave, esp, "atendimentos", g, False))
         for t in ordem_tipo:
             if t in por_esp_tipo[esp]:
                 chave_tipo = f"{chave}_tipo_{t}"
                 dados[chave_tipo] = por_esp_tipo[esp][t]
-                campos.append((chave_tipo, t, "atendimentos", g))
+                campos.append((chave_tipo, t, "atendimentos", g, True))
     return campos

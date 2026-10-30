@@ -163,6 +163,7 @@ function carregarComparativo() {
       if (!res.ok) {
         erroEl.textContent = 'Erro: ' + res.erro;
         erroEl.style.display = 'block';
+        limparTabelas();
         return;
       }
       if (res.opcoes) {
@@ -218,7 +219,8 @@ function carregarComparativo() {
         if (!l.sub) {
           grupo = l.chave.startsWith('tipoesp_esp_') ? l.chave : null;
           return grupo
-            ? linhaHtml(l, 'grupo-esp', `data-grupo="${esc(grupo)}" title="Clique para ver os tipos de consulta"`)
+            ? linhaHtml(l, 'grupo-esp', `data-grupo="${esc(grupo)}" tabindex="0" role="button" aria-expanded="false" ` +
+                `title="Clique (ou Enter) para ver os tipos de consulta"`)
             : linhaHtml(l, 'total-tipo');
         }
         return grupo ? linhaHtml(l, 'sub oculto', `data-pai="${esc(grupo)}"`) : linhaHtml(l, 'sub');
@@ -228,12 +230,21 @@ function carregarComparativo() {
       hideLoader();
       erroEl.textContent = 'Falha na requisição: ' + err;
       erroEl.style.display = 'block';
+      limparTabelas();
     });
+}
+
+// depois de um erro, as tabelas não ficam com a comparação anterior
+function limparTabelas() {
+  const vazio = '<tr><td class="sem-dado">Sem dados: confira o erro acima.</td></tr>';
+  ['thead-comparativo', 'thead-tipo'].forEach(id => { document.getElementById(id).innerHTML = ''; });
+  ['tbody-comparativo', 'tbody-tipo'].forEach(id => { document.getElementById(id).innerHTML = vazio; });
 }
 
 // abre/fecha os tipos de consulta de uma especialidade (ou de todas)
 function abrirGrupo(tr, abrir) {
   tr.classList.toggle('aberto', abrir);
+  tr.setAttribute('aria-expanded', String(abrir));
   document.querySelectorAll('#tbody-tipo tr.sub[data-pai]').forEach(sub => {
     if (sub.dataset.pai === tr.dataset.grupo) sub.classList.toggle('oculto', !abrir);
   });
@@ -241,6 +252,14 @@ function abrirGrupo(tr, abrir) {
 document.getElementById('tbody-tipo').addEventListener('click', e => {
   const tr = e.target.closest('tr.grupo-esp');
   if (tr) abrirGrupo(tr, !tr.classList.contains('aberto'));
+});
+// teclado: Enter ou espaço na especialidade (linha com tabindex)
+document.getElementById('tbody-tipo').addEventListener('keydown', e => {
+  const tr = e.target.closest('tr.grupo-esp');
+  if (tr && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    abrirGrupo(tr, !tr.classList.contains('aberto'));
+  }
 });
 [['abrir-todas', true], ['fechar-todas', false]].forEach(([id, abrir]) =>
   document.getElementById(id).addEventListener('click', e => {

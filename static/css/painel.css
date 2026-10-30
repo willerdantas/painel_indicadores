@@ -1336,6 +1336,7 @@ img { max-width: 100%; }
 /* por especialidade e tipo de consulta: a especialidade abre/fecha os seus tipos */
 .pg-ambulatorio-comparativo table.comparativo tr.oculto { display: none; }
 .pg-ambulatorio-comparativo table.comparativo tr.grupo-esp { cursor: pointer; }
+.pg-ambulatorio-comparativo table.comparativo tr.grupo-esp:focus-visible { outline: 2px solid var(--green); outline-offset: -2px; }
 .pg-ambulatorio-comparativo table.comparativo tr.grupo-esp .indicador-nome::before { content: '▸ '; color: var(--muted); }
 .pg-ambulatorio-comparativo table.comparativo tr.grupo-esp.aberto .indicador-nome::before { content: '▾ '; }
 .pg-ambulatorio-comparativo table.comparativo tr.total-tipo td { background: var(--claro); }

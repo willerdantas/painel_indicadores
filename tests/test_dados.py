@@ -269,7 +269,8 @@ def test_ambulatorio_mensal(monkeypatch):
     assert d['tipo_consulta'] == [{'nome': 'RETORNO', 'valores': [1, 2]}, {'nome': 'Código 31', 'valores': [1, 0]}]
     assert d['tipo_especialidade']['tipos'] == ['RETORNO', 'Código 31']
     assert d['tipo_especialidade']['linhas'][0] == {'nome': 'Cardiologia', 'valores': [2, 1], 'total': 3}
-    grupo = [c for c in d['_campos'] if len(c) == 4]
+    grupo = [c for c in d['_campos'] if len(c) == 5]
+    assert [c[4] for c in grupo] == [False, True, True, False, True, True, False, True]  # tipo: detalhe
     assert [c[0] for c in grupo] == [
         'tipoesp_total', 'tipoesp_total_tipo_RETORNO', 'tipoesp_total_tipo_Código 31',
         'tipoesp_esp_Cardiologia', 'tipoesp_esp_Cardiologia_tipo_RETORNO', 'tipoesp_esp_Cardiologia_tipo_Código 31',
@@ -324,6 +325,16 @@ def test_comparativo_individual_linha_so_no_mes_b_fica_no_lugar(monkeypatch):
         r = painel._hcasg_comparativo_resposta(mensal, campos_a).get_json()
     assert [l['chave'] for l in r['linhas']] == ['a', 'a_status_Y', 'a_status_X', 'b']
     assert all(l['grupo'] is None for l in r['linhas'])
+
+
+def test_comparativo_detalhe_explicito_no_campo():
+    import painel
+    dados = {'meses': ['Out/26'], 'a_status_X': [1], 'esp_A_status_B': [2], 'esp_A_status_B_x': [3]}
+    campos = [('a_status_X', 'X', 'qtd'),                         # 3 elementos: detalhe pela chave
+              ('esp_A_status_B', 'A_status_B', 'qtd', 'g', False),  # explícito: o nome não decide
+              ('esp_A_status_B_x', 'x', 'qtd', 'g', True)]
+    linhas = painel._hcasg_montar_comparativo_periodo(dados, campos)['linhas']
+    assert [(l['grupo'], l['sub']) for l in linhas] == [(None, True), ('g', False), ('g', True)]
 
 
 def test_ambulatorio_pedidos_simultaneos_fazem_uma_consulta():

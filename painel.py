@@ -666,9 +666,9 @@ _FAIXAS_LONGAS_EXAME = [(4, 10), (10, 15), (15, 30), (30, 60), (60, 120), (120, 
 
 def _sql_faixas_longas(prefixo, diferenca, intervalo):
     """COUNT(*) FILTER de cada faixa longa; intervalo=True compara como INTERVAL."""
+    lim = (lambda d: f"INTERVAL '{d} days'") if intervalo else str
     partes = []
     for ini, fim in _FAIXAS_LONGAS_EXAME:
-        lim = (lambda d: f"INTERVAL '{d} days'") if intervalo else str
         cond = f"{diferenca} > {lim(ini)}" + (f" AND {diferenca} <= {lim(fim)}" if fim else '')
         partes.append(f"COUNT(*) FILTER (WHERE {cond}) AS {prefixo}_{ini}_{fim}d" if fim
                       else f"COUNT(*) FILTER (WHERE {cond}) AS {prefixo}_acima_{ini}d")
@@ -1054,7 +1054,7 @@ def _hcasg_montar_comparativo_periodo(dados, campos):
     mês contra o último)."""
     meses = dados.get("meses") or []
     linhas = []
-    for chave, rotulo, unidade, *grupo in campos:
+    for chave, rotulo, unidade, *extra in campos:
         serie = list(dados.get(chave) or [])
         serie += [None] * (len(meses) - len(serie))
         valores = [float(v) if v is not None else None for v in serie[:len(meses)]]
@@ -1062,10 +1062,12 @@ def _hcasg_montar_comparativo_periodo(dados, campos):
             "chave": chave,
             "indicador": rotulo,
             "unidade": unidade,
-            # tabela em que a linha entra (campo com 4º elemento); sem grupo: a principal
-            "grupo": grupo[0] if grupo else None,
-            # detalhe de um total (classificação de risco, destino, status, tipo de consulta): recuado na tabela
-            "sub": any(m in chave for m in ("_risco_", "_destino_", "_status_", "_tipo_")),
+            # campo (chave, rótulo, unidade, grupo, detalhe): o grupo é a tabela
+            # em que a linha entra (sem grupo: a principal) e o detalhe vem
+            # explícito; nos campos de 3 elementos, o detalhe de um total
+            # (classificação de risco, destino, status) sai da chave
+            "grupo": extra[0] if extra else None,
+            "sub": extra[1] if len(extra) > 1 else any(m in chave for m in ("_risco_", "_destino_", "_status_")),
             "valores": valores,
             "variacoes": [None] + [_hcasg_variacao(valores[i - 1], valores[i]) for i in range(1, len(valores))],
             "variacao_periodo": _hcasg_variacao(valores[0], valores[-1]) if valores else None,
