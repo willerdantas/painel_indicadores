@@ -93,27 +93,25 @@
         <a class="btn-apply" id="baixar-relatorio" href="/financeiro/relatorio-empenhos.xlsx"
            title="Excel com os empenhos em aberto, com a busca e a fonte escolhidas acima">Baixar empenhos em aberto (Excel)</a>
       </div>
-      <div class="tabela-rolagem">
+      <div class="tabela-empenhos-caixa">
         <table class="tabela" id="tabela-empenhos">
           <thead><tr>
             <th data-ordem="empenho">Empenho</th>
             <th data-ordem="credor">Credor</th>
-            <th data-ordem="processo">Processo</th>
-            <th data-ordem="contrato">Contrato</th>
+            <th data-ordem="processo">Processo<br><small>contrato</small></th>
             <th data-ordem="fonte">Fonte</th>
-            <th class="num" data-ordem="a_liquidar">A liquidar</th>
-            <th class="num" data-ordem="liquidado_a_pagar">Liquidado a pagar</th>
-            <th class="num" data-ordem="inscrito">RP inscrito</th>
-            <th class="num" data-ordem="pago">RP pago</th>
-            <th class="num" data-ordem="a_pagar">RP a pagar</th>
-            <th class="num" data-ordem="ordens">OBs</th>
-            <th data-ordem="ultima_ob">Última OB</th>
+            <th class="num" data-ordem="a_liquidar">A liquidar<br><small>R$</small></th>
+            <th class="num" data-ordem="liquidado_a_pagar">Liquidado a pagar<br><small>R$</small></th>
+            <th class="num" data-ordem="inscrito">RP inscrito<br><small>R$</small></th>
+            <th class="num" data-ordem="pago">RP pago<br><small>R$</small></th>
+            <th class="num" data-ordem="a_pagar">RP a pagar<br><small>R$</small></th>
+            <th class="num" data-ordem="ordens">Ordens bancárias<br><small>última</small></th>
           </tr></thead>
           <tbody></tbody>
           <tfoot></tfoot>
         </table>
       </div>
-      <div class="acoes-tabela"><button type="button" class="btn-apply" id="mais" hidden>Mostrar mais</button></div>
+      <nav class="paginacao" id="pag-empenhos" aria-label="Páginas da tabela de empenhos"></nav>
     </div>
 
     <h2 class="section-title">Credores</h2>
@@ -131,6 +129,8 @@
           <tbody id="tb_credores"></tbody>
         </table>
       </div>
+      <p class="nota" id="resumo-credores"></p>
+      <nav class="paginacao" id="pag-credores" aria-label="Páginas da tabela de credores"></nav>
     </div>
   </div>
 </div>
@@ -252,14 +252,54 @@ function render(d) {
   const fontes = [...new Set(d.empenhos.flatMap(e => [e.fonte_empenho, e.fonte_resto]).filter(Boolean))].sort();
   const sel = document.getElementById('fonte');
   sel.innerHTML = '<option value="">Todas</option>' + fontes.map(f => `<option value="${esc(f)}">${esc(f)}</option>`).join('');
-  limite = PAGINA;
+  pagina.empenhos = pagina.credores = 1;
   renderTabela();
   renderCredores();
 }
 
-// ---- tabela de empenhos: filtros, ordenação e "mostrar mais" ----
-const PAGINA = 100;
-let limite = PAGINA;
+// ---- paginação das tabelas de empenhos e de credores: 10 itens por página ----
+const POR_PAGINA = 10;
+const pagina = { empenhos: 1, credores: 1 };
+
+// página válida para a lista (filtro novo pode deixar menos páginas)
+function paginaAtual(qual, total) {
+  const paginas = Math.max(1, Math.ceil(total / POR_PAGINA));
+  pagina[qual] = Math.min(Math.max(1, pagina[qual]), paginas);
+  return pagina[qual];
+}
+
+// botões: anterior, primeira, as vizinhas da atual, última e próxima
+function renderPaginacao(id, qual, total) {
+  const paginas = Math.ceil(total / POR_PAGINA);
+  const nav = document.getElementById(id);
+  if (paginas <= 1) { nav.innerHTML = ''; return; }
+  const atual = pagina[qual];
+  const numeros = [...new Set([1, atual - 2, atual - 1, atual, atual + 1, atual + 2, paginas])]
+    .filter(n => n >= 1 && n <= paginas).sort((a, b) => a - b);
+  const botao = (n, rotulo, extra = '') =>
+    `<button type="button" data-pagina="${n}" ${extra}>${rotulo}</button>`;
+  let html = botao(atual - 1, '‹ Anterior', atual === 1 ? 'disabled' : '');
+  numeros.forEach((n, i) => {
+    if (i && n - numeros[i - 1] > 1) html += '<span class="reticencias">…</span>';
+    html += botao(n, inteiro(n), n === atual ? 'class="atual" aria-current="page"' : '');
+  });
+  html += botao(atual + 1, 'Próxima ›', atual === paginas ? 'disabled' : '');
+  nav.innerHTML = html;
+}
+
+function faixa(total, atual, nome) {
+  if (!total) return `Nenhum ${nome}.`;
+  const ini = (atual - 1) * POR_PAGINA + 1;
+  return `${inteiro(ini)} a ${inteiro(Math.min(total, ini + POR_PAGINA - 1))} de ${inteiro(total)} ${nome}s.`;
+}
+
+// fonte na tabela só pelo código ("600 - TRANSFERÊNCIAS ..." -> "600"); o nome fica na dica
+const codigoFonte = f => f ? f.split(' - ')[0] : '';
+// valores da tabela de empenhos sem "R$" (está no título da coluna), para caber sem rolagem
+const reais = v => Number(v || 0).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+const vazioReais = v => (v === null || v === undefined || v === 0) ? '<span class="sem-dado">—</span>' : reais(v);
+
+// ---- tabela de empenhos: filtros e ordenação ----
 let ordem = { campo: 'empenho', desc: false };
 const texto = s => (s || '').toString().normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
 
@@ -296,28 +336,28 @@ function renderTabela() {
     return desc ? -r : r;
   });
   const soma = c => lista.reduce((s, e) => s + (e[c] || 0), 0);
-  document.querySelector('#tabela-empenhos tbody').innerHTML = lista.slice(0, limite).map(e => `<tr>
+  const atual = paginaAtual('empenhos', lista.length);
+  const pag = lista.slice((atual - 1) * POR_PAGINA, atual * POR_PAGINA);
+  document.querySelector('#tabela-empenhos tbody').innerHTML = pag.map(e => `<tr>
       <td class="nowrap">${esc(e.empenho)}${e.em_aberto && e.em_restos ? '' : `<br><span class="etiqueta-rel">${e.em_aberto ? 'só em aberto' : 'só restos a pagar'}</span>`}</td>
       <td>${esc(e.credor || '—')}<br><span class="doc">${esc(documento(e.documento))}</span></td>
-      <td class="nowrap">${esc(e.processo || '—')}</td>
-      <td class="nowrap">${esc(e.contrato || '—')}</td>
-      <td class="fonte">${esc(e.fonte_empenho || e.fonte_resto || '—')}${e.fonte_empenho && e.fonte_resto ? `<br><span class="doc">RP: ${esc(e.fonte_resto)}</span>` : ''}</td>
-      <td class="num">${vazio(e.a_liquidar)}</td>
-      <td class="num">${vazio(e.liquidado_a_pagar)}</td>
-      <td class="num">${vazio(e.inscrito)}</td>
-      <td class="num">${vazio(e.pago)}</td>
-      <td class="num">${vazio(e.a_pagar)}</td>
-      <td class="num">${e.ordens ? inteiro(e.ordens) : '<span class="sem-dado">—</span>'}</td>
-      <td class="nowrap">${esc(e.ultima_ob || '—')}</td>
-    </tr>`).join('') || '<tr><td colspan="12" class="sem-dado">Nenhum empenho com esses filtros.</td></tr>';
+      <td class="nowrap">${esc(e.processo || '—')}<br><span class="doc">${esc(e.contrato || '')}</span></td>
+      <td class="fonte" title="${esc([e.fonte_empenho, e.fonte_resto && 'Restos a pagar: ' + e.fonte_resto].filter(Boolean).join('\n'))}">${esc(codigoFonte(e.fonte_empenho || e.fonte_resto) || '—')}${e.fonte_empenho && e.fonte_resto ? `<br><span class="doc">RP: ${esc(e.fonte_resto)}</span>` : ''}</td>
+      <td class="num">${vazioReais(e.a_liquidar)}</td>
+      <td class="num">${vazioReais(e.liquidado_a_pagar)}</td>
+      <td class="num">${vazioReais(e.inscrito)}</td>
+      <td class="num">${vazioReais(e.pago)}</td>
+      <td class="num">${vazioReais(e.a_pagar)}</td>
+      <td class="num">${e.ordens ? `${inteiro(e.ordens)}<br><span class="doc">${esc(e.ultima_ob || '')}</span>` : '<span class="sem-dado">—</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="10" class="sem-dado">Nenhum empenho com esses filtros.</td></tr>';
   document.querySelector('#tabela-empenhos tfoot').innerHTML = lista.length ? `<tr class="total">
-      <td colspan="5">Total (${inteiro(lista.length)} empenhos)</td>
-      <td class="num">${moeda(soma('a_liquidar'))}</td><td class="num">${moeda(soma('liquidado_a_pagar'))}</td>
-      <td class="num">${moeda(soma('inscrito'))}</td><td class="num">${moeda(soma('pago'))}</td>
-      <td class="num">${moeda(soma('a_pagar'))}</td><td class="num">${inteiro(soma('ordens'))}</td><td></td></tr>` : '';
+      <td colspan="4">Total (${inteiro(lista.length)} empenhos)</td>
+      <td class="num">${reais(soma('a_liquidar'))}</td><td class="num">${reais(soma('liquidado_a_pagar'))}</td>
+      <td class="num">${reais(soma('inscrito'))}</td><td class="num">${reais(soma('pago'))}</td>
+      <td class="num">${reais(soma('a_pagar'))}</td><td class="num">${inteiro(soma('ordens'))}</td></tr>` : '';
   document.getElementById('resumo-tabela').textContent =
-    `${inteiro(Math.min(limite, lista.length))} de ${inteiro(lista.length)} empenhos. Clique no título de uma coluna para ordenar.`;
-  document.getElementById('mais').hidden = lista.length <= limite;
+    `${faixa(lista.length, atual, 'empenho')} O total soma todos os filtrados. Clique no título de uma coluna para ordenar.`;
+  renderPaginacao('pag-empenhos', 'empenhos', lista.length);
   document.querySelectorAll('#tabela-empenhos th[data-ordem]').forEach(th => {
     th.classList.toggle('ordenada', th.dataset.ordem === campo);
     th.dataset.seta = th.dataset.ordem === campo ? (desc ? '▼' : '▲') : '';
@@ -327,7 +367,10 @@ function renderTabela() {
 function renderCredores() {
   const busca = texto(document.getElementById('busca-credor').value).replace(/[.\-\/\s]/g, '');
   const lista = dados.credores.filter(c => !busca || texto((c.credor || '') + (c.documento || '')).replace(/[.\-\/\s]/g, '').includes(busca));
-  document.getElementById('tb_credores').innerHTML = lista.map(c => `<tr>
+  const atual = paginaAtual('credores', lista.length);
+  document.getElementById('resumo-credores').textContent = faixa(lista.length, atual, 'credor').replace('credors', 'credores');
+  renderPaginacao('pag-credores', 'credores', lista.length);
+  document.getElementById('tb_credores').innerHTML = lista.slice((atual - 1) * POR_PAGINA, atual * POR_PAGINA).map(c => `<tr>
       <td>${esc(c.credor)}</td><td class="nowrap">${esc(documento(c.documento))}</td>
       <td class="num">${inteiro(c.empenhos)}</td><td class="num">${vazio(c.em_aberto)}</td>
       <td class="num">${vazio(c.inscrito)}</td><td class="num">${vazio(c.pago)}</td><td class="num">${vazio(c.a_pagar)}</td>
@@ -339,6 +382,7 @@ document.querySelectorAll('#tabela-empenhos th[data-ordem]').forEach(th => th.ad
   // texto começa em ordem crescente; valores, do maior para o menor
   const numerico = th.classList.contains('num');
   ordem = { campo, desc: ordem.campo === campo ? !ordem.desc : numerico };
+  pagina.empenhos = 1;
   renderTabela();
 }));
 // o relatório em Excel leva os mesmos filtros da tabela (sempre só os empenhos em aberto)
@@ -352,10 +396,17 @@ function atualizarLinkRelatorio() {
     '/financeiro/relatorio-empenhos.xlsx' + (params.toString() ? '?' + params : '');
 }
 ['busca', 'situacao', 'fonte'].forEach(id => document.getElementById(id).addEventListener('input', () => {
-  limite = PAGINA; renderTabela(); atualizarLinkRelatorio();
+  pagina.empenhos = 1; renderTabela(); atualizarLinkRelatorio();
 }));
-document.getElementById('mais').addEventListener('click', () => { limite += PAGINA * 5; renderTabela(); });
-document.getElementById('busca-credor').addEventListener('input', renderCredores);
+document.getElementById('busca-credor').addEventListener('input', () => { pagina.credores = 1; renderCredores(); });
+// clique num botão de página (o número vai em data-pagina)
+[['pag-empenhos', 'empenhos', () => renderTabela()], ['pag-credores', 'credores', () => renderCredores()]]
+  .forEach(([id, qual, render]) => document.getElementById(id).addEventListener('click', e => {
+    const b = e.target.closest('button[data-pagina]');
+    if (!b || b.disabled) return;
+    pagina[qual] = Number(b.dataset.pagina);
+    render();
+  }));
 
 fetch('/api/financeiro/dados')
   .then(r => r.json())
