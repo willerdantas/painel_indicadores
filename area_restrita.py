@@ -943,6 +943,86 @@ def admin_cadastros_salvar(tabela):
     return redirect(url_for('admin_cadastros', _anchor=tabela))
 
 
+def _alteracoes_cadastros(formulario):
+    """{(tabela, id): {campo: valor}} dos campos r__<tabela>__<id>__<campo>
+    (só as linhas alteradas vêm: a página desativa as demais antes de enviar)."""
+    linhas = {}
+    for chave, valor in formulario.items():
+        partes = chave.split('__')
+        if len(partes) != 4 or partes[0] != 'r' or not partes[2].isdigit():
+            continue
+        _, tabela, registro_id, campo = partes
+        if tabela in banco_painel.CADASTROS_POR_TABELA or tabela == _CLASSIFICACAO_EXAME:
+            linhas.setdefault((tabela, int(registro_id)), {})[campo] = valor
+    return linhas
+
+
+# nomes das classificações de exames (seção da tela Cadastros, classificacao_exames.py)
+_CLASSIFICACAO_EXAME = 'classificacao_exame'
+
+
+@_rota('/admin/cadastros/salvar-alteracoes', methods=['POST'])
+def admin_cadastros_salvar_alteracoes():
+    """Salva de uma vez as linhas alteradas na tela (de um ou mais cadastros).
+    Valida tudo antes: com algum valor inválido, nada é salvo."""
+    linhas = _alteracoes_cadastros(request.form)
+    if not linhas:
+        flash('Nenhuma alteração para salvar.', 'erro')
+        return redirect(url_for('admin_cadastros'))
+    # cadastros "pais" primeiro; as classificações de exames por último
+    ordem = {c.tabela: i for i, c in enumerate(banco_painel.CADASTROS)}
+
+    def id_de(campos, campo):
+        valor = (campos.get(campo) or '').strip()
+        return int(valor) if valor.isdigit() else None
+
+    pedidos, classificacoes, erros = [], [], []
+    for (tabela, registro_id), campos in sorted(linhas.items(), key=lambda x: (ordem.get(x[0][0], len(ordem)), x[0][1])):
+        nome = (campos.get('nome') or '').strip()
+        if tabela == _CLASSIFICACAO_EXAME:
+            if nome:
+                classificacoes.append((registro_id, nome))
+            else:
+                erros.append(f'Classificação de Exames / "{registro_id}": informe o nome')
+            continue
+        cad = banco_painel.CADASTROS_POR_TABELA[tabela]
+        rotulo = f'{cad.titulo} / "{nome or registro_id}"'
+        try:
+            extras = {c.nome: _ler_campo(c, campos.get(c.nome)) for c in cad.extras}
+        except ValueError:
+            erros.append(f'{rotulo}: valor inválido')
+            continue
+        pais = {tab: id_de(campos, f'{tab}_id') for tab, _ in cad.pais}
+        faltando = [r for tab, r in cad.pais if not pais[tab]]
+        if not nome or faltando:
+            erros.append(f'{rotulo}: ' + ('informe o nome' if not nome else 'escolha ' + ', '.join(faltando).lower()))
+            continue
+        pedidos.append((cad, registro_id, nome, pais, extras,
+                        {tab: id_de(campos, f'{tab}_id') for tab, *_ in cad.opcionais}))
+    if erros:
+        flash('Nada foi salvo. Corrija: ' + '; '.join(erros) + '.', 'erro')
+        return redirect(url_for('admin_cadastros'))
+
+    salvos = []
+    for cad, registro_id, nome, pais, extras, opcionais in pedidos:
+        erro = cad.salvar(registro_id, nome, pais, extras, opcionais)
+        if erro:  # ex.: nome repetido no mesmo cadastro
+            erros.append(f'{cad.titulo} / "{nome}": {erro}')
+        else:
+            salvos.append(nome)
+    for registro_id, nome in classificacoes:
+        erro = classificacao_exames.salvar(registro_id, nome)
+        if erro:
+            erros.append(f'Classificação de Exames / "{nome}": {erro}')
+        else:
+            salvos.append(nome)
+    if salvos:
+        flash(f'{len(salvos)} registro(s) salvo(s).', 'ok')
+    if erros:
+        flash('Não salvos: ' + '; '.join(erros), 'erro')
+    return redirect(url_for('admin_cadastros'))
+
+
 @_rota('/admin/cadastros/<tabela>/<int:registro_id>/ativo', methods=['POST'])
 def admin_cadastros_ativo(tabela, registro_id):
     cad = banco_painel.CADASTROS_POR_TABELA.get(tabela)

@@ -19,16 +19,12 @@
             <thead><tr><th>Nome</th><th class="num">Exames</th><th></th></tr></thead>
             <tbody>
             {% for c in classificacoes %}
-            {% set fid = 'f-classificacao-' ~ c.id %}
+            {# nome no formulário único da tela Cadastros (salvo com as demais alterações) #}
             <tr>
-                <td><input type="text" name="nome" value="{{ c.nome }}" form="{{ fid }}" required aria-label="Nome"></td>
+                <td><input type="text" name="r__classificacao_exame__{{ c.id }}__nome" value="{{ c.nome }}" form="form-alteracoes"
+                           required aria-label="Nome"></td>
                 <td class="num">{{ c.exames }}</td>
                 <td class="acoes-linha">
-                    <form id="{{ fid }}" method="post" action="{{ url_for('admin_classificacoes_salvar') }}">
-                        <input type="hidden" name="csrf" value="{{ csrf_token }}">
-                        <input type="hidden" name="id" value="{{ c.id }}">
-                        <button type="submit" class="btn pequeno secundario">Salvar</button>
-                    </form>
                     {% if eh_admin %}
                     <form method="post" action="{{ url_for('admin_classificacoes_excluir', classificacao_id=c.id) }}"
                           onsubmit="return confirm('Excluir esta classificação?')">

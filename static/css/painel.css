@@ -785,6 +785,14 @@ html { scroll-padding-top: 110px; }
 .pg-admin-cadastros .form-novo input[type=text], .pg-admin-cadastros .form-novo select { width: auto; flex: 1 1 140px; background: #fff; font-size: 14px; padding: 8px 10px; }
 .pg-admin-cadastros .form-novo input.curto { flex: 0 1 90px; }
 .pg-admin-cadastros .filtro { margin-bottom: 8px; font-size: 14px !important; padding: 7px 10px !important; }
+/* linhas alteradas e a barra única de salvar (fixa no rodapé enquanto houver alterações) */
+.pg-admin-cadastros tr.alterada td { background: #FFF4E5; }
+.pg-admin-cadastros tr.alterada td:first-child { box-shadow: inset 3px 0 0 var(--amber); }
+.pg-admin-cadastros .barra-alteracoes { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); z-index: 60;
+    display: flex; align-items: center; gap: 12px; padding: 12px 18px; background: var(--card); border-radius: var(--raio-g);
+    box-shadow: 0 8px 28px rgba(0, 0, 0, .25); border-left: 5px solid var(--amber); font-size: 14px; color: var(--dark); }
+.pg-admin-cadastros .barra-alteracoes[hidden] { display: none; }
+@media (max-width: 600px) { .pg-admin-cadastros .barra-alteracoes { left: 12px; right: 12px; transform: none; flex-wrap: wrap; } }
 .pg-admin-cadastros .rolagem { max-height: 340px; overflow-y: auto; border: 1px solid var(--linha); border-radius: 8px; }
 .pg-admin-cadastros .rolagem table { font-size: 13px; }
 .pg-admin-cadastros .rolagem thead th { position: sticky; top: 0; background: #fff; z-index: 1; }

@@ -80,6 +80,25 @@ def test_custos_por_subcategoria(dados_custos, monkeypatch):
                                      {'nome': 'Insumos (sem subcategoria)', 'valor': 20.0}]
 
 
+def test_custos_filtro_subcategoria_em_cascata(monkeypatch):
+    linhas = [{'mes': '2024-01', 'tipo': 'Pessoal', 'item': 'CEMERG', 'valor': 100.0},
+              {'mes': '2024-01', 'tipo': 'Pessoal', 'item': 'COAPH', 'valor': 50.0},
+              {'mes': '2024-01', 'tipo': 'Pessoal', 'item': 'Salários', 'valor': 30.0},
+              {'mes': '2024-01', 'tipo': 'Insumos', 'item': 'Luvas', 'valor': 20.0}]
+    monkeypatch.setattr(banco_painel.CUSTOS, 'dados', lambda: [dict(l) for l in linhas])
+    monkeypatch.setattr(custos, '_subcategorias', lambda: {('Pessoal', 'CEMERG'): 'Cooperativa',
+                                                           ('Pessoal', 'COAPH'): 'Cooperativa'})
+    d = custos.get_custos('2024-01', '2024-01')
+    assert d['opcoes']['subcategorias'] == ['Cooperativa', 'Insumos (sem subcategoria)', 'Pessoal (sem subcategoria)']
+    d = custos.get_custos('2024-01', '2024-01', subcategoria='Cooperativa')
+    assert d['kpis']['total'] == 150.0 and d['opcoes']['itens'] == ['CEMERG', 'COAPH']
+    assert d['opcoes']['tipos'] == ['Insumos', 'Pessoal']  # a categoria não é limitada pela subcategoria
+    d = custos.get_custos('2024-01', '2024-01', tipo='Insumos')
+    assert d['opcoes']['subcategorias'] == ['Insumos (sem subcategoria)']  # só as da categoria
+    d = custos.get_custos('2024-01', '2024-01', subcategoria='Pessoal (sem subcategoria)')
+    assert d['kpis']['total'] == 30.0 and d['opcoes']['itens'] == ['Salários']
+
+
 @pytest.mark.parametrize('mes_ini, mes_fim', [(None, '2024-1'), ('abc', None), ('2024-13', None)])
 def test_custos_mes_malformado(dados_custos, mes_ini, mes_fim):
     with pytest.raises(ValueError):
@@ -353,6 +372,56 @@ def test_importacao_cadastra_itens_novos(monkeypatch):
     novos = [('ESTRATÉGICO', f'I{n}') for n in range(7)]
     assert area_restrita._texto_itens_novos([]) == ''
     assert '7 item(ns) novo(s)' in area_restrita._texto_itens_novos(novos) and 'e mais 2' in area_restrita._texto_itens_novos(novos)
+
+
+def _salvar_alteracoes_cadastros(monkeypatch, dados):
+    """Chama a rota de salvar várias linhas com dados do formulário; devolve
+    (chamadas a Cadastro.salvar, mensagens) sem tocar no banco."""
+    import area_restrita
+    import painel
+    from flask import get_flashed_messages
+    import classificacao_exames
+    chamadas = []
+    for cad in banco_painel.CADASTROS:
+        monkeypatch.setattr(cad, 'salvar', lambda rid, nome, pais, extras, opc=None, t=cad.tabela:
+                            chamadas.append((t, rid, nome, pais, extras, opc)) or ('Já existe.' if nome == 'REPETIDO' else None))
+    monkeypatch.setattr(classificacao_exames, 'salvar', lambda rid, nome:
+                        chamadas.append(('classificacao_exame', rid, nome, None, None, None)))
+    with painel.app.test_request_context('/admin/cadastros/salvar-alteracoes', method='POST', data=dados):
+        area_restrita.admin_cadastros_salvar_alteracoes()
+        return chamadas, get_flashed_messages(with_categories=True)
+
+
+def test_cadastros_salva_varias_linhas_de_uma_vez(monkeypatch):
+    chamadas, msgs = _salvar_alteracoes_cadastros(monkeypatch, {
+        'csrf': 'x',
+        'r__tipo_consulta__7__nome': 'DEMANDA ADMINISTRATIVA', 'r__tipo_consulta__7__isn_tipo_consulta': '14',
+        'r__tipo_custo__2__nome': 'Pessoal',                       # cadastro "pai": salvo antes
+        'r__item_custo__5__nome': 'CEMERG', 'r__item_custo__5__tipo_custo_id': '2',
+        'r__item_custo__5__subcategoria_custo_id': '',
+        'r__classificacao_exame__4__nome': 'IMAGEM',               # seção Classificação de Exames: por último
+        'r__nao_existe__1__nome': 'x', 'outro_campo': 'y',          # ignorados
+    })
+    assert [(t, rid, nome) for t, rid, nome, *_ in chamadas] == [
+        ('tipo_custo', 2, 'Pessoal'), ('item_custo', 5, 'CEMERG'), ('tipo_consulta', 7, 'DEMANDA ADMINISTRATIVA'),
+        ('classificacao_exame', 4, 'IMAGEM')]
+    item = chamadas[1]
+    assert item[3] == {'tipo_custo': 2} and item[5] == {'subcategoria_custo': None}
+    assert chamadas[2][4] == {'isn_tipo_consulta': 14.0}
+    assert msgs == [('ok', '4 registro(s) salvo(s).')]
+
+
+def test_cadastros_com_valor_invalido_nada_e_salvo(monkeypatch):
+    chamadas, msgs = _salvar_alteracoes_cadastros(monkeypatch, {
+        'r__tipo_custo__2__nome': 'Pessoal',
+        'r__tipo_consulta__7__nome': 'X', 'r__tipo_consulta__7__isn_tipo_consulta': 'abc',   # inválido
+        'r__item_custo__5__nome': '', 'r__item_custo__5__tipo_custo_id': '2'})                  # sem nome
+    assert chamadas == [] and msgs[0][0] == 'erro' and msgs[0][1].startswith('Nada foi salvo')
+    # erro do banco numa linha (nome repetido): as outras são salvas e a mensagem diz qual falhou
+    chamadas, msgs = _salvar_alteracoes_cadastros(monkeypatch, {
+        'r__tipo_custo__2__nome': 'Pessoal', 'r__tipo_custo__3__nome': 'REPETIDO'})
+    assert len(chamadas) == 2 and ('ok', '1 registro(s) salvo(s).') in msgs
+    assert any(c == 'erro' and 'REPETIDO' in m for c, m in msgs)
 
 
 def test_cadastro_tipo_consulta_com_codigo_do_sistema():

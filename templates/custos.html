@@ -41,6 +41,10 @@
       <select id="tipo"><option value="">Todos</option></select>
     </div>
     <div>
+      <label for="subcategoria">Subcategoria</label>
+      <select id="subcategoria"><option value="">Todas</option></select>
+    </div>
+    <div>
       <label for="item">Item de Custo</label>
       <select id="item"><option value="">Todos</option></select>
     </div>
@@ -311,7 +315,8 @@ function render(d) {
 
 let primeiraCarga = true;
 function carregar() {
-  const params = new URLSearchParams({ mes_ini: v('mes_ini'), mes_fim: v('mes_fim'), tipo: v('tipo'), item: v('item') });
+  const params = new URLSearchParams({ mes_ini: v('mes_ini'), mes_fim: v('mes_fim'), tipo: v('tipo'),
+                                       subcategoria: v('subcategoria'), item: v('item') });
   document.getElementById('erro').style.display = 'none';
   ['kpis', 'graficos'].forEach(id => document.getElementById(id).classList.add('loading'));
   showLoader();
@@ -332,6 +337,7 @@ function carregar() {
       document.getElementById('mes_ini').value = d.mes_ini;
       document.getElementById('mes_fim').value = d.mes_fim;
       preencherSelect('tipo', d.opcoes.tipos, 'Todos');
+      preencherSelect('subcategoria', d.opcoes.subcategorias, 'Todas');
       preencherSelect('item', d.opcoes.itens, 'Todos');
       render(d);
     })
@@ -343,8 +349,14 @@ function carregar() {
     });
 }
 
-// categoria e item filtram na hora; trocar a categoria limpa o item
-document.getElementById('tipo').addEventListener('change', () => { document.getElementById('item').value = ''; carregar(); });
+// categoria, subcategoria e item filtram na hora (em cascata): trocar a
+// categoria limpa a subcategoria e o item; trocar a subcategoria limpa o item
+document.getElementById('tipo').addEventListener('change', () => {
+  document.getElementById('subcategoria').value = '';
+  document.getElementById('item').value = '';
+  carregar();
+});
+document.getElementById('subcategoria').addEventListener('change', () => { document.getElementById('item').value = ''; carregar(); });
 document.getElementById('item').addEventListener('change', carregar);
 
 carregar();

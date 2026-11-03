@@ -12,7 +12,8 @@
 </div>
 {% else %}
 <div class="dica" style="position:relative; color:#fff; opacity:.9; margin-top:-12px; margin-bottom:6px;">
-    Os lançamentos de dados só aceitam os itens cadastrados aqui. Edite direto na linha e clique em Salvar.
+    Os lançamentos de dados só aceitam os itens cadastrados aqui. Edite direto nas linhas (quantas quiser, em qualquer
+    cadastro) e clique uma vez em Salvar alterações, na barra que aparece no rodapé.
     Registro inativo (e o que pertence a ele) deixa de aparecer nos meses novos do lançamento; o que já foi lançado continua valendo.
     {% if eh_admin %}Registros em uso (com itens ou lançamentos ligados a eles) não podem ser excluídos.{% endif %}
 </div>
@@ -64,35 +65,31 @@
                 </tr></thead>
                 <tbody>
                 {% for r in regs %}
-                {% set fid = 'f-' ~ cad.tabela ~ '-' ~ r.id %}
+                {# campos da linha no formulário único da página (form-alteracoes): r__<tabela>__<id>__<campo> #}
+                {% set pre = 'r__' ~ cad.tabela ~ '__' ~ r.id ~ '__' %}
                 <tr class="{{ '' if r.ativo else 'inativo' }}">
                     {% for tab, rotulo in cad.pais %}
                     <td>
-                        <select name="{{ tab }}_id" form="{{ fid }}" aria-label="{{ rotulo }}">
+                        <select name="{{ pre }}{{ tab }}_id" data-campo="{{ tab }}_id" form="form-alteracoes" aria-label="{{ rotulo }}">
                             {% for p in registros[tab] %}<option value="{{ p.id }}" {{ 'selected' if p.id == r[tab ~ '_id'] }}>{{ p.nome }}{{ '' if p.ativo else ' (inativo)' }}</option>{% endfor %}
                         </select>
                     </td>
                     {% endfor %}
                     {% for tab, rotulo, vazio, pai in cad.opcionais %}
                     <td>
-                        <select name="{{ tab }}_id" form="{{ fid }}" class="opcional" data-pai="{{ pai }}_id" aria-label="{{ rotulo }}">
+                        <select name="{{ pre }}{{ tab }}_id" data-campo="{{ tab }}_id" form="form-alteracoes" class="opcional" data-pai="{{ pai }}_id" aria-label="{{ rotulo }}">
                             <option value="">{{ vazio }}</option>
                             {% for p in registros[tab] if p.ativo or p.id == r[tab ~ '_id'] %}<option value="{{ p.id }}" data-pai="{{ p[pai ~ '_id'] }}" {{ 'selected' if p.id == r[tab ~ '_id'] }}>{{ p.nome }}{{ '' if p.ativo else ' (inativo)' }}</option>{% endfor %}
                         </select>
                     </td>
                     {% endfor %}
-                    <td><input type="text" name="nome" value="{{ r.nome }}" form="{{ fid }}" required aria-label="Nome"></td>
+                    <td><input type="text" name="{{ pre }}nome" value="{{ r.nome }}" form="form-alteracoes" required aria-label="Nome"></td>
                     {% for c in cad.extras %}
-                    <td><input type="text" name="{{ c.nome }}" class="curto" {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
-                               value="{{ r[c.nome] | num_br(c.formato) if r[c.nome] is not none }}" form="{{ fid }}" aria-label="{{ c.rotulo }}"></td>
+                    <td><input type="text" name="{{ pre }}{{ c.nome }}" class="curto" {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
+                               value="{{ r[c.nome] | num_br(c.formato) if r[c.nome] is not none }}" form="form-alteracoes" aria-label="{{ c.rotulo }}"></td>
                     {% endfor %}
                     {% if cad.uso %}<td class="uso">{{ r.uso }}</td>{% endif %}
                     <td class="acoes-linha">
-                        <form id="{{ fid }}" method="post" action="{{ url_for('admin_cadastros_salvar', tabela=cad.tabela) }}">
-                            <input type="hidden" name="csrf" value="{{ csrf_token }}">
-                            <input type="hidden" name="id" value="{{ r.id }}">
-                            <button type="submit" class="btn pequeno secundario">Salvar</button>
-                        </form>
                         <form method="post" action="{{ url_for('admin_cadastros_ativo', tabela=cad.tabela, registro_id=r.id) }}">
                             <input type="hidden" name="csrf" value="{{ csrf_token }}">
                             <input type="hidden" name="ativo" value="{{ '0' if r.ativo else '1' }}">
@@ -120,15 +117,26 @@
 </div>
 {% endfor %}
 
+{# formulário único das alterações nas linhas (os campos apontam para ele com form="form-alteracoes") #}
+<form id="form-alteracoes" method="post" action="{{ url_for('admin_cadastros_salvar_alteracoes') }}">
+    <input type="hidden" name="csrf" value="{{ csrf_token }}">
+</form>
+<div class="barra-alteracoes" id="barra-alteracoes" role="status" hidden>
+    <span id="qtd-alteracoes"></span>
+    <button type="button" class="btn secundario" id="desfazer-alteracoes">Desfazer</button>
+    <button type="submit" class="btn" form="form-alteracoes">Salvar alterações</button>
+</div>
+
 <div class="grupo-titulo">Classificação de Exames</div>
 {% include '_classificacao_exames.html' %}
 
 <script>
     // cadastro opcional (ex.: subcategoria): só as opções da categoria escolhida na mesma linha
+    // (nas linhas, o pai é achado pelo data-campo; no formulário de inclusão, pelo nome)
     document.querySelectorAll('select.opcional').forEach(sel => {
         const campo = sel.dataset.pai;
-        const pai = sel.form && sel.getAttribute('form')
-            ? document.querySelector(`select[name="${campo}"][form="${sel.getAttribute('form')}"]`)
+        const pai = sel.closest('tr')
+            ? sel.closest('tr').querySelector(`select[data-campo="${campo}"]`)
             : sel.closest('form').querySelector(`select[name="${campo}"]`);
         if (!pai) return;
         const filtrar = () => {
@@ -150,6 +158,50 @@
                 tr.style.display = !termo || texto.includes(termo) ? '' : 'none';
             });
         });
+    });
+
+    // ---- alterações nas linhas: várias de uma vez, salvas num envio só ----
+    const CAMPOS_LINHA = 'input[form="form-alteracoes"], select[form="form-alteracoes"]';
+    // valor original de cada campo (depois do ajuste das opcionais acima)
+    const campos = [...document.querySelectorAll(CAMPOS_LINHA)];
+    campos.forEach(c => { c.dataset.original = c.value; });
+    const linhaAlterada = tr => [...tr.querySelectorAll(CAMPOS_LINHA)].some(c => c.value !== c.dataset.original);
+    const linhas = [...new Set(campos.map(c => c.closest('tr')))];
+    const barra = document.getElementById('barra-alteracoes');
+    let enviando = false;
+
+    function atualizarAlteracoes() {
+        let n = 0;
+        linhas.forEach(tr => { const alt = linhaAlterada(tr); tr.classList.toggle('alterada', alt); n += alt; });
+        barra.hidden = n === 0;
+        document.getElementById('qtd-alteracoes').textContent =
+            `${n} registro${n === 1 ? '' : 's'} alterado${n === 1 ? '' : 's'}, ainda não salvo${n === 1 ? '' : 's'}`;
+        return n;
+    }
+    campos.forEach(c => { c.addEventListener('input', atualizarAlteracoes); c.addEventListener('change', atualizarAlteracoes); });
+
+    // envia só as linhas alteradas (campos desativados não vão no formulário)
+    document.getElementById('form-alteracoes').addEventListener('submit', () => {
+        linhas.forEach(tr => {
+            if (!tr.classList.contains('alterada')) tr.querySelectorAll(CAMPOS_LINHA).forEach(c => { c.disabled = true; });
+        });
+        enviando = true;
+    });
+
+    document.getElementById('desfazer-alteracoes').addEventListener('click', () => {
+        campos.forEach(c => { c.value = c.dataset.original; });
+        document.querySelectorAll('select.opcional').forEach(s => s.dispatchEvent(new Event('change')));
+        atualizarAlteracoes();
+    });
+
+    // incluir, inativar e excluir recarregam a página: avisa antes de perder as alterações
+    document.querySelectorAll('form:not(#form-alteracoes)').forEach(f => f.addEventListener('submit', e => {
+        if (e.defaultPrevented || !atualizarAlteracoes()) return;
+        if (confirm('Há alterações não salvas que serão perdidas. Continuar mesmo assim?')) enviando = true;
+        else e.preventDefault();
+    }));
+    window.addEventListener('beforeunload', e => {
+        if (!enviando && atualizarAlteracoes()) { e.preventDefault(); e.returnValue = ''; }
     });
 </script>
 {% endif %}

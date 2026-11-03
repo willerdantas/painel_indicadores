@@ -51,9 +51,10 @@ def _subcategorias():
         return {(r['tipo'], r['item']): r['subcategoria'] for r in cur.fetchall()}
 
 
-def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None, hoje=None):
+def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None, hoje=None, subcategoria=None):
     """Meses no formato AAAA-MM; um mês fora do formato levanta ValueError.
-    tipo é a categoria de custo (tabela tipo_custo)."""
+    tipo é a categoria de custo (tabela tipo_custo); subcategoria, a do item
+    (item sem subcategoria: "<categoria> (sem subcategoria)", como no gráfico)."""
     for nome, mes in (('mes_ini', mes_ini), ('mes_fim', mes_fim)):
         if mes and not _MES.match(mes):
             raise ValueError(f'{nome} deve estar no formato AAAA-MM.')
@@ -78,13 +79,22 @@ def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None, hoje=None):
     # opções dos seletores: todos os meses entre o primeiro e o último com dados (e o período escolhido)
     meses_disp = _meses_entre(min(com_dados[0], mes_ini), max(com_dados[-1], mes_fim))
 
+    # subcategoria; item sem subcategoria entra como "<categoria> (sem subcategoria)"
+    subs = _subcategorias()
+
+    def sub_de(r):
+        return subs.get((r['tipo'], r['item'])) or f"{r['tipo']} (sem subcategoria)"
+
     no_periodo = [r for r in todos if mes_ini <= r['mes'] <= mes_fim]
+    # opções em cascata: categoria -> subcategoria -> item
+    da_categoria = [r for r in no_periodo if not tipo or r['tipo'] == tipo]
+    da_subcategoria = [r for r in da_categoria if not subcategoria or sub_de(r) == subcategoria]
     opcoes = {
         'tipos': sorted({r['tipo'] for r in no_periodo}),
-        'itens': sorted({r['item'] for r in no_periodo if not tipo or r['tipo'] == tipo}),
+        'subcategorias': sorted({sub_de(r) for r in da_categoria}),
+        'itens': sorted({r['item'] for r in da_subcategoria}),
     }
-    linhas = [r for r in no_periodo
-              if (not tipo or r['tipo'] == tipo) and (not item or r['item'] == item)]
+    linhas = [r for r in da_subcategoria if not item or r['item'] == item]
 
     meses = _meses_entre(mes_ini, mes_fim)
     tipos = sorted({r['tipo'] for r in linhas})
@@ -99,10 +109,7 @@ def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None, hoje=None):
     meses_lancados_filtro = {r['mes'] for r in linhas}
     valores_meses_com_dado = [v for v, m in zip(total_mes, meses) if m in meses_lancados_filtro]
     por_tipo = _somar(linhas, 'tipo')
-    # subcategoria; item sem subcategoria entra como "<categoria> (sem subcategoria)"
-    subs = _subcategorias()
-    por_subcategoria = _somar([{'sub': subs.get((r['tipo'], r['item'])) or f"{r['tipo']} (sem subcategoria)",
-                                'valor': r['valor']} for r in linhas], 'sub')
+    por_subcategoria = _somar([{'sub': sub_de(r), 'valor': r['valor']} for r in linhas], 'sub')
     maior_mes = max(zip(total_mes, meses)) if any(total_mes) else (0, None)
 
     return {

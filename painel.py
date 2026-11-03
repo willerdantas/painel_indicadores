@@ -1090,6 +1090,7 @@ def api_custos_dados():
         dados = custos.get_custos(
             request.args.get('mes_ini') or None, request.args.get('mes_fim') or None,
             tipo=request.args.get('tipo') or None, item=request.args.get('item') or None,
+            subcategoria=request.args.get('subcategoria') or None,
         )
         return jsonify({'ok': True, 'dados': dados})
     except ValueError as e:  # filtro malformado
