@@ -66,6 +66,15 @@ _MARGEM_FAIXA_EXAMES = timedelta(days=7)
 #   interno    = todas as demais
 _EXAMES_ORIGEM_EXTERNO_SQL = "2, 4, 41"
 _EXAMES_ORIGEM_EMERGENCIA_SQL = "1, 10, 13, 14, 43, 45"
+# filtro de origem da solicitação (a mesma regra da coluna origem: externo vem antes de emergência)
+_EXAMES_FILTRO_ORIGEM_SQL = {
+    'externo': f"AND tc.isn_clinica IN ({_EXAMES_ORIGEM_EXTERNO_SQL})",
+    'emergencia': f"AND tc.isn_clinica IN ({_EXAMES_ORIGEM_EMERGENCIA_SQL}) "
+                  f"AND tc.isn_clinica NOT IN ({_EXAMES_ORIGEM_EXTERNO_SQL})",
+    'interno': f"AND tc.isn_clinica NOT IN ({_EXAMES_ORIGEM_EXTERNO_SQL}) "
+               f"AND tc.isn_clinica NOT IN ({_EXAMES_ORIGEM_EMERGENCIA_SQL})",
+}
+_EXAMES_ORIGENS = [('interno', 'Interno'), ('externo', 'Externo'), ('emergencia', 'Emergência')]
 
 
 def _faixa_ids_exame_solic(cur, data_inicial, data_final):
@@ -539,6 +548,8 @@ def _sql_faixas_tempo():
         cond = ' AND '.join([f'{d} > {ini}' if ini is not None else f'{d} >= 0']
                             + ([f'{d} <= {fim}'] if fim is not None else []))
         partes.append(f'COUNT(*) FILTER (WHERE {cond}) AS {chave}')
+    # soma dos dias dos exames que entram nas faixas: média = soma ÷ total das faixas
+    partes.append(f'COALESCE(SUM({d}) FILTER (WHERE {d} >= 0), 0) AS tempo_soma_dias')
     return ',\n                '.join(partes) + ','
 
 
@@ -561,6 +572,9 @@ def exames_por_clinica():
 
     clinica_filtro = request.args.get('clinica') or 'todos'
     classificacao_filtro = request.args.get('classificacao') or 'todos'
+    origem_filtro = request.args.get('origem') or 'todos'
+    if origem_filtro not in _EXAMES_FILTRO_ORIGEM_SQL:
+        origem_filtro = 'todos'
 
     try:
         conn = get_db_connection()
@@ -574,6 +588,7 @@ def exames_por_clinica():
 
         id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial, data_final)
         params = [data_inicial, data_final, id_ini, id_fim]
+        filtro_origem_sql = _EXAMES_FILTRO_ORIGEM_SQL.get(origem_filtro, '')
         filtro_clinica_sql = ""
         if clinica_filtro != 'todos' and clinica_filtro in clinicas:
             filtro_clinica_sql = "AND tc.dsc_clinica = %s"
@@ -600,13 +615,17 @@ def exames_por_clinica():
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
                 -- tempo até a realização ou baixa, em dias (_DIAS_ATE_REALIZACAO_OU_BAIXA)
                 {_SQL_FAIXAS_TEMPO}
-                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
+                -- sem data de agendamento (baixa): os cancelados não entram; a base
+                -- do percentual são os solicitados não cancelados
+                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL AND tes.dat_cancelamento IS NULL) AS sem_agendamento,
+                COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NULL) AS nao_cancelados
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame
             LEFT JOIN {classificacao_exames.subconsulta_sql()} tec ON tec.isn_exame = tes.isn_exame
             WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
               AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
+              {filtro_origem_sql}
               {filtro_clinica_sql}
               {filtro_classificacao_sql}
             GROUP BY tc.dsc_clinica, origem, te.dsc_exame, tec.classificacao
@@ -629,7 +648,9 @@ def exames_por_clinica():
             'realizados': int(r['realizados']),
             'cancelados': int(r['cancelados']),
             **{k: int(r[k]) for k in _CHAVES_FAIXAS_TEMPO},
+            'tempo_soma_dias': int(r['tempo_soma_dias']),
             'sem_agendamento': int(r['sem_agendamento']),
+            'nao_cancelados': int(r['nao_cancelados']),
         }
         for r in detalhe_rows
     ]
@@ -687,6 +708,8 @@ def exames_por_clinica():
         'clinicas': clinicas,
         'classificacoes': classificacoes,
         'classificacao_selecionada': classificacao_filtro,
+        'origens': _EXAMES_ORIGENS,
+        'origem_selecionada': origem_filtro,
         'kpis': kpis,
         'dados_json': dados_json,
         'resumo_json': resumo_json,
@@ -767,7 +790,8 @@ def graficos_mensais():
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
                 -- tempo até a realização ou baixa: mesmas faixas da tabela de Exames
                 {_SQL_FAIXAS_TEMPO}
-                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL) AS sem_agendamento
+                -- sem data de agendamento, sem os cancelados (como na página Exames)
+                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL AND tes.dat_cancelamento IS NULL) AS sem_agendamento
             FROM t_exame_solic tes
             JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
             JOIN t_exame te ON te.isn_exame = tes.isn_exame

@@ -25,6 +25,15 @@
                 <input type="date" id="data-final" name="data_final" value="{{ data_final }}">
             </div>
             <div class="filter-group">
+                <label for="origem">Origem:</label>
+                <select id="origem" name="origem">
+                    <option value="todos" {% if origem_selecionada == 'todos' %}selected{% endif %}>Todas</option>
+                    {% for valor, nome in origens %}
+                    <option value="{{ valor }}" {% if origem_selecionada == valor %}selected{% endif %}>{{ nome }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="filter-group">
                 <label for="clinica">Clínica:</label>
                 <select id="clinica" name="clinica">
                     <option value="todos">Todas</option>
@@ -111,20 +120,22 @@
             </div>
         </div>
 
-        <div class="content">
+        {# uma seção por origem da solicitação (interno, externo, emergência) #}
+        {% for valor, nome in origens %}
+        <div class="content secao-tempo" data-origem="{{ valor }}">
             <div class="chart-container">
-                <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame)</h4>
-                <p class="nota-origem">Da solicitação até a realização ou, sem realização, até a baixa, sobre os exames realizados (com realização ou baixa). Em dias de calendário, pela diferença entre as datas: a baixa não tem hora. "Até 1 dia" inclui os do mesmo dia.</p>
+                <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame) — {{ nome }}</h4>
+                <p class="nota-origem">Da solicitação até a realização ou, sem realização, até a baixa, sobre os exames realizados (com realização ou baixa). Em dias de calendário, pela diferença entre as datas: a baixa não tem hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame realizado.</p>
                 <div class="tabela-rolagem">
-                <table id="tabela-tempo-realizacao">
+                <table class="tabela-tempo" id="tabela-tempo-{{ valor }}">
                     <thead>
                         <tr>
                             <th rowspan="2">Classificação</th>
                             <th rowspan="2">Exame</th>
-                            <th colspan="11" class="grupo-origem">Até a Realização ou Baixa</th>
+                            <th colspan="12" class="grupo-origem">Até a Realização ou Baixa</th>
                         </tr>
                         <tr class="sub-origem">
-                            <th>Realizados</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th>
+                            <th>Realizados</th><th>Média (dias)</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th>
                             <th>4 a 10 dias</th><th>10 a 15 dias</th><th>15 a 30 dias</th><th>30 a 60 dias</th>
                             <th>60 a 120 dias</th><th>120 a 180 dias</th><th>Mais de 180 dias</th>
                         </tr>
@@ -134,11 +145,12 @@
                 </div>
             </div>
         </div>
+        {% endfor %}
 
         <div class="content">
             <div class="chart-container">
                 <h4>Exames sem Data de Agendamento</h4>
-                <p class="nota-origem">Solicitações do período sem data de agendamento (baixa). Percentual sobre os solicitados do grupo.</p>
+                <p class="nota-origem">Solicitações do período sem data de agendamento (baixa), sem contar as canceladas. Percentual sobre os solicitados não cancelados do grupo.</p>
                 <div class="painel-sem-agend">
                     <div>
                         <h5 class="titulo-barras">Por classificação</h5>
@@ -236,15 +248,16 @@
             tbody.innerHTML = html;
         }
 
-        // Painel de exames sem data de agendamento: KPI (percentual) e barras
-        // por classificação e por clínica (todas as que têm casos).
+        // Painel de exames sem data de agendamento (sem os cancelados): KPI
+        // (percentual) e barras por classificação e por clínica (todas as que
+        // têm casos). A base do percentual são os solicitados não cancelados.
         function atualizarSemAgendamento() {
             let totalSolic = 0, totalSem = 0;
             const somar = campo => {
                 const acc = {};
                 dadosDetalhe.forEach(r => {
                     const a = acc[r[campo]] ||= { solicitados: 0, sem: 0 };
-                    a.solicitados += r.solicitados;
+                    a.solicitados += r.nao_cancelados || 0;
                     a.sem += r.sem_agendamento || 0;
                 });
                 return Object.entries(acc)
@@ -252,11 +265,11 @@
                     .filter(x => x.sem > 0)
                     .sort((a, b) => b.sem - a.sem || a.nome.localeCompare(b.nome));
             };
-            dadosDetalhe.forEach(r => { totalSolic += r.solicitados; totalSem += r.sem_agendamento || 0; });
+            dadosDetalhe.forEach(r => { totalSolic += r.nao_cancelados || 0; totalSem += r.sem_agendamento || 0; });
 
             const pct = (n, base) => base ? (n / base * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
             document.getElementById('kpi-sem-agendamento-pct').textContent =
-                totalSolic ? `${pct(totalSem, totalSolic)} dos solicitados` : 'No período';
+                totalSolic ? `${pct(totalSem, totalSolic)} dos não cancelados` : 'No período';
 
             const barras = (id, itens) => {
                 const el = document.getElementById(id);
@@ -266,7 +279,7 @@
                 }
                 const max = Math.max(...itens.map(x => x.sem));
                 el.innerHTML = itens.map(x => `
-                    <div class="barra-linha" title="${x.nome}: ${formatarNumero(x.sem)} de ${formatarNumero(x.solicitados)} solicitados">
+                    <div class="barra-linha" title="${x.nome}: ${formatarNumero(x.sem)} de ${formatarNumero(x.solicitados)} solicitados não cancelados">
                         <span class="barra-nome">${x.nome}</span>
                         <span class="barra-trilho"><span class="barra-valor" style="width:${(x.sem / max * 100).toFixed(1)}%"></span></span>
                         <span class="barra-num">${formatarNumero(x.sem)} <small>(${pct(x.sem, x.solicitados)})</small></span>
@@ -335,34 +348,37 @@
             tbody.innerHTML = html;
         }
 
-        // Tabela de tempo por classificação e exame: da solicitação até a
-        // realização ou baixa. `base` é a coluna de referência dos percentuais.
-        const CATEGORIAS_TEMPO = [
-            { base: 'realizados', faixas: ['ate_1d', '1_2d', '2_4d', '4_10d', '10_15d', '15_30d', '30_60d',
-                                           '60_120d', '120_180d', 'acima_180d'].map(f => 'tempo_' + f) },
-        ];
-        function atualizarTabelaTempo() {
-            const campos = CATEGORIAS_TEMPO.flatMap(c => [c.base, ...c.faixas]);
-            const novo = () => Object.fromEntries(campos.map(k => [k, 0]));
+        // Tabelas de tempo por classificação e exame (uma por origem): da
+        // solicitação até a realização ou baixa. Os percentuais são sobre os
+        // realizados; a média em dias é a soma dos dias ÷ os exames das faixas.
+        const FAIXAS_TEMPO = ['ate_1d', '1_2d', '2_4d', '4_10d', '10_15d', '15_30d', '30_60d',
+                              '60_120d', '120_180d', 'acima_180d'].map(f => 'tempo_' + f);
+        const CAMPOS_TEMPO = ['realizados', ...FAIXAS_TEMPO, 'tempo_soma_dias'];
+        function mediaDias(v) {
+            const n = FAIXAS_TEMPO.reduce((s, k) => s + v[k], 0);
+            return n ? (v.tempo_soma_dias / n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—';
+        }
+        function atualizarTabelaTempo(origem) {
+            const novo = () => Object.fromEntries(CAMPOS_TEMPO.map(k => [k, 0]));
             const grupos = {};
             const geral = novo();
-            dadosDetalhe.forEach(r => {
+            dadosDetalhe.filter(r => r.origem === origem).forEach(r => {
                 const g = grupos[r.classificacao] ||= { total: novo(), exames: {} };
                 const e = g.exames[r.exame] ||= novo();
-                campos.forEach(k => {
+                CAMPOS_TEMPO.forEach(k => {
                     e[k] += r[k] || 0;
                     g.total[k] += r[k] || 0;
                     geral[k] += r[k] || 0;
                 });
             });
             const pct = (n, total) => total ? ` <small style="color:#6b7f86;">(${(n / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%)</small>` : '';
-            const celulas = v => CATEGORIAS_TEMPO.map(c =>
-                `<td class="inicio-grupo">${formatarNumero(v[c.base])}</td>` +
-                c.faixas.map(k => `<td>${formatarNumero(v[k])}${pct(v[k], v[c.base])}</td>`).join('')).join('');
-            const temDados = v => CATEGORIAS_TEMPO.some(c => v[c.base] > 0);
+            const celulas = v => `<td class="inicio-grupo">${formatarNumero(v.realizados)}</td>` +
+                `<td class="col-media">${mediaDias(v)}</td>` +
+                FAIXAS_TEMPO.map(k => `<td>${formatarNumero(v[k])}${pct(v[k], v.realizados)}</td>`).join('');
+            const temDados = v => v.realizados > 0;
             const ordem = v => v.realizados;
 
-            const tbody = document.querySelector('#tabela-tempo-realizacao tbody');
+            const tbody = document.querySelector(`#tabela-tempo-${origem} tbody`);
             let html = '';
             Object.keys(grupos).sort().forEach((classificacao, grupo) => {
                 const g = grupos[classificacao];
@@ -384,7 +400,7 @@
             if (html) {
                 html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
             } else {
-                html = '<tr><td colspan="13" style="text-align:center;color:#999;">Nenhum exame no período selecionado.</td></tr>';
+                html = '<tr><td colspan="14" style="text-align:center;color:#999;">Nenhum exame realizado desta origem no período selecionado.</td></tr>';
             }
             tbody.innerHTML = html;
         }
@@ -407,12 +423,17 @@
         function configurarToggleDetalhe() {
             configurarToggle('tabela-detalhe');
             configurarToggle('tabela-exames-classificacao');
-            configurarToggle('tabela-tempo-realizacao');
+            ORIGENS.forEach(o => configurarToggle(`tabela-tempo-${o}`));
         }
 
         function atualizarTudo() {
             atualizarTabelaExamesClassificacao();
-            atualizarTabelaTempo();
+            // com o filtro de origem, só a seção de tempo daquela origem aparece
+            const origem = document.getElementById('origem').value;
+            document.querySelectorAll('.secao-tempo').forEach(s => {
+                s.hidden = origem !== 'todos' && s.dataset.origem !== origem;
+            });
+            ORIGENS.forEach(o => atualizarTabelaTempo(o));
             atualizarSemAgendamento();
             atualizarTabelaDetalhe();
         }
@@ -456,6 +477,7 @@
                 const params = new URLSearchParams({
                     data_inicial: document.getElementById('data-inicial').value,
                     data_final: document.getElementById('data-final').value,
+                    origem: document.getElementById('origem').value,
                     clinica: document.getElementById('clinica').value,
                     classificacao: document.getElementById('classificacao').value,
                 });
@@ -490,6 +512,7 @@
                 const ultimoDia = new Date(hoje.getFullYear(), hoje.getMonth() + 1, 0);
                 document.getElementById('data-inicial').value = primeiroDia.toISOString().split('T')[0];
                 document.getElementById('data-final').value = ultimoDia.toISOString().split('T')[0];
+                document.getElementById('origem').value = 'todos';
                 document.getElementById('clinica').value = 'todos';
                 document.getElementById('classificacao').value = 'todos';
                 aplicarFiltrosAjax();

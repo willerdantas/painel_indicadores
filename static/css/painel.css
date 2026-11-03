@@ -1052,11 +1052,16 @@ html { scroll-padding-top: 110px; }
 .pg-exames-por-clinica tr.total-row { background: var(--claro); font-weight: bold; }
 .pg-exames-por-clinica tr.total-row td { color: var(--green); }
 .pg-exames-por-clinica .tabela-rolagem { overflow-x: auto; }
+/* seções mais largas (as tabelas têm muitas colunas); em tela menor, rolagem lateral na própria tabela */
+.pg-exames-por-clinica .page-content { max-width: 1692px; }
+.pg-exames-por-clinica .tabela-rolagem table { display: table; width: 100%; overflow: visible; }
+.pg-exames-por-clinica .secao-tempo[hidden] { display: none; }
+.pg-exames-por-clinica .tabela-tempo td.col-media { font-weight: 700; color: var(--green); background: rgba(0,161,162,.06); }
 .pg-exames-por-clinica .nota-origem { font-size: 12px; color: var(--muted); margin: 4px 0 0; }
-.pg-exames-por-clinica #tabela-exames-classificacao th.grupo-origem, .pg-exames-por-clinica #tabela-tempo-realizacao th.grupo-origem { text-align: center; border-left: 2px solid var(--claro); }
-.pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th, .pg-exames-por-clinica #tabela-tempo-realizacao tr.sub-origem th { font-size: 11px; font-weight: 600; }
-.pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th:nth-child(4n+1), .pg-exames-por-clinica #tabela-tempo-realizacao tr.sub-origem th:nth-child(11n+1), .pg-exames-por-clinica #tabela-exames-classificacao td.inicio-grupo, .pg-exames-por-clinica #tabela-tempo-realizacao td.inicio-grupo { border-left: 2px solid var(--claro); }
-.pg-exames-por-clinica #tabela-exames-classificacao td:nth-child(2), .pg-exames-por-clinica #tabela-tempo-realizacao td:nth-child(2) { text-align: left; white-space: normal; min-width: 180px; }
+.pg-exames-por-clinica #tabela-exames-classificacao th.grupo-origem, .pg-exames-por-clinica .tabela-tempo th.grupo-origem { text-align: center; border-left: 2px solid var(--claro); }
+.pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th, .pg-exames-por-clinica .tabela-tempo tr.sub-origem th { font-size: 11px; font-weight: 600; }
+.pg-exames-por-clinica #tabela-exames-classificacao tr.sub-origem th:nth-child(4n+1), .pg-exames-por-clinica .tabela-tempo tr.sub-origem th:first-child, .pg-exames-por-clinica #tabela-exames-classificacao td.inicio-grupo, .pg-exames-por-clinica .tabela-tempo td.inicio-grupo { border-left: 2px solid var(--claro); }
+.pg-exames-por-clinica #tabela-exames-classificacao td:nth-child(2), .pg-exames-por-clinica .tabela-tempo td:nth-child(2) { text-align: left; white-space: normal; min-width: 180px; }
 .pg-exames-por-clinica #tabela-exames-classificacao td.col-total { font-weight: 700; background: rgba(0,161,162,.06); }
 .pg-exames-por-clinica .painel-sem-agend { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .pg-exames-por-clinica .titulo-barras { font-family: 'Syne', sans-serif; font-size: 13px; color: var(--dark); margin: 0 0 8px; }
