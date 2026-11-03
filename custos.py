@@ -61,19 +61,22 @@ def get_custos(mes_ini=None, mes_fim=None, tipo=None, item=None, hoje=None):
     if not todos:
         return {'vazio': True}
 
-    # padrão: os 12 últimos meses completos (até o mês anterior ao atual), com ou sem dados
+    # padrão: os 12 últimos meses com lançamento, terminando no último mês lançado
+    # (com menos de 12 lançados, só os lançados); mês depois do atual (lançado
+    # por engano) não entra no padrão
+    com_dados = sorted({r['mes'] for r in todos})
     hoje = hoje or date.today()
-    fim_padrao = _somar_meses(f'{hoje.year:04d}-{hoje.month:02d}', -1)
+    atual = f'{hoje.year:04d}-{hoje.month:02d}'
+    lancados = [m for m in com_dados if m <= atual] or com_dados
     if not mes_fim:
-        mes_fim = fim_padrao
+        mes_fim = lancados[-1]
     if not mes_ini:
-        mes_ini = _somar_meses(mes_fim, -11)
+        ate_o_fim = [m for m in lancados if m <= mes_fim]
+        mes_ini = ate_o_fim[-12:][0] if ate_o_fim else _somar_meses(mes_fim, -11)
     if mes_ini > mes_fim:
         mes_ini, mes_fim = mes_fim, mes_ini
-    # opções dos seletores: todos os meses entre o primeiro com dados e o último (ou o padrão)
-    com_dados = sorted({r['mes'] for r in todos})
-    meses_disp = _meses_entre(min(com_dados[0], mes_ini, _somar_meses(fim_padrao, -11)),
-                              max(com_dados[-1], mes_fim, fim_padrao))
+    # opções dos seletores: todos os meses entre o primeiro e o último com dados (e o período escolhido)
+    meses_disp = _meses_entre(min(com_dados[0], mes_ini), max(com_dados[-1], mes_fim))
 
     no_periodo = [r for r in todos if mes_ini <= r['mes'] <= mes_fim]
     opcoes = {

@@ -50,12 +50,27 @@ def test_custos_periodo(dados_custos):
     assert d['kpis']['meses_com_dado'] == 3
 
 
-def test_custos_padrao_ultimos_12_meses_completos(dados_custos):
+def test_custos_padrao_menos_de_12_meses_so_os_lancados(dados_custos):
     from datetime import date
-    d = custos.get_custos(hoje=date(2024, 6, 15))
-    assert (d['mes_ini'], d['mes_fim']) == ('2023-06', '2024-05')
-    assert d['meses_disponiveis'][0] == '2023-06' and d['meses_disponiveis'][-1] == '2024-05'
+    # lançados: 2024-01, 2024-02 e 2024-05 -> do primeiro ao último lançado (meses vazios depois não entram)
+    d = custos.get_custos(hoje=date(2026, 11, 3))
+    assert (d['mes_ini'], d['mes_fim']) == ('2024-01', '2024-05')
+    assert d['meses_disponiveis'] == ['2024-01', '2024-02', '2024-03', '2024-04', '2024-05']
     assert d['kpis']['total'] == 230.0
+
+
+def test_custos_padrao_ultimos_12_meses_lancados(monkeypatch):
+    from datetime import date
+    linhas = [{'mes': f'2024-{m:02d}', 'tipo': 'Pessoal', 'item': 'Salários', 'valor': 10.0} for m in range(1, 13)]
+    linhas += [{'mes': f'2025-{m:02d}', 'tipo': 'Pessoal', 'item': 'Salários', 'valor': 10.0} for m in range(1, 4)]
+    linhas.append({'mes': '2027-01', 'tipo': 'Pessoal', 'item': 'Salários', 'valor': 10.0})  # futuro: por engano
+    monkeypatch.setattr(banco_painel.CUSTOS, 'dados', lambda: [dict(l) for l in linhas])
+    d = custos.get_custos(hoje=date(2026, 11, 3))
+    assert (d['mes_ini'], d['mes_fim']) == ('2024-04', '2025-03')  # 12 meses, até o último lançado
+    assert len(d['meses_iso']) == 12 and d['kpis']['meses_com_dado'] == 12
+    assert d['meses_disponiveis'][0] == '2024-01' and d['meses_disponiveis'][-1] == '2027-01'
+    # escolhendo só o mês final, o inicial são os 12 lançados até ele
+    assert custos.get_custos(mes_fim='2024-06', hoje=date(2026, 11, 3))['mes_ini'] == '2024-01'
 
 
 def test_custos_por_subcategoria(dados_custos, monkeypatch):

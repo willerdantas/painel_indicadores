@@ -67,9 +67,13 @@ img { max-width: 100%; }
     background: var(--card);
     border-bottom: 3px solid var(--primaria);
     box-shadow: var(--sombra);
-    position: relative;
+    /* fixo no topo ao rolar, em todas as páginas (o carregamento, z-index 9999, fica por cima) */
+    position: sticky;
+    top: 0;
     z-index: 50;
 }
+/* ir para um ponto da página (scrollIntoView, âncoras) não esconde o alvo atrás do cabeçalho */
+html { scroll-padding-top: 110px; }
 .cabecalho-marca { display: flex; flex-shrink: 0; }
 .cabecalho-logo { height: 68px; width: auto; object-fit: contain; }
 /* título longo: os botões descem para a linha de baixo em vez de sobrepor o título */
@@ -684,9 +688,12 @@ img { max-width: 100%; }
     .graf-grid { grid-template-columns: 1fr; }
 }
 @media (max-width: 700px) {
-    .cabecalho { flex-wrap: wrap; padding: .6rem 1rem; gap: .75rem; }
-    .cabecalho-logo { height: 52px; }
+    /* cabeçalho fixo: no celular, compacto para não tomar a tela */
+    .cabecalho { flex-wrap: wrap; padding: .4rem 1rem; gap: .5rem .75rem; }
+    .cabecalho-logo { height: 40px; }
     .cabecalho-titulo { padding-left: .75rem; }
+    .cabecalho-titulo span { display: none; }
+    html { scroll-padding-top: 140px; }
     .cabecalho-titulo h1 { font-size: .95rem; }
     .cabecalho-acoes { width: 100%; flex-wrap: wrap; justify-content: flex-start; margin-left: 0; }
     .wrapper, .page-content { padding: 1rem; }
