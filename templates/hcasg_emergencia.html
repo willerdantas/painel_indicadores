@@ -161,6 +161,38 @@
         </table>
       </div>
       <div class="card full">
+        <h3>Atendimentos por macrorregião de saúde</h3>
+        <div class="atend-resumo">Municípios agrupados pelo cadastro Regiões de Saúde (Ceará), na área restrita.</div>
+        <div class="municipios">
+          <div class="chart-box" id="box_macro" style="height:240px;"><canvas id="chart_atend_macro"></canvas></div>
+          <div class="tabela-municipio">
+            <table class="tabela-risco">
+              <thead><tr>
+                <th>Macrorregião</th><th class="num">Atendimentos</th><th class="num">%</th>
+                <th class="num" title="Prontuários únicos">Prontuários</th>
+              </tr></thead>
+              <tbody id="tb_atend_macro"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="card full">
+        <h3>Atendimentos por município</h3>
+        <div class="atend-resumo" id="municipio_resumo"></div>
+        <div class="municipios">
+          <div class="chart-box" id="box_municipio"><canvas id="chart_atend_municipio"></canvas></div>
+          <div class="tabela-municipio">
+            <table class="tabela-risco">
+              <thead><tr>
+                <th>Município</th><th class="num">Atendimentos</th><th class="num">%</th>
+                <th class="num" title="Prontuários únicos">Prontuários</th>
+              </tr></thead>
+              <tbody id="tb_atend_municipio"></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+      <div class="card full">
         <h3>Pacientes internados pela emergência: primeira clínica de internação x classificação de risco</h3>
         <div style="overflow-x:auto;">
           <table class="tabela-risco" id="tabela_clinica_risco">
@@ -420,6 +452,49 @@ function renderAtendimentos(d) {
     ? `Taxa de pacientes classificados: <b>${(classificados / d.total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%</b>` +
       ` &nbsp;(${fmt(classificados)} de ${fmt(d.total)} atendimentos)`
     : 'Taxa de pacientes classificados: —';
+
+  // por macrorregião de saúde e por município (gráfico: os 15 maiores)
+  const macros = d.por_macrorregiao || [];
+  barrasAtend('macro', 'chart_atend_macro', macros, '#2E758C');
+  tabelaAtend('tb_atend_macro', macros);
+  const municipios = d.por_municipio || [];
+  const top = municipios.slice(0, 15);
+  document.getElementById('municipio_resumo').textContent = municipios.length
+    ? `${fmt(municipios.length)} municípios no período` + (municipios.length > 15 ? '; o gráfico mostra os 15 com mais atendimentos.' : '.')
+    : 'Nenhum atendimento no período.';
+  document.getElementById('box_municipio').style.height = Math.max(200, top.length * 24 + 40) + 'px';
+  barrasAtend('municipio', 'chart_atend_municipio', top, '#00A1A2');
+  tabelaAtend('tb_atend_municipio', municipios);
+}
+
+function barrasAtend(chave, id, itens, cor) {
+  if (chartsAtend[chave]) chartsAtend[chave].destroy();
+  chartsAtend[chave] = new Chart(document.getElementById(id), {
+    type: 'bar',
+    data: {
+      labels: itens.map(x => x.nome),
+      datasets: [{
+        label: 'Atendimentos', data: itens.map(x => x.qtd),
+        backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 3
+      }]
+    },
+    options: {
+      indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { ticks: { autoSkip: false, font: { size: 11 } } } }
+    }
+  });
+}
+
+function tabelaAtend(id, itens) {
+  const fmt = n => Number(n).toLocaleString('pt-BR');
+  const total = itens.reduce((s, x) => s + x.qtd, 0);
+  const pct = q => (q / total * 100).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  document.getElementById(id).innerHTML = itens.length
+    ? itens.map(x => `<tr><td>${escapeHtml(x.nome)}</td><td class="num">${fmt(x.qtd)}</td>
+        <td class="num">${pct(x.qtd)}</td><td class="num">${fmt(x.prontuarios)}</td></tr>`).join('')
+      + `<tr class="total"><td>Total</td><td class="num">${fmt(total)}</td><td class="num">100,0</td><td></td></tr>`
+    : '<tr><td colspan="4">Nenhum atendimento no período.</td></tr>';
 }
 
 // Primeira clínica de internação (linhas) x classificação de risco (colunas)

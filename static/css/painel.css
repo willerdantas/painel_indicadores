@@ -1217,10 +1217,16 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-emergencia .tabela-risco th { font-size: .72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; }
 .pg-hcasg-emergencia .tabela-risco td.num, .pg-hcasg-emergencia .tabela-risco th.num { text-align: right; font-variant-numeric: tabular-nums; }
 .pg-hcasg-emergencia .tabela-risco tfoot td { font-weight: 700; border-bottom: none; }
+.pg-hcasg-emergencia .municipios { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1.5rem; align-items: start; }
+.pg-hcasg-emergencia .tabela-municipio { max-height: 420px; overflow: auto; }
+.pg-hcasg-emergencia .tabela-municipio .tabela-risco th, .pg-hcasg-emergencia .tabela-municipio .tabela-risco td { padding: 6px 8px; font-size: .8rem; }
+.pg-hcasg-emergencia .tabela-municipio thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+.pg-hcasg-emergencia .tabela-municipio tr.total td { position: sticky; bottom: 0; background: var(--card); font-weight: 700; }
 .pg-hcasg-emergencia .risco-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .5rem; vertical-align: middle; background: var(--muted); }
 @media(max-width:900px) {
   .pg-hcasg-emergencia .kpis { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
   .pg-hcasg-emergencia .atend-grid { grid-template-columns: 1fr; }
+  .pg-hcasg-emergencia .municipios { grid-template-columns: 1fr; }
 }
 @media(max-width:600px) {
   .pg-hcasg-emergencia .kpis { grid-template-columns: 1fr; }

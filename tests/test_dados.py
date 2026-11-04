@@ -745,3 +745,15 @@ def test_macrorregioes_sem_banco_pronto_usa_a_lista_oficial(monkeypatch):
     mapa = banco_painel.macrorregiao_dos_municipios()
     assert len(mapa) == 184
     assert mapa['FORTALEZA'] == 'Fortaleza' and mapa['SOBRAL'] == 'Norte' and mapa['VICOSA DO CEARA'] == 'Norte'
+
+
+def test_emergencia_municipio_sem_uf_vai_para_a_uf_predominante():
+    import indicadores_hcasg
+    com_uf = indicadores_hcasg._com_uf({'FORTALEZA': 50, 'FORTALEZA/CE': 300, 'FORTALEZA/PI': 1,
+                                        'SAO JOSE': 5, 'SAO JOSE/SC': 10, 'SAO JOSE/RN': 8,
+                                        'CAUCAIA': 3, 'Sem município': 2})
+    assert com_uf('FORTALEZA') == 'FORTALEZA/CE'   # UF errada em poucos registros não impede
+    assert com_uf('FORTALEZA/PI') == 'FORTALEZA/PI'
+    assert com_uf('SAO JOSE') == 'SAO JOSE'  # dividido entre UFs: fica como está
+    assert com_uf('CAUCAIA') == 'CAUCAIA'    # sem a versão com UF no período
+    assert com_uf('Sem município') == 'Sem município'

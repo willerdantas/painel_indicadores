@@ -130,6 +130,12 @@ function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
     linhasMediaMediana(meses.length, calcularMedia(totaisNum), calcularMediana(totaisNum))
       .forEach((l, i) => datasets.push({ ...l, stack: 'linha' + i }));
   }
+  // média por dia do mês (só nas barras e no total; opts.dias = dias de cada mês)
+  const porDia = c => {
+    const dias = opts.dias && opts.dias[c.dataIndex];
+    if (!dias || !['barras', 'total'].includes(c.dataset.stack)) return null;
+    return Math.round((c.parsed.y || 0) / dias * 10) / 10;
+  };
   chartInstances[titulo] = new Chart(ctx, {
     type: 'bar', data: { labels: meses, datasets },
     options: {
@@ -137,7 +143,9 @@ function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
-        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtNum(c.parsed.y ?? 0)}` } }
+        tooltip: { callbacks: {
+          label: c => ` ${c.dataset.label}: ${fmtNum(c.parsed.y ?? 0)}` + (porDia(c) !== null ? ` (${fmtNum(porDia(c))}/dia)` : '')
+        } }
       },
       scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } }
     }
@@ -145,6 +153,7 @@ function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
 
   if (opts.tabela) {
     const totalGeral = totaisNum.reduce((a, b) => a + (b || 0), 0);
+    const totalDias = (opts.dias || []).reduce((a, b) => a + (b || 0), 0);
     const linha = (nome, vals, cor, classe) => {
       const nums = numeros(vals);
       const total = nums.reduce((a, b) => a + (b || 0), 0);
@@ -153,13 +162,15 @@ function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
         <td class="num">${fmtNum(total)}</td>
         <td class="num">${totalGeral ? fmtNum(Math.round(total / totalGeral * 1000) / 10) + '%' : '—'}</td>
         <td class="num">${fmtNum(calcularMedia(nums))}</td>
-        <td class="num">${fmtNum(calcularMediana(nums))}</td></tr>`;
+        <td class="num">${fmtNum(calcularMediana(nums))}</td>
+        ${opts.dias ? `<td class="num">${totalDias ? fmtNum(Math.round(total / totalDias * 10) / 10) : '—'}</td>` : ''}</tr>`;
     };
     const info = document.createElement('div');
     info.className = 'tabela-info';
     info.innerHTML = `<table class="tabela">
         <thead><tr><th>${opts.tabela}</th><th class="num">Total no período</th><th class="num">%</th>
-          <th class="num">Média mensal</th><th class="num">Mediana mensal</th></tr></thead>
+          <th class="num">Média mensal</th><th class="num">Mediana mensal</th>
+          ${opts.dias ? `<th class="num" title="Total no período dividido pelos dias do período">Média por dia</th>` : ''}</tr></thead>
         <tbody>${(opts.linhasTabela || series).map(s => linha(s.nome, s.valores, s.cor)).join('')}
           ${linha('Total', totais, '#38464D', 'total')}</tbody></table>`;
     container.appendChild(info);
@@ -247,7 +258,29 @@ function carregarGraficos() {
         const titulo = 'Atendimentos por Classificação de Risco';
         criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses,
           series.filter(s => temDados(s.valores)), d.risco_mensal.total,
-          { mediaMediana: true, tabela: 'Classificação', linhasTabela: series });
+          { mediaMediana: true, tabela: 'Classificação', linhasTabela: series, dias: d.risco_mensal.dias });
+      }
+
+      // atendimentos por macrorregião de saúde e por município (os 10 maiores e,
+      // juntos, os demais), com o total, a média e a mediana do total
+      const PALETA_LOCAL = ['#2E758C', '#00B2C9', '#3BB5A3', '#F3A133', '#EB600A', '#0F9688',
+                            '#C9577F', '#7A6FB0', '#8FB339', '#B5835A', '#9aa7ab'];
+      const comCor = lista => lista.map((s, i) => ({ ...s, cor: PALETA_LOCAL[i % PALETA_LOCAL.length] }));
+      const somaSeries = lista => d.meses.map((_, i) => lista.reduce((a, s) => a + (s.valores[i] || 0), 0));
+      const macros = d.macrorregiao_mensal || [];
+      if (macros.length) {
+        const titulo = 'Atendimentos por Macrorregião de Saúde';
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, comCor(macros), somaSeries(macros),
+          { mediaMediana: true, tabela: 'Macrorregião', dias: d.risco_mensal && d.risco_mensal.dias });
+      }
+      const municipios = d.municipio_mensal || [];
+      if (municipios.length) {
+        const top = municipios.slice(0, 10);
+        const demais = municipios.slice(10);
+        if (demais.length) top.push({ nome: `Demais municípios (${demais.length})`, valores: somaSeries(demais) });
+        const titulo = 'Atendimentos por Município';
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, comCor(top), somaSeries(municipios),
+          { mediaMediana: true, tabela: 'Município', dias: d.risco_mensal && d.risco_mensal.dias });
       }
 
       // saídas da emergência por destino, com o total e a média/mediana do total

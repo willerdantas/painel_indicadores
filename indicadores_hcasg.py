@@ -2288,7 +2288,7 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
 
     atend_cte = """
         WITH atend AS (
-            SELECT ti.isn_internacao, ti.dat_cadastro
+            SELECT ti.isn_internacao, ti.dat_cadastro, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
             FROM t_internacao ti
             WHERE ti.isn_tipo_atendimento = 2
               AND ti.dat_cadastro::date BETWEEN %s AND %s
@@ -2366,7 +2366,7 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
         return {r["isn_risco"]: int(r["qtd"]) for r in (rows or [])}
 
     qtd_por_risco = contar_por_risco(atend_vals)
-
+    por_municipio, por_macrorregiao = _atendimentos_por_municipio(atend_cte, atend_vals)
 
     # Lista todas as classificações de t_risco (mesmo com zero) e, no fim,
     # "Sem classificação", para a tabela ter sempre as mesmas linhas.
@@ -2398,7 +2398,102 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
             }
             for dsc, qtd in linhas_risco
         ],
+        "por_municipio": por_municipio,
+        "por_macrorregiao": por_macrorregiao,
     }
+
+
+def _com_uf(qtd_por_municipio):
+    """Função município -> município com a UF. Atendimentos antigos vêm sem a
+    UF ("FORTALEZA"); o nome vai para a UF em que ele aparece em pelo menos 90%
+    dos atendimentos com UF ({município: qtd}), o que releva UF digitada errada
+    em poucos registros. Nome dividido entre UFs fica como está."""
+    ufs = {}
+    for m, qtd in qtd_por_municipio.items():
+        nome, _, uf = m.rpartition('/')
+        if nome:
+            ufs.setdefault(nome, {})[uf] = ufs.get(nome, {}).get(uf, 0) + qtd
+    predominante = {}
+    for nome, por_uf in ufs.items():
+        uf, qtd = max(por_uf.items(), key=lambda x: x[1])
+        if qtd >= 0.9 * sum(por_uf.values()):
+            predominante[nome] = f"{nome}/{uf}"
+    return lambda m: m if '/' in m else predominante.get(m, m)
+
+
+def _qtd_por_municipio(rows):
+    qtd = {}
+    for r in rows or []:
+        m = r["municipio"].strip()
+        qtd[m] = qtd.get(m, 0) + int(r["qtd"])
+    return qtd
+
+
+def _municipios_mensal(dt_ini, dt_fim, idx_mes):
+    """Atendimentos de emergência por mês, por município ("NOME/UF") e por
+    macrorregião de saúde: [{"nome", "valores"}] do maior total para o menor."""
+    # import tardio: ambulatorio importa este módulo
+    from ambulatorio import _MUNICIPIO_SEXO, _JOINS_MUNICIPIO_SEXO, macrorregiao_do_municipio
+    import banco_painel
+
+    rows = fetch_all(f"""
+        WITH atend AS (
+            SELECT DATE_TRUNC('month', ti.dat_cadastro)::date AS mes, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 2
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        )
+        SELECT a.mes,{_MUNICIPIO_SEXO}, COUNT(*) AS qtd
+        FROM atend a{_JOINS_MUNICIPIO_SEXO}
+        GROUP BY 1, 2, 3
+    """, [dt_ini, dt_fim])
+    macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
+    com_uf = _com_uf(_qtd_por_municipio(rows))
+    por_municipio, por_macro = {}, {}
+    for r in rows or []:
+        i = idx_mes.get(r["mes"])
+        if i is None:
+            continue
+        municipio = com_uf(r["municipio"].strip())
+        for contagem, nome in ((por_municipio, municipio),
+                               (por_macro, macrorregiao_do_municipio(municipio, macro_do_municipio))):
+            contagem.setdefault(nome, [0] * len(idx_mes))[i] += int(r["qtd"])
+
+    def lista(contagem):
+        return [{"nome": n, "valores": v}
+                for n, v in sorted(contagem.items(), key=lambda x: (-sum(x[1]), x[0]))]
+    return lista(por_municipio), lista(por_macro)
+
+
+def _atendimentos_por_municipio(atend_cte, atend_vals):
+    """Atendimentos e prontuários únicos por município ("NOME/UF") e por
+    macrorregião de saúde, com o mesmo agrupamento do Ambulatório (cadastro
+    Regiões de Saúde); do maior para o menor."""
+    # import tardio: ambulatorio importa este módulo
+    from ambulatorio import _MUNICIPIO_SEXO, _JOINS_MUNICIPIO_SEXO, macrorregiao_do_municipio
+    import banco_painel
+
+    rows = fetch_all(atend_cte + f"""
+        SELECT a.isn_paciente AS paciente,{_MUNICIPIO_SEXO}, COUNT(*) AS qtd
+        FROM atend a{_JOINS_MUNICIPIO_SEXO}
+        GROUP BY 1, 2, 3
+    """, atend_vals)
+    macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
+    com_uf = _com_uf(_qtd_por_municipio(rows))
+    atend = {'municipio': {}, 'macro': {}}
+    pacientes = {'municipio': {}, 'macro': {}}
+    for r in rows or []:
+        municipio = com_uf(r["municipio"].strip())
+        for tipo, nome in (('municipio', municipio),
+                           ('macro', macrorregiao_do_municipio(municipio, macro_do_municipio))):
+            atend[tipo][nome] = atend[tipo].get(nome, 0) + int(r["qtd"])
+            if r["paciente"] is not None:
+                pacientes[tipo].setdefault(nome, set()).add(r["paciente"])
+
+    def lista(tipo):
+        return sorted(({"nome": n, "qtd": q, "prontuarios": len(pacientes[tipo].get(n, ()))}
+                       for n, q in atend[tipo].items()), key=lambda x: (-x["qtd"], x["nome"]))
+    return lista('municipio'), lista('macro')
 
 
 # ---------------------------------------------------------------------------
@@ -2657,6 +2752,8 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None):
             chave = r["isn_risco"] if r["isn_risco"] in por_risco else None
             por_risco[chave][idx_mes[r["mes"]]] += int(r["qtd"])
 
+    municipio_mensal, macrorregiao_mensal = _municipios_mensal(dt_ini, dt_fim, idx_mes)
+
     rows_saidas = fetch_all(f"""
         WITH candidatas AS MATERIALIZED (
             SELECT DISTINCT til.isn_internacao
@@ -2710,7 +2807,12 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None):
         "risco_mensal": {
             "riscos": [{"dsc_risco": dsc, "valores": por_risco[isn]} for isn, dsc in colunas_risco],
             "total": [sum(por_risco[isn][i] for isn, _ in colunas_risco) for i in range(len(meses_keys))],
+            # dias de cada mês na janela (o mês corrente conta só até hoje), para a média por dia
+            "dias": [max(0, (min(_add_months(mes, 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
+                     for mes in meses_keys],
         },
+        "municipio_mensal": municipio_mensal,
+        "macrorregiao_mensal": macrorregiao_mensal,
         "saidas_emergencia_destinos": [
             {"isn_destino": dest, "dsc_destino": nomes.get(dest) or f"Destino {dest}", "valores": saidas[dest]}
             for dest in DESTINOS_SAIDA_PS
