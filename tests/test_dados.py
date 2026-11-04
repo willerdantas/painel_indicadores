@@ -357,12 +357,62 @@ def test_planilha_mes_em_texto_iso_e_brasileiro(tmp_path):
     assert [(l['mes'], l['quantidade']) for l in linhas] == [('2026-08', 10), ('2026-09', 20), ('2026-10', 30)]
 
 
+def test_planilha_no_mes_escolhido_na_tela(tmp_path):
+    import pandas as pd
+    caminho = tmp_path / 'producao.xlsx'
+    # mês da planilha desatualizado ou vazio: vale o escolhido na tela
+    pd.DataFrame([['2026-08-01', 'IMAGEM', 'EXAME', 'Tomografia', 10],
+                  [None, 'IMAGEM', 'EXAME', 'Raio-X', 20]],
+                 columns=['Mês', 'Serviço', 'Tipo', 'Procedimento', 'Qtd']).to_excel(caminho, index=False)
+    linhas = banco_painel.PRODUCAO.ler_planilha(str(caminho), '2026-10')
+    assert [(l['mes'], l['procedimento']) for l in linhas] == [('2026-10', 'Tomografia'), ('2026-10', 'Raio-X')]
+    # sem o mês da tela, a linha sem mês continua de fora
+    assert len(banco_painel.PRODUCAO.ler_planilha(str(caminho))) == 1
+    # mais de um mês na planilha: recusada (juntaria meses diferentes em um)
+    pd.DataFrame([['2026-08-01', 'IMAGEM', 'EXAME', 'Tomografia', 10],
+                  ['2026-09-01', 'IMAGEM', 'EXAME', 'Tomografia', 20]],
+                 columns=['Mês', 'Serviço', 'Tipo', 'Procedimento', 'Qtd']).to_excel(caminho, index=False)
+    with pytest.raises(ValueError, match='2 meses'):
+        banco_painel.PRODUCAO.ler_planilha(str(caminho), '2026-10')
+
+
+def test_importacao_coleta_simaq(tmp_path, monkeypatch):
+    import pandas as pd
+    t = banco_painel.SIMAQ
+    caminho = tmp_path / 'coleta.xlsx'
+    cab = ['CNES', 'COMPETÊNCIA', 'INDICADOR', 'TIPO DE GERENCIAMENTO', 'NUMERADOR', 'DENOMINADOR', 'RESULTADO', 'STATUS']
+    pd.DataFrame([['X', 'Setembro de 2026', 'Taxa de Ocupação Hospitalar ', 'SESA', 14230, 12558, '113,31%', 'VALIDADO'],
+                  ['X', 'Setembro de 2026', 'NÚMERO DE INTERNAÇÕES', 'SESA', 1293, 0, '1293', 'VALIDADO'],
+                  ['X', 'Setembro de 2026', 'Taxa de Reinternação', 'SESA', None, None, None, 'AGUARDANDO'],
+                  ['X', 'Setembro de 2026', 'Indicador Novo', 'SESA', 5, 10, '50%', 'VALIDADO'],
+                  # nome do relatório diferente do cadastro: COLETA_NOMES
+                  ['X', 'Setembro de 2026', 'Taxa de Satisfação do Usuário', 'SESA', 350, 352, '99,43%', 'VALIDADO']],
+                 columns=cab).to_excel(caminho, index=False)
+    monkeypatch.setattr(t, 'itens', lambda antes_de=None: [
+        {'tipo': 'ESTRATÉGICO', 'indicador': 'Índice de Satisfação do Usuário', 'ativo': True, 'fator': 1, 'meta': 0.9},
+        {'tipo': 'ESTRATÉGICO', 'indicador': 'Taxa de Ocupação Hospitalar', 'ativo': True, 'fator': 1, 'meta': 0.85},
+        {'tipo': 'OPERACIONAL', 'indicador': 'Número de Internações', 'ativo': True, 'fator': 1, 'meta': 1000},
+        {'tipo': 'ESTRATÉGICO', 'indicador': 'Taxa de Reinternação', 'ativo': True, 'fator': 1, 'meta': 0.09}])
+    # mês já lançado para a ocupação, com meta própria: a meta fica, numerador/denominador mudam
+    monkeypatch.setattr(t, 'do_mes', lambda mes: {('ESTRATÉGICO', 'Taxa de Ocupação Hospitalar'): {'meta': 0.9}})
+    gravadas = []
+    monkeypatch.setattr(t, 'salvar', lambda linhas, usuario: gravadas.extend(linhas) or len(linhas))
+    r = t.importar_coleta(str(caminho), 'teste', '2026-10')
+    assert r == {'gravados': 3, 'nao_cadastrados': ['Indicador Novo'], 'sem_valor': ['Taxa de Reinternação'],
+                 'competencia': '2026-09'}
+    assert [(l['mes'], l['indicador'], l['numerador'], l['denominador'], l['meta']) for l in gravadas] == [
+        ('2026-10', 'Taxa de Ocupação Hospitalar', 14230, 12558, 0.9),
+        ('2026-10', 'Número de Internações', 1293, None, 1000),  # denominador 0 = sem denominador
+        ('2026-10', 'Índice de Satisfação do Usuário', 350, 352, 0.9)]
+    assert t._competencia('Março de 2026') == '2026-03' and t._competencia('xyz') is None
+
+
 def test_importacao_cadastra_itens_novos(monkeypatch):
     t = banco_painel.SIMAQ
     linhas = [{'mes': '2026-09', 'tipo': 'ESTRATÉGICO', 'indicador': 'Novo', 'numerador': 1, 'denominador': 2},
               {'mes': '2026-09', 'tipo': 'ESTRATÉGICO', 'indicador': 'Antigo', 'numerador': 3, 'denominador': 4}]
     chamadas = {}
-    monkeypatch.setattr(t, 'ler_planilha', lambda caminho: linhas)
+    monkeypatch.setattr(t, 'ler_planilha', lambda caminho, mes=None: linhas)
     monkeypatch.setattr(t, 'itens_faltando', lambda ls: [('ESTRATÉGICO', 'Novo')])
     monkeypatch.setattr(t, 'salvar', lambda ls, usuario, criar_cadastros: chamadas.update(criar=criar_cadastros) or len(ls))
     monkeypatch.setattr(t, '_depois_de_cadastrar', lambda ls: chamadas.update(fator=[l['indicador'] for l in ls]))
@@ -387,7 +437,9 @@ def _salvar_alteracoes_cadastros(monkeypatch, dados):
                             chamadas.append((t, rid, nome, pais, extras, opc)) or ('Já existe.' if nome == 'REPETIDO' else None))
     monkeypatch.setattr(classificacao_exames, 'salvar', lambda rid, nome:
                         chamadas.append(('classificacao_exame', rid, nome, None, None, None)))
+    from flask import g
     with painel.app.test_request_context('/admin/cadastros/salvar-alteracoes', method='POST', data=dados):
+        g.usuario = {'ativo': 1, 'perfil': {'admin': 1, 'paginas': []}}  # administrador: todos os cadastros
         area_restrita.admin_cadastros_salvar_alteracoes()
         return chamadas, get_flashed_messages(with_categories=True)
 

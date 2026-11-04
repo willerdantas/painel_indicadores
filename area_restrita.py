@@ -606,16 +606,21 @@ def admin_lancamento(chave):
     do_mes = t.do_mes(mes)
     grupo = cfg['grupo']
     linhas = []
-    for ultimo in t.itens():
+    for ultimo in t.itens(antes_de=mes):
         k = t.chave_de(ultimo)
         atual = do_mes.get(k)
         if not ultimo['ativo'] and atual is None:
             continue  # inativo (tela Cadastros): só aparece nos meses em que já tem lançamento
         chaves = {c: ultimo[c] for c in t.campos_chave}
-        valores = {c.nome: (atual[c.nome] if atual else (ultimo[c.nome] if c.herda else None)) for c in t.colunas}
+        valores = {c.nome: (atual[c.nome] if atual else None) for c in t.colunas}
+        # herdada (ex.: meta) vazia no mês: vem preenchida com a do mês anterior, editável
+        herdados = {c.nome for c in t.colunas if c.herda and valores[c.nome] is None and ultimo.get(c.nome) is not None}
+        for n in herdados:
+            valores[n] = ultimo[n]
         linhas.append({
             'chaves': chaves,
             'valores': valores,
+            'herdados': herdados,
             'grupo': (atual or ultimo).get(grupo) or 'Sem classificação',
             'rotulo': _rotulo_item(t, grupo, chaves),
             'inativo': not ultimo['ativo'],
@@ -673,8 +678,12 @@ def admin_lancamento_salvar(chave):
 def admin_lancamento_importar(chave):
     t = LANCAMENTOS[chave]['tabela']
     arquivo = request.files.get('planilha')
+    mes = request.form.get('mes') or ''
     if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
         flash('Escolha uma planilha .xlsx.', 'erro')
+        return redirect(url_for(f'admin_{chave}'))
+    if not _mes_valido(mes):
+        flash('Informe o mês de referência da planilha.', 'erro')
         return redirect(url_for(f'admin_{chave}'))
     if not banco_painel.pronto():
         flash(banco_painel.erro() or 'Banco indisponível.', 'erro')
@@ -684,12 +693,48 @@ def admin_lancamento_importar(chave):
         caminho = os.path.join(pasta, 'planilha.xlsx')
         arquivo.save(caminho)
         try:
-            qtd, novos = t.importar_cadastrando(caminho, g.usuario['login'])
+            qtd, novos = t.importar_cadastrando(caminho, g.usuario['login'], mes)
         except Exception as e:
             flash(f'Não foi possível importar a planilha: {e}', 'erro')
             return redirect(url_for(f'admin_{chave}'))
-    flash(f'Planilha importada: {qtd} lançamentos gravados.' + _texto_itens_novos(novos), 'ok')
-    return redirect(url_for(f'admin_{chave}'))
+    flash(f'Planilha importada em {mes[5:]}/{mes[:4]}: {qtd} lançamentos gravados.' + _texto_itens_novos(novos), 'ok')
+    return redirect(url_for(f'admin_{chave}', mes=mes))
+
+
+@_rota('/admin/simaq/importar-coleta', methods=['POST'])
+def admin_simaq_importar_coleta():
+    arquivo = request.files.get('planilha')
+    mes = request.form.get('mes') or ''
+    if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
+        flash('Escolha a planilha de coleta do SIMAQ (.xlsx).', 'erro')
+        return redirect(url_for('admin_simaq'))
+    if not _mes_valido(mes):
+        flash('Informe o mês de referência da planilha.', 'erro')
+        return redirect(url_for('admin_simaq'))
+    if not banco_painel.pronto():
+        flash(banco_painel.erro() or 'Banco indisponível.', 'erro')
+        return redirect(url_for('admin_simaq'))
+    import tempfile
+    with tempfile.TemporaryDirectory() as pasta:
+        caminho = os.path.join(pasta, 'planilha.xlsx')
+        arquivo.save(caminho)
+        try:
+            r = banco_painel.SIMAQ.importar_coleta(caminho, g.usuario['login'], mes)
+        except Exception as e:
+            flash(f'Não foi possível importar a planilha: {e}', 'erro')
+            return redirect(url_for('admin_simaq', mes=mes))
+    texto = f'Planilha SIMAQ importada em {mes[5:]}/{mes[:4]}: {r["gravados"]} indicadores gravados.'
+    if r['competencia'] and r['competencia'] != mes:
+        c = r['competencia']
+        texto += f' Atenção: a competência da planilha é {c[5:]}/{c[:4]}.'
+    if r['sem_valor']:
+        texto += f' {len(r["sem_valor"])} sem valor na planilha (mantidos como estavam).'
+    flash(texto, 'ok')
+    if r['nao_cadastrados']:
+        flash(f'{len(r["nao_cadastrados"])} indicador(es) da planilha não estão cadastrados e não foram importados: '
+              + '; '.join(r['nao_cadastrados'])
+              + '. Cadastre-os (ou ajuste o nome) na tela de Cadastros e importe de novo.', 'erro')
+    return redirect(url_for('admin_simaq', mes=mes))
 
 
 def _texto_itens_novos(novos):
@@ -905,6 +950,24 @@ def admin_custos_importacao_cancelar(lote):
 # ---- cadastros (área restrita): tipos, itens, serviços, procedimentos e indicadores ----
 # Os lançamentos só aceitam itens destas tabelas.
 
+# grupo da tela Cadastros -> página de lançamento a que ele serve: quem não é
+# administrador só vê (e altera) os grupos das páginas de lançamento do seu perfil;
+# os demais grupos e a Classificação de Exames são só do administrador
+_PAGINA_DO_GRUPO_CADASTRO = {
+    'Custos': 'custos',
+    'Unidades (Centros de Custo)': 'custos',
+    'Produção Hospitalar': 'producao',
+    'SIMAQ': 'simaq',
+}
+
+
+def _pode_cadastro(grupo):
+    if usuarios.eh_admin(g.usuario):
+        return True
+    pagina = _PAGINA_DO_GRUPO_CADASTRO.get(grupo)
+    return bool(pagina) and usuarios.pode_acessar(g.usuario, pagina)
+
+
 @_rota('/admin/cadastros')
 def admin_cadastros():
     if not banco_painel.pronto():
@@ -913,7 +976,10 @@ def admin_cadastros():
     registros = {c.tabela: c.listar() for c in banco_painel.CADASTROS}
     grupos = {}
     for c in banco_painel.CADASTROS:
-        grupos.setdefault(c.grupo, []).append(c)
+        if _pode_cadastro(c.grupo):
+            grupos.setdefault(c.grupo, []).append(c)
+    if not usuarios.eh_admin(g.usuario):
+        return render_template('admin_cadastros.html', grupos=grupos, registros=registros, classificacoes=None)
     # seção Classificação de Exames: os exames vêm do sistema hospitalar, que pode estar fora
     try:
         exames, erro_exames = classificacao_exames.exames(), None
@@ -928,6 +994,8 @@ def admin_cadastros_salvar(tabela):
     cad = banco_painel.CADASTROS_POR_TABELA.get(tabela)
     if cad is None:
         return 'Cadastro não encontrado.', 404
+    if not _pode_cadastro(cad.grupo):
+        return _sem_permissao()
     nome = (request.form.get('nome') or '').strip()
     extras = {}
     for c in cad.extras:
@@ -975,6 +1043,11 @@ def admin_cadastros_salvar_alteracoes():
     def id_de(campos, campo):
         valor = (campos.get(campo) or '').strip()
         return int(valor) if valor.isdigit() else None
+
+    for tabela, _ in linhas:
+        cad = banco_painel.CADASTROS_POR_TABELA.get(tabela)
+        if not (usuarios.eh_admin(g.usuario) if tabela == _CLASSIFICACAO_EXAME else cad and _pode_cadastro(cad.grupo)):
+            return _sem_permissao()
 
     pedidos, classificacoes, erros = [], [], []
     for (tabela, registro_id), campos in sorted(linhas.items(), key=lambda x: (ordem.get(x[0][0], len(ordem)), x[0][1])):
@@ -1028,6 +1101,8 @@ def admin_cadastros_ativo(tabela, registro_id):
     cad = banco_painel.CADASTROS_POR_TABELA.get(tabela)
     if cad is None:
         return 'Cadastro não encontrado.', 404
+    if not _pode_cadastro(cad.grupo):
+        return _sem_permissao()
     ativo = request.form.get('ativo') == '1'
     nome = cad.definir_ativo(registro_id, ativo)
     if nome is None:
@@ -1065,6 +1140,8 @@ def admin_classificacoes():
 
 @_rota('/admin/classificacoes/salvar', methods=['POST'])
 def admin_classificacoes_salvar():
+    if not usuarios.eh_admin(g.usuario):
+        return _sem_permissao()
     nome = request.form.get('nome')
     erro = classificacao_exames.salvar(request.form.get('id', type=int), nome)
     flash(erro or f'Classificação "{" ".join((nome or "").split())}" salva.', 'erro' if erro else 'ok')
@@ -1084,7 +1161,9 @@ def admin_classificacoes_excluir(classificacao_id):
 @_rota('/admin/classificacoes/associar', methods=['POST'])
 def admin_classificacoes_associar():
     """Recebe {"mudancas": {isn_exame: classificacao_id ou null}}."""
-    mudancas = (request.get_json(silent=True) or {}).get('mudancas')
+    if not usuarios.eh_admin(g.usuario):
+        return _sem_permissao()
+    mudancas =(request.get_json(silent=True) or {}).get('mudancas')
     if not isinstance(mudancas, dict):
         return jsonify({'ok': False, 'erro': 'Dados inválidos.'}), 400
     qtd, erro = classificacao_exames.associar(mudancas)

@@ -862,6 +862,8 @@ html { scroll-padding-top: 110px; }
 .pg-admin-lancamento .rolagem { overflow-x: auto; }
 .pg-admin-lancamento .tabela-lanc td.valor input { text-align: right; font-variant-numeric: tabular-nums; min-width: 110px; max-width: 170px; }
 .pg-admin-lancamento .tabela-lanc td.texto input { min-width: 130px; max-width: 170px; }
+/* valor herdado do mês anterior (ex.: meta), ainda não gravado no mês */
+.pg-admin-lancamento .tabela-lanc input.herdado, .pg-admin-lancamento .herdado-amostra { font-style: italic; color: var(--muted); }
 .pg-admin-lancamento .tabela-lanc tr.grupo td { background: var(--claro); color: var(--green); font-weight: 700; }
 .pg-admin-lancamento .tabela-lanc td.quem { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .pg-admin-lancamento .tabela-lanc th.num { text-align: right; }

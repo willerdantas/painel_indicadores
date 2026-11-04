@@ -241,9 +241,11 @@ class TabelaMensal:
             return 'Mês'
         return dict(self.chaves).get(campo) or next(c.rotulo for c in self.colunas if c.nome == campo)
 
-    def ler_planilha(self, caminho):
+    def ler_planilha(self, caminho, mes=None):
         """Linhas de um xlsx com as colunas na ordem de colunas_planilha
-        (a primeira linha é o cabeçalho; os nomes não importam)."""
+        (a primeira linha é o cabeçalho; os nomes não importam).
+        mes ('AAAA-MM', escolhido na tela) vale para todas as linhas: a coluna
+        Mês pode vir vazia, e a planilha com mais de um mês é recusada."""
         import pandas as pd
         df = pd.read_excel(caminho, sheet_name=0)
         n = len(self.colunas_planilha)
@@ -255,15 +257,18 @@ class TabelaMensal:
         # colunas da planilha (as calculadas vêm junto, mas não são gravadas)
         formatos = {c.nome: c.formato for c in self.colunas if c.nome in self.colunas_planilha}
         linhas = {}
+        meses_planilha = set()
         for r in df.to_dict(orient='records'):
             # texto: dia primeiro (01/08/2026), menos no formato ISO (2026-08-01),
             # que com dayfirst o pandas lê como 8 de janeiro
             texto = isinstance(r['mes'], str)
             iso = texto and re.match(r'\s*\d{4}-\d{1,2}', r['mes'])
-            mes = pd.to_datetime(r['mes'], errors='coerce', dayfirst=texto and not iso)
-            if pd.isna(mes):
+            data = pd.to_datetime(r['mes'], errors='coerce', dayfirst=texto and not iso)
+            if not pd.isna(data):
+                meses_planilha.add(data.strftime('%Y-%m'))
+            elif not mes:
                 continue
-            linha = {'mes': mes.strftime('%Y-%m')}
+            linha = {'mes': mes or data.strftime('%Y-%m')}
             for c in self.campos_chave:
                 v = r[c]
                 linha[c] = '' if v is None or v != v else str(v).strip()
@@ -279,6 +284,10 @@ class TabelaMensal:
             if self.em_branco(linha):
                 continue  # como na tela de lançamento: linha sem valor = sem lançamento
             linhas[(linha['mes'], self.chave_de(linha))] = linha  # repetida: vale a última
+        if mes and len(meses_planilha) > 1:
+            raise ValueError(f'a planilha tem {len(meses_planilha)} meses ('
+                             + ', '.join(f'{m[5:]}/{m[:4]}' for m in sorted(meses_planilha))
+                             + f'); para lançar tudo em {mes[5:]}/{mes[:4]}, ela deve ter um mês só')
         return list(linhas.values())
 
     def _ajustar_linha_planilha(self, linha):
@@ -426,21 +435,23 @@ class TabelaNormalizada(TabelaMensal):
             FROM {self.tabela} c
             JOIN {self._t(self.item[0])} it ON it.id = c.{self.fk} {self._joins}"""
 
-    def itens(self):
+    def itens(self, antes_de=None):
         """Todos os itens cadastrados (mesmo os que ainda não têm valor lançado).
-        'ativo' é falso se o item ou algum cadastro a que pertence estiver inativo."""
-        # + atributos do item e, das colunas herdadas do mês (ex.: meta), o último valor lançado
+        'ativo' é falso se o item ou algum cadastro a que pertence estiver inativo.
+        As colunas herdadas do mês (ex.: meta) trazem o último valor preenchido;
+        com antes_de ('AAAA-MM'), o último antes desse mês (o do mês anterior)."""
         herdadas = [c.nome for c in self.colunas_lancamento if c.herda]
         ativo = ' AND '.join(['it.ativo'] + [f'p{n}.ativo' for n in range(len(self.cadastros))])
+        filtro_mes = 'AND c.mes < %s' if antes_de else ''
         nomes = ', '.join([f'{e} AS {c}' for c, e in self._expr.items()] + [f'({ativo}) AS ativo']
-                          + [f'it.{c.nome}' for c in self.colunas_item] + [f'u.{n}' for n in herdadas])
-        ultimo = (f"""LEFT JOIN LATERAL (
-                        SELECT {', '.join(herdadas)} FROM {self.tabela} c
-                        WHERE c.{self.fk} = it.id ORDER BY c.mes DESC LIMIT 1) u ON true"""
-                  if herdadas else '')
+                          + [f'it.{c.nome}' for c in self.colunas_item]
+                          + [f"""(SELECT c.{n} FROM {self.tabela} c
+                                  WHERE c.{self.fk} = it.id AND c.{n} IS NOT NULL {filtro_mes}
+                                  ORDER BY c.mes DESC LIMIT 1) AS {n}""" for n in herdadas])
         ordem = ', '.join(self._expr[c] for c in self.campos_chave)
         with _cursor() as cur:
-            cur.execute(f'SELECT {nomes} FROM {self._t(self.item[0])} it {self._joins} {ultimo} ORDER BY {ordem}')
+            cur.execute(f'SELECT {nomes} FROM {self._t(self.item[0])} it {self._joins} ORDER BY {ordem}',
+                        [f'{antes_de}-01'] * len(herdadas) if antes_de else None)
             return [{k: float(v) if isinstance(v, Decimal) else v for k, v in r.items()} for r in cur.fetchall()]
 
     # ---------------------------------------------------------------- escrita
@@ -453,11 +464,11 @@ class TabelaNormalizada(TabelaMensal):
             existentes = {self.chave_de(r) for r in cur.fetchall()}
         return sorted({self.chave_de(l) for l in linhas} - existentes)
 
-    def importar_cadastrando(self, caminho, usuario):
-        """Importação da tela: grava a planilha e cadastra os itens (e as
-        categorias deles) que ainda não existirem. Retorna (lançamentos
-        gravados, [chaves dos itens cadastrados agora])."""
-        linhas = self.ler_planilha(caminho)
+    def importar_cadastrando(self, caminho, usuario, mes=None):
+        """Importação da tela: grava a planilha no mês escolhido e cadastra os
+        itens (e as categorias deles) que ainda não existirem. Retorna
+        (lançamentos gravados, [chaves dos itens cadastrados agora])."""
+        linhas = self.ler_planilha(caminho, mes)
         novos = self.itens_faltando(linhas)
         qtd = self.salvar(linhas, usuario, criar_cadastros=bool(novos))
         if novos:
@@ -562,6 +573,80 @@ class TabelaSimaq(TabelaNormalizada):
             with _cursor() as cur:
                 self._aplicar_fatores(cur, linhas)
         return qtd
+
+    # planilha "Coleta de dados_relatorio" exportada do SIMAQ (aba data, cabeçalho
+    # na 1ª linha): B = competência ("Setembro de 2026"), C = indicador,
+    # E = numerador, F = denominador
+    COLETA_COMPETENCIA, COLETA_INDICADOR, COLETA_NUMERADOR, COLETA_DENOMINADOR = 1, 2, 4, 5
+    # nome no relatório de coleta -> nome no cadastro do painel
+    COLETA_NOMES = {
+        'Número de Atendimentos Ambulatoriais (Unidades Hospitalares)': 'Número de Atendimentos Ambulatoriais',
+        'Taxa de Satisfação do Usuário': 'Índice de Satisfação do Usuário',
+    }
+
+    @staticmethod
+    def _nome_comparavel(nome):
+        """Sem acento, caixa e espaços sobrando: 'Taxa de Ocupação Hospitalar ' = 'taxa de ocupacao hospitalar'."""
+        s = unicodedata.normalize('NFKD', str(nome)).encode('ascii', 'ignore').decode()
+        return ' '.join(s.casefold().split())
+
+    @staticmethod
+    def _competencia(texto):
+        """'Setembro de 2026' -> '2026-09' (None se não reconhecer)."""
+        meses = ['janeiro', 'fevereiro', 'marco', 'abril', 'maio', 'junho', 'julho',
+                 'agosto', 'setembro', 'outubro', 'novembro', 'dezembro']
+        m = re.match(r'\s*([a-z]+)\s+de\s+(\d{4})', TabelaSimaq._nome_comparavel(texto))
+        if not m or m.group(1) not in meses:
+            return None
+        return f'{m.group(2)}-{meses.index(m.group(1)) + 1:02d}'
+
+    def importar_coleta(self, caminho, usuario, mes):
+        """Grava no mês escolhido o numerador e o denominador de cada indicador da
+        planilha de coleta. Mês já lançado: atualiza só esses dois valores (a meta
+        e os indicadores fora da planilha ficam como estão); meta vazia: vem do
+        mês anterior. Indicador fora do cadastro não entra
+        (a planilha não diz o tipo dele) e linha sem valor (aguardando validação)
+        é ignorada. Retorna {gravados, nao_cadastrados, sem_valor, competencia}."""
+        import pandas as pd
+        df = pd.read_excel(caminho, sheet_name=0)
+        if df.shape[1] <= self.COLETA_DENOMINADOR:
+            raise ValueError('a planilha de coleta precisa das colunas B (competência), C (indicador), '
+                             'E (numerador) e F (denominador)')
+        competencias = {c for c in (self._competencia(v) for v in df.iloc[:, self.COLETA_COMPETENCIA].dropna()) if c}
+        if len(competencias) > 1:
+            raise ValueError(f'a planilha tem {len(competencias)} competências ('
+                             + ', '.join(f'{c[5:]}/{c[:4]}' for c in sorted(competencias))
+                             + '); importe um mês por vez')
+        # mesmo nome em dois tipos: vale o ativo
+        cadastro = {self._nome_comparavel(i['indicador']): i
+                    for i in sorted(self.itens(antes_de=mes), key=lambda i: bool(i['ativo']))}
+        do_mes = self.do_mes(mes)
+        renomear = {self._nome_comparavel(de): para for de, para in self.COLETA_NOMES.items()}
+        linhas, nao_cadastrados, sem_valor = {}, [], []
+        for r in df.itertuples(index=False):
+            nome = r[self.COLETA_INDICADOR]
+            if nome is None or nome != nome or not str(nome).strip():
+                continue
+            nome = str(nome).strip()
+            nome = renomear.get(self._nome_comparavel(nome), nome)
+            numerador = ler_numero(r[self.COLETA_NUMERADOR])
+            denominador = ler_numero(r[self.COLETA_DENOMINADOR]) or None  # 0 = sem denominador
+            if numerador is None and denominador is None:
+                sem_valor.append(nome)
+                continue
+            item = cadastro.get(self._nome_comparavel(nome))
+            if item is None:
+                nao_cadastrados.append(nome)
+                continue
+            chave = (item['tipo'], item['indicador'])
+            meta = do_mes.get(chave, {}).get('meta')
+            if meta is None:
+                meta = item.get('meta')  # meta do mês anterior
+            linhas[chave] = {'mes': mes, 'tipo': item['tipo'], 'indicador': item['indicador'],
+                             'numerador': numerador, 'denominador': denominador, 'meta': meta}
+        qtd = self.salvar(list(linhas.values()), usuario)
+        return {'gravados': qtd, 'nao_cadastrados': nao_cadastrados, 'sem_valor': sem_valor,
+                'competencia': next(iter(competencias), None)}
 
     def _depois_de_cadastrar(self, linhas):
         # indicador novo: fator deduzido da planilha (os já cadastrados mantêm

@@ -18,6 +18,12 @@
     {% if eh_admin %}Registros em uso (com itens ou lançamentos ligados a eles) não podem ser excluídos.{% endif %}
 </div>
 
+{% if not grupos and classificacoes is none %}
+<div class="painel" style="position:relative; max-width:820px;">
+    <p>Seu perfil não tem nenhuma página de lançamento de dados com cadastros (Custos, Produção ou SIMAQ).
+        Fale com o administrador do painel.</p>
+</div>
+{% endif %}
 {% for grupo, cadastros in grupos.items() %}
 <div class="grupo-titulo">{{ grupo }}</div>
 <div class="cadastros{{ ' tres' if cadastros | length == 3 }}">
@@ -127,8 +133,10 @@
     <button type="submit" class="btn" form="form-alteracoes">Salvar alterações</button>
 </div>
 
+{% if classificacoes is not none %}
 <div class="grupo-titulo">Classificação de Exames</div>
 {% include '_classificacao_exames.html' %}
+{% endif %}
 
 <script>
     // cadastro opcional (ex.: subcategoria): só as opções da categoria escolhida na mesma linha

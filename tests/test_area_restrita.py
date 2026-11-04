@@ -451,6 +451,34 @@ def test_classificacoes_bloqueada_sem_permissao(cliente, logar):
     assert r.status_code == 403
 
 
+def test_cadastros_so_dos_lancamentos_do_perfil(cliente, logar, monkeypatch):
+    import area_restrita
+    import banco_painel
+    assert usuarios.salvar_perfil(None, 'Simaq', False, ['simaq', 'cadastros']) is None
+    perfil = next(p['id'] for p in usuarios.listar_perfis() if p['nome'] == 'Simaq')
+    assert usuarios.salvar_usuario(None, 'davi', 'Davi', 'senha123', perfil, True) is None
+    with usuarios._conectar() as c:
+        c.execute('UPDATE usuarios SET trocar_senha = 0')
+    logar(next(u['id'] for u in usuarios.listar_usuarios() if u['login'] == 'davi'))
+    monkeypatch.setattr(banco_painel, 'pronto', lambda: True)
+    for cad in banco_painel.CADASTROS:
+        monkeypatch.setattr(cad, 'listar', lambda: [])
+    html = cliente.get('/admin/cadastros').get_data(as_text=True)
+    assert 'id="indicador"' in html and 'id="tipo_indicador"' in html  # SIMAQ: do perfil
+    assert 'id="item_custo"' not in html and 'id="unidade"' not in html and 'id="procedimento"' not in html
+    assert 'id="macrorregiao"' not in html and 'Classificação de Exames' not in html  # só do administrador
+    # nem pelo envio direto
+    post = {'csrf': 'tok', 'nome': 'X'}
+    assert cliente.post('/admin/cadastros/item_custo/salvar', data=post).status_code == 403
+    assert cliente.post('/admin/cadastros/unidade/1/ativo', data=post).status_code == 403
+    assert cliente.post('/admin/cadastros/salvar-alteracoes',
+                        data={'csrf': 'tok', 'r__procedimento__1__nome': 'X'}).status_code == 403
+    assert cliente.post('/admin/classificacoes/salvar', data=post).status_code == 403
+    monkeypatch.setattr(banco_painel.CADASTROS_POR_TABELA['indicador'], 'salvar', lambda *a: None)
+    assert cliente.post('/admin/cadastros/indicador/salvar', data=post).status_code == 302
+    assert area_restrita._PAGINA_DO_GRUPO_CADASTRO.keys() <= {c.grupo for c in banco_painel.CADASTROS}
+
+
 def test_associar_rejeita_dados_invalidos(cliente, logar, admin_id):
     logar(admin_id)
     r = cliente.post('/admin/classificacoes/associar', json={'mudancas': [1, 2]}, headers={'X-CSRF-Token': 'tok'})
