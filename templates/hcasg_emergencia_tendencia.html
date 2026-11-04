@@ -286,11 +286,13 @@ function carregarGraficos() {
       // saídas da emergência por destino, com o total e a média/mediana do total
       const coresDestino = ['#00B2C9', '#3BB5A3', '#F3A133', '#EB600A', '#2E758C', '#0F9688'];
       if (temDados(d.saidas_emergencia_total)) {
-        const series = (d.saidas_emergencia_destinos || [])
-          .map((x, idx) => ({ nome: x.dsc_destino, valores: x.valores, cor: coresDestino[idx % coresDestino.length] }))
-          .filter(s => temDados(s.valores));
+        const todos = (d.saidas_emergencia_destinos || [])
+          .map((x, idx) => ({ nome: x.dsc_destino, valores: x.valores, cor: coresDestino[idx % coresDestino.length] }));
         const titulo = 'Saídas da Emergência por Destino';
-        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, series, d.saidas_emergencia_total, { mediaMediana: true });
+        // tabela com todos os destinos (mesmo os sem saídas no período)
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, todos.filter(s => temDados(s.valores)),
+          d.saidas_emergencia_total,
+          { mediaMediana: true, tabela: 'Destino', linhasTabela: todos, dias: d.risco_mensal && d.risco_mensal.dias });
       }
 
       // pacientes acima de 24 h na emergência (pela data da saída): quantidade e % das saídas
