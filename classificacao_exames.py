@@ -32,6 +32,18 @@ def subconsulta_sql():
             f'JOIN {s}.classificacao_exame c ON c.id = ec.classificacao_id)')
 
 
+def por_exame():
+    """{isn_exame: nome da classificação} dos exames classificados (Gráficos
+    Mensais: a classificação entra depois do cache das solicitações)."""
+    if not banco_painel.pronto():
+        return {}
+    s = schema()
+    with _cursor() as cur:
+        cur.execute(f'SELECT ec.isn_exame, c.nome FROM {s}.exame_classificacao ec '
+                    f'JOIN {s}.classificacao_exame c ON c.id = ec.classificacao_id')
+        return {int(r['isn_exame']): r['nome'] for r in cur.fetchall()}
+
+
 def nomes():
     """Nomes das classificações (filtros dos painéis)."""
     if not banco_painel.pronto():

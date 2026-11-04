@@ -3,6 +3,7 @@ from flask import Flask, render_template, jsonify, request, send_file
 import secrets
 import pandas as pd
 import os
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from indicadores_hcasg import get_filtros as hcasg_get_filtros
 from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
@@ -64,8 +65,10 @@ _MARGEM_FAIXA_EXAMES = timedelta(days=7)
 #                14 SALA DE PARADA - ESTABILIZAÇÃO, 43 SALA MEDICAÇÃO (CARDIO/PNEUMO),
 #                45 SALA MEDICAÇÃO (COVID)
 #   interno    = todas as demais
-_EXAMES_ORIGEM_EXTERNO_SQL = "2, 4, 41"
-_EXAMES_ORIGEM_EMERGENCIA_SQL = "1, 10, 13, 14, 43, 45"
+_EXAMES_ORIGEM_EXTERNO = (2, 4, 41)
+_EXAMES_ORIGEM_EMERGENCIA = (1, 10, 13, 14, 43, 45)
+_EXAMES_ORIGEM_EXTERNO_SQL = ', '.join(map(str, _EXAMES_ORIGEM_EXTERNO))
+_EXAMES_ORIGEM_EMERGENCIA_SQL = ', '.join(map(str, _EXAMES_ORIGEM_EMERGENCIA))
 # filtro de origem da solicitação (a mesma regra da coluna origem: externo vem antes de emergência)
 _EXAMES_FILTRO_ORIGEM_SQL = {
     'externo': f"AND tc.isn_clinica IN ({_EXAMES_ORIGEM_EXTERNO_SQL})",
@@ -75,6 +78,13 @@ _EXAMES_FILTRO_ORIGEM_SQL = {
                f"AND tc.isn_clinica NOT IN ({_EXAMES_ORIGEM_EMERGENCIA_SQL})",
 }
 _EXAMES_ORIGENS = [('interno', 'Interno'), ('externo', 'Externo'), ('emergencia', 'Emergência')]
+
+
+def _origem_exame(isn_clinica):
+    """Origem pela clínica solicitante, como o CASE das consultas (externo antes de emergência)."""
+    if isn_clinica in _EXAMES_ORIGEM_EXTERNO:
+        return 'externo'
+    return 'emergencia' if isn_clinica in _EXAMES_ORIGEM_EMERGENCIA else 'interno'
 
 
 def _faixa_ids_exame_solic(cur, data_inicial, data_final):
@@ -258,6 +268,8 @@ def indicadores():
 
         meses = sorted(df['Mês'].unique())
         indicadores = sorted(df['Indicador'].unique())
+        # % ou ‰ de cada indicador (resultado e meta dos percentuais vêm em fração: ×100 no gráfico)
+        unidades = {str(r['indicador']).strip(): banco_painel.SIMAQ.unidade(r) for r in linhas}
 
         # Gera metas reais para todos os meses e indicadores presentes nos dados
         metas = []
@@ -297,6 +309,7 @@ def indicadores():
         context = {
             'dados_json': dados_completos,
             'metas_json': metas,
+            'unidades': unidades,
             'tipos': sorted(df['Tipo'].unique()),
             'indicadores': indicadores,
             'data_inicial': df['Data'].min().strftime('%Y-%m-%d'),
@@ -555,6 +568,75 @@ def _sql_faixas_tempo():
 
 _SQL_FAIXAS_TEMPO = _sql_faixas_tempo()
 
+# Tabela "Tempo do Exame até a Realização ou Baixa" (Exames e Gráficos
+# Mensais): exames com realização ou baixa no período, solicitados até 2 anos
+# antes dele. Sem índice nas datas de realização e de baixa, só a faixa de ids
+# limita a leitura (a tabela inteira leva mais de 1 minuto); 2 anos cobrem
+# 99,96% dos exames realizados (medido em 13 meses: ficam de fora as baixas
+# de exames solicitados há mais de 2 anos, algumas centenas por ano).
+_JANELA_SOLICITACAO_TEMPO = timedelta(days=730)
+_CAMPOS_TEMPO_EXAMES = ['realizados', *_CHAVES_FAIXAS_TEMPO, 'tempo_soma_dias']
+
+
+def _tempo_exames_no_periodo(data_inicial, data_final):
+    """Exames com realização ou baixa (a data da realização ou, sem ela, a da
+    baixa) no período, por clínica × exame (ids), com as faixas de tempo desde
+    a solicitação (_SQL_FAIXAS_TEMPO, em dias, sem a hora). Em memória por 10
+    minutos (ambulatorio._em_cache): os filtros das páginas são aplicados no
+    resultado (_linhas_tempo_exames)."""
+    def calcular():
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial - _JANELA_SOLICITACAO_TEMPO, data_final)
+            cur.execute(f"""
+                SELECT
+                    tes.isn_clinica,
+                    tes.isn_exame,
+                    COUNT(*) AS realizados,
+                    {_SQL_FAIXAS_TEMPO}
+                    0 AS _
+                FROM t_exame_solic tes
+                WHERE COALESCE(tes.dat_realizacao::date, tes.dat_agendamento) BETWEEN %s AND %s
+                  AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
+                GROUP BY 1, 2
+            """, [data_inicial, data_final, id_ini, id_fim])
+            return [{k: int(r[k]) for k in ['isn_clinica', 'isn_exame', *_CAMPOS_TEMPO_EXAMES]}
+                    for r in cur.fetchall() if r['isn_clinica'] is not None and r['isn_exame'] is not None]
+        finally:
+            conn.close()
+    return ambulatorio._em_cache(('tempo_exames', data_inicial, data_final), calcular)
+
+
+def _cadastros_exames(cur):
+    """{isn_clinica: nome} e {isn_exame: nome} do sistema hospitalar."""
+    cur.execute("SELECT isn_clinica, dsc_clinica FROM t_clinica")
+    clinicas = {int(r['isn_clinica']): r['dsc_clinica'] for r in cur.fetchall()}
+    cur.execute("SELECT isn_exame, dsc_exame FROM t_exame")
+    exames = {int(r['isn_exame']): r['dsc_exame'] for r in cur.fetchall()}
+    return clinicas, exames
+
+
+def _linhas_tempo_exames(data_inicial, data_final, nome_clinica, nome_exame, aceita):
+    """Linhas da tabela de tempo (templates/_tempo_exames.html): por origem ×
+    classificação × exame. aceita(origem, clinica, classificacao, exame) diz
+    se o exame entra (filtros da página)."""
+    classificacao_do_exame = classificacao_exames.por_exame()
+    tabela = {}
+    for r in _tempo_exames_no_periodo(data_inicial, data_final):
+        clinica = nome_clinica.get(r['isn_clinica'])
+        exame = nome_exame.get(r['isn_exame'])
+        if clinica is None or exame is None:
+            continue  # fora dos cadastros, como nos JOIN das outras consultas
+        origem = _origem_exame(r['isn_clinica'])
+        classificacao = classificacao_do_exame.get(r['isn_exame'], 'SEM CLASSIFICAÇÃO')
+        if not aceita(origem, clinica, classificacao, exame):
+            continue
+        t = tabela.setdefault((origem, classificacao, exame), dict.fromkeys(_CAMPOS_TEMPO_EXAMES, 0))
+        for k in t:
+            t[k] += r[k]
+    return [{'origem': o, 'classificacao': c, 'exame': e, **v} for (o, c, e), v in tabela.items()]
+
 
 @app.route('/exames_por_clinica', methods=['GET'])
 def exames_por_clinica():
@@ -576,6 +658,10 @@ def exames_por_clinica():
     if origem_filtro not in _EXAMES_FILTRO_ORIGEM_SQL:
         origem_filtro = 'todos'
 
+    # a consulta da tabela de tempo corre junto com a principal (fica no cache)
+    paralelo = ThreadPoolExecutor(max_workers=1)
+    tempo_pendente = paralelo.submit(_tempo_exames_no_periodo, data_inicial, data_final)
+    paralelo.shutdown(wait=False)
     try:
         conn = get_db_connection()
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -613,8 +699,6 @@ def exames_por_clinica():
                 -- realizados: com realização ou com baixa (os baixados contam como realizados)
                 COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
                 COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
-                -- tempo até a realização ou baixa, em dias (_DIAS_ATE_REALIZACAO_OU_BAIXA)
-                {_SQL_FAIXAS_TEMPO}
                 -- sem data de agendamento (baixa): os cancelados não entram; a base
                 -- do percentual são os solicitados não cancelados
                 COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL AND tes.dat_cancelamento IS NULL) AS sem_agendamento,
@@ -632,9 +716,20 @@ def exames_por_clinica():
             ORDER BY tc.dsc_clinica, te.dsc_exame
         """, params)
         detalhe_rows = cur.fetchall()
+        nome_clinica, nome_exame = _cadastros_exames(cur)
 
         cur.close()
         conn.close()
+
+        # tempo até a realização ou baixa: exames realizados ou baixados no
+        # período (outra consulta, em cache), com os mesmos filtros
+        tempo_pendente.result()
+
+        def aceita(origem, clinica, classificacao, _exame):
+            return ((origem_filtro == 'todos' or origem == origem_filtro)
+                    and (clinica_filtro not in clinicas or clinica == clinica_filtro)
+                    and (classificacao_filtro not in classificacoes or classificacao == classificacao_filtro))
+        tempo_exames = _linhas_tempo_exames(data_inicial, data_final, nome_clinica, nome_exame, aceita)
     except Exception as e:
         return render_template('error.html', message=f"Erro ao carregar dados de exames por clínica: {e}")
 
@@ -647,8 +742,6 @@ def exames_por_clinica():
             'solicitados': int(r['solicitados']),
             'realizados': int(r['realizados']),
             'cancelados': int(r['cancelados']),
-            **{k: int(r[k]) for k in _CHAVES_FAIXAS_TEMPO},
-            'tempo_soma_dias': int(r['tempo_soma_dias']),
             'sem_agendamento': int(r['sem_agendamento']),
             'nao_cancelados': int(r['nao_cancelados']),
         }
@@ -714,6 +807,8 @@ def exames_por_clinica():
         'dados_json': dados_json,
         'resumo_json': resumo_json,
         'resumo_classificacao_json': resumo_classificacao_json,
+        # tabela "Tempo do Exame até a Realização ou Baixa" (templates/_tempo_exames.html)
+        'tempo_exames': tempo_exames,
         'total_geral': total_geral,
     }
 
@@ -722,6 +817,50 @@ def exames_por_clinica():
 
     return render_template('exames_por_clinica.html', **context)
 
+
+
+def _solicitacoes_mensais(data_inicial, data_final):
+    """Solicitações de exame do período por mês × clínica × exame (ids), com os
+    indicadores e as faixas de tempo dos Gráficos Mensais. É a parte demorada
+    da página (lê a t_exame_solic do período: segundos para 12 meses), então
+    fica em memória por 10 minutos (ambulatorio._em_cache) e os filtros de
+    clínica, classificação e exame são aplicados no resultado, sem nova
+    consulta ao banco. A classificação não entra aqui: vem do cadastro atual a
+    cada pedido, para a troca de classificação aparecer na hora."""
+    def calcular():
+        conn = get_db_connection()
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            # faixa de ids das solicitações do período: sem ela a consulta lê a
+            # t_exame_solic inteira (sem índice em dat_solicitacao) e passa de minutos
+            id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial, data_final)
+            # todos os indicadores pelo mês da solicitação
+            cur.execute(f"""
+                SELECT
+                    DATE_TRUNC('month', tes.dat_solicitacao)::date AS mes,
+                    tes.isn_clinica,
+                    tes.isn_exame,
+                    COUNT(*) AS solicitados,
+                    -- realizados: com realização ou com baixa (os baixados contam como realizados)
+                    COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
+                    COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
+                    -- tempo até a realização ou baixa: mesmas faixas da tabela de Exames
+                    {_SQL_FAIXAS_TEMPO}
+                    -- sem data de agendamento, sem os cancelados (como na página Exames)
+                    COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL AND tes.dat_cancelamento IS NULL) AS sem_agendamento
+                FROM t_exame_solic tes
+                WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
+                  AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
+                GROUP BY 1, 2, 3
+            """, [data_inicial, data_final, id_ini, id_fim])
+            return [{k: (v if k == 'mes' or v is None else int(v)) for k, v in r.items()}
+                    for r in cur.fetchall()]
+        finally:
+            conn.close()
+    return ambulatorio._em_cache(('exames_mensais', data_inicial, data_final), calcular)
+
+
+_METRICAS_MENSAIS = ['solicitados', 'realizados', 'cancelados', 'sem_agendamento']
 
 
 @app.route('/graficos_mensais', methods=['GET'])
@@ -746,69 +885,46 @@ def graficos_mensais():
 
     try:
         conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-
-        cur.execute("SELECT dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
-        clinicas = [r['dsc_clinica'] for r in cur.fetchall()]
+        try:
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT isn_clinica, dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
+            linhas_clinica = cur.fetchall()
+            cur.execute("SELECT isn_exame, dsc_exame FROM t_exame ORDER BY dsc_exame")
+            linhas_exame = cur.fetchall()
+        finally:
+            conn.close()
+        clinicas = [r['dsc_clinica'] for r in linhas_clinica]
+        exames = list(dict.fromkeys(r['dsc_exame'] for r in linhas_exame))
+        nome_clinica = {int(r['isn_clinica']): r['dsc_clinica'] for r in linhas_clinica}
+        nome_exame = {int(r['isn_exame']): r['dsc_exame'] for r in linhas_exame}
 
         # classificação dos exames: schema do painel (Administração > Classificação de Exames)
         classificacoes = classificacao_exames.nomes()
+        classificacao_do_exame = classificacao_exames.por_exame()
 
-        cur.execute("""
-            SELECT DISTINCT dsc_exame FROM t_exame ORDER BY dsc_exame
-        """)
-        exames = [r['dsc_exame'] for r in cur.fetchall()]
+        # filtro com valor fora das listas é ignorado (como antes, na consulta)
+        if clinica_filtro not in clinicas:
+            clinica_filtro = 'todos'
+        if classificacao_filtro not in classificacoes:
+            classificacao_filtro = 'todos'
+        if exame_filtro not in exames:
+            exame_filtro = 'todos'
 
-        # faixa de ids das solicitações do período: sem ela a consulta lê a
-        # t_exame_solic inteira (sem índice em dat_solicitacao) e passa de minutos
-        id_ini, id_fim = _faixa_ids_exame_solic(cur, data_inicial, data_final)
-        params = [data_inicial, data_final, id_ini, id_fim]
-        filtros_sql = ""
+        # as duas consultas do período ao mesmo tempo (a de tempo fica no cache)
+        with ThreadPoolExecutor(max_workers=1) as paralelo:
+            tempo_pendente = paralelo.submit(_tempo_exames_no_periodo, data_inicial, data_final)
+            rows = _solicitacoes_mensais(data_inicial, data_final)
+            tempo_pendente.result()
 
-        if clinica_filtro != 'todos' and clinica_filtro in clinicas:
-            filtros_sql += " AND tc.dsc_clinica = %s"
-            params.append(clinica_filtro)
-
-        if classificacao_filtro != 'todos' and classificacao_filtro in classificacoes:
-            filtros_sql += " AND tec.classificacao = %s"
-            params.append(classificacao_filtro)
-
-        if exame_filtro != 'todos' and exame_filtro in exames:
-            filtros_sql += " AND te.dsc_exame = %s"
-            params.append(exame_filtro)
-
-        # Já agrupado por mês × classificação, que é o que os gráficos mostram
-        # (antes vinha uma linha por dia × clínica × classificação × exame, dezenas
-        # de MB para 12 meses). Todos os indicadores pelo mês da solicitação.
-        cur.execute(f"""
-            SELECT
-                DATE_TRUNC('month', tes.dat_solicitacao)::date AS mes,
-                COALESCE(tec.classificacao, 'SEM CLASSIFICAÇÃO') AS classificacao,
-                COUNT(*) AS solicitados,
-                -- realizados: com realização ou com baixa (os baixados contam como realizados)
-                COUNT(*) FILTER (WHERE tes.dat_realizacao IS NOT NULL OR tes.dat_agendamento IS NOT NULL) AS realizados,
-                COUNT(*) FILTER (WHERE tes.dat_cancelamento IS NOT NULL) AS cancelados,
-                -- tempo até a realização ou baixa: mesmas faixas da tabela de Exames
-                {_SQL_FAIXAS_TEMPO}
-                -- sem data de agendamento, sem os cancelados (como na página Exames)
-                COUNT(*) FILTER (WHERE tes.dat_agendamento IS NULL AND tes.dat_cancelamento IS NULL) AS sem_agendamento
-            FROM t_exame_solic tes
-            JOIN t_clinica tc ON tc.isn_clinica = tes.isn_clinica
-            JOIN t_exame te ON te.isn_exame = tes.isn_exame
-            LEFT JOIN {classificacao_exames.subconsulta_sql()} tec ON tec.isn_exame = tes.isn_exame
-            WHERE tes.dat_solicitacao::date BETWEEN %s AND %s
-              AND tes.isn_exame_solic >= %s AND tes.isn_exame_solic < %s
-              {filtros_sql}
-            GROUP BY 1, 2
-        """, params)
-        rows = cur.fetchall()
-
-        cur.close()
-        conn.close()
+        # tabela de tempo: exames realizados ou baixados no período (outra
+        # consulta, em cache), com os mesmos filtros
+        def aceita(_origem, clinica, classificacao, exame):
+            return ((clinica_filtro == 'todos' or clinica == clinica_filtro)
+                    and (classificacao_filtro == 'todos' or classificacao == classificacao_filtro)
+                    and (exame_filtro == 'todos' or exame == exame_filtro))
+        tempo_exames = _linhas_tempo_exames(data_inicial, data_final, nome_clinica, nome_exame, aceita)
     except Exception as e:
         return render_template('error.html', message=f"Erro ao carregar dados dos gráficos mensais: {e}")
-
-    metricas = ['solicitados', 'realizados', 'cancelados', 'sem_agendamento']
 
     # Todos os meses do período (inclusive os sem nenhum exame), em ordem.
     meses = []
@@ -818,20 +934,31 @@ def graficos_mensais():
         mes = (mes.replace(day=28) + timedelta(days=4)).replace(day=1)
     idx_mes = {m: i for i, m in enumerate(meses)}
 
-    classificacoes_graf = sorted({r['classificacao'] for r in rows})
-    series = {m: {c: [0] * len(meses) for c in classificacoes_graf} for m in metricas}
+    # séries dos gráficos: por classificação, métrica e mês
+    por_classificacao = {}
     # tempo até a realização ou baixa: por faixa e mês (todas as classificações)
     tempo = {k: [0] * len(meses) for k in _CHAVES_FAIXAS_TEMPO}
     for r in rows:
         i = idx_mes.get(r['mes'])
-        if i is None:
+        clinica = nome_clinica.get(r['isn_clinica'])
+        exame = nome_exame.get(r['isn_exame'])
+        if i is None or clinica is None or exame is None:
+            continue  # clínica ou exame fora dos cadastros: fora, como no JOIN de antes
+        classificacao = classificacao_do_exame.get(r['isn_exame'], 'SEM CLASSIFICAÇÃO')
+        if ((clinica_filtro != 'todos' and clinica != clinica_filtro)
+                or (classificacao_filtro != 'todos' and classificacao != classificacao_filtro)
+                or (exame_filtro != 'todos' and exame != exame_filtro)):
             continue
-        for m in metricas:
-            series[m][r['classificacao']][i] += int(r[m])
+        serie = por_classificacao.setdefault(
+            classificacao, {m: [0] * len(meses) for m in _METRICAS_MENSAIS})
+        for m in _METRICAS_MENSAIS:
+            serie[m][i] += r[m]
         for k in _CHAVES_FAIXAS_TEMPO:
-            tempo[k][i] += int(r[k])
+            tempo[k][i] += r[k]
 
-    total_geral = {m: sum(sum(v) for v in series[m].values()) for m in metricas}
+    classificacoes_graf = sorted(por_classificacao)
+    series = {m: {c: por_classificacao[c][m] for c in classificacoes_graf} for m in _METRICAS_MENSAIS}
+    total_geral = {m: sum(sum(v) for v in series[m].values()) for m in _METRICAS_MENSAIS}
 
     kpis = {
         'total_solicitados': total_geral['solicitados'],
@@ -852,6 +979,7 @@ def graficos_mensais():
         'clinica_selecionada': clinica_filtro,
         'classificacao_selecionada': classificacao_filtro,
         'exame_selecionado': exame_filtro,
+        'origens': _EXAMES_ORIGENS,
         'kpis': kpis,
         'graficos': {
             'meses': [m.strftime('%m/%Y') for m in meses],
@@ -860,6 +988,8 @@ def graficos_mensais():
             'faixas_tempo': [{'chave': k, 'rotulo': r} for k, r in zip(_CHAVES_FAIXAS_TEMPO, _ROTULOS_FAIXAS_TEMPO)],
             'tempo': tempo,
         },
+        # tabela "Tempo do Exame até a Realização ou Baixa" (templates/_tempo_exames.html)
+        'tempo_exames': tempo_exames,
         'total_geral': total_geral,
     }
 

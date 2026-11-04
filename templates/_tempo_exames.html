@@ -1,0 +1,150 @@
+{# Tabela "Tempo do Exame até a Realização ou Baixa (por Classificação e
+   Exame)", nas páginas Exames e Gráficos Mensais: todas as origens juntas e,
+   abaixo do total geral, um botão por origem (externo, emergência, interno)
+   que abre a tabela dela, uma de cada vez (todas começam fechadas).
+
+   secao(origens): a marcação, com origens = [(valor, nome), ...].
+   script(): o objeto TempoExames; a página chama TempoExames.configurar() uma
+   vez e TempoExames.atualizar(linhas, origem) a cada dado novo. Cada linha:
+   origem, classificacao, exame, realizados, tempo_<faixa> e tempo_soma_dias. #}
+
+{% macro _tabela(id) %}
+    <div class="tabela-rolagem">
+    <table class="tabela-tempo" id="{{ id }}">
+        <thead>
+            <tr>
+                <th rowspan="2">Classificação</th>
+                <th rowspan="2">Exame</th>
+                <th colspan="12" class="grupo-origem">Até a Realização ou Baixa</th>
+            </tr>
+            <tr class="sub-origem">
+                <th>Realizados</th><th>Média (dias)</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th>
+                <th>4 a 10 dias</th><th>10 a 15 dias</th><th>15 a 30 dias</th><th>30 a 60 dias</th>
+                <th>60 a 120 dias</th><th>120 a 180 dias</th><th>Mais de 180 dias</th>
+            </tr>
+        </thead>
+        <tbody></tbody>
+    </table>
+    </div>
+{% endmacro %}
+
+{% macro secao(origens) %}
+<div class="tempo-exames">
+    {{ _tabela('tabela-tempo-todos') }}
+    {# na ordem das colunas de "Total por Exame": externo, emergência, interno #}
+    {% set nome_origem = dict(origens) %}
+    {% set origens_tempo = ['externo', 'emergencia', 'interno'] | select('in', nome_origem) | list %}
+    <div class="botoes-origem-tempo">
+        {% for valor in origens_tempo %}
+        <button type="button" class="botao-origem-tempo" data-origem="{{ valor }}" aria-expanded="false">{{ nome_origem[valor] }}</button>
+        {% endfor %}
+    </div>
+    {# sem id nos div: em Gráficos Mensais, div[id] do gráfico tem altura mínima #}
+    {% for valor in origens_tempo %}
+    <div class="secao-tempo" data-origem="{{ valor }}" hidden>
+        <h5>{{ nome_origem[valor] }}</h5>
+        {{ _tabela('tabela-tempo-' ~ valor) }}
+    </div>
+    {% endfor %}
+</div>
+{% endmacro %}
+
+{% macro script() %}
+<script>
+    // Tabelas de tempo por classificação e exame: da solicitação até a
+    // realização ou baixa. Os percentuais são sobre os realizados; a média em
+    // dias é a soma dos dias ÷ os exames das faixas.
+    const TempoExames = (() => {
+        const ORIGENS = ['externo', 'emergencia', 'interno'];
+        const FAIXAS = ['ate_1d', '1_2d', '2_4d', '4_10d', '10_15d', '15_30d', '30_60d',
+                        '60_120d', '120_180d', 'acima_180d'].map(f => 'tempo_' + f);
+        const CAMPOS = ['realizados', ...FAIXAS, 'tempo_soma_dias'];
+        const numero = n => (n || 0).toLocaleString('pt-BR');
+
+        function mediaDias(v) {
+            const n = FAIXAS.reduce((s, k) => s + v[k], 0);
+            return n ? (v.tempo_soma_dias / n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—';
+        }
+
+        // origem 'todos' = a tabela com todas as origens juntas
+        function desenhar(linhas, origem) {
+            const novo = () => Object.fromEntries(CAMPOS.map(k => [k, 0]));
+            const grupos = {};
+            const geral = novo();
+            linhas.filter(r => origem === 'todos' || r.origem === origem).forEach(r => {
+                const g = grupos[r.classificacao] ||= { total: novo(), exames: {} };
+                const e = g.exames[r.exame] ||= novo();
+                CAMPOS.forEach(k => {
+                    e[k] += r[k] || 0;
+                    g.total[k] += r[k] || 0;
+                    geral[k] += r[k] || 0;
+                });
+            });
+            const pct = (n, total) => total ? ` <small style="color:#6b7f86;">(${(n / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%)</small>` : '';
+            const celulas = v => `<td class="inicio-grupo">${numero(v.realizados)}</td>` +
+                `<td class="col-media">${mediaDias(v)}</td>` +
+                FAIXAS.map(k => `<td>${numero(v[k])}${pct(v[k], v.realizados)}</td>`).join('');
+
+            let html = '';
+            Object.keys(grupos).sort().forEach((classificacao, grupo) => {
+                const g = grupos[classificacao];
+                const exames = Object.entries(g.exames).filter(([, v]) => v.realizados > 0);
+                if (exames.length === 0) return;  // classificação sem realização nem baixa
+                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#007C6B;">${exames.length} exames</td>${celulas(g.total)}
+                </tr>`;
+                exames
+                    .sort((a, b) => b[1].realizados - a[1].realizados || a[0].localeCompare(b[0]))
+                    .forEach(([exame, v]) => {
+                        html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
+                            <td></td>
+                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                        </tr>`;
+                    });
+            });
+            if (html) {
+                html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
+            } else {
+                html = `<tr><td colspan="14" style="text-align:center;color:#999;">Nenhum exame realizado${origem === 'todos' ? '' : ' desta origem'} no período selecionado.</td></tr>`;
+            }
+            document.querySelector(`#tabela-tempo-${origem} tbody`).innerHTML = html;
+        }
+
+        // abre a tabela da origem e fecha a que estiver aberta; clicar no aberto fecha
+        function abrir(origem) {
+            document.querySelectorAll('.botao-origem-tempo').forEach(b => {
+                const aberto = b.dataset.origem === origem && b.getAttribute('aria-expanded') !== 'true';
+                b.setAttribute('aria-expanded', aberto);
+                b.classList.toggle('ativo', aberto);
+                document.querySelector(`.secao-tempo[data-origem="${b.dataset.origem}"]`).hidden = !aberto;
+            });
+        }
+
+        return {
+            configurar() {
+                // expande/recolhe os exames de uma classificação ao clicar nela
+                document.querySelectorAll('.tempo-exames .tabela-tempo tbody').forEach(tbody =>
+                    tbody.addEventListener('click', e => {
+                        const header = e.target.closest('tr.clinica-toggle-row');
+                        if (!header) return;
+                        const expandido = header.classList.toggle('expanded');
+                        header.querySelector('.toggle-icon').textContent = expandido ? '▼' : '▶';
+                        tbody.querySelectorAll(`tr.clinica-exame-row[data-grupo="${header.dataset.grupo}"]`)
+                            .forEach(tr => { tr.style.display = expandido ? '' : 'none'; });
+                    }));
+                document.querySelectorAll('.botao-origem-tempo').forEach(b =>
+                    b.addEventListener('click', () => abrir(b.dataset.origem)));
+            },
+            // origem: filtro de origem da página; com uma origem, só o botão dela aparece
+            atualizar(linhas, origem = 'todos') {
+                document.querySelectorAll('.botao-origem-tempo').forEach(b => {
+                    b.hidden = origem !== 'todos' && b.dataset.origem !== origem;
+                    if (b.hidden && b.classList.contains('ativo')) abrir(b.dataset.origem);
+                });
+                ['todos', ...ORIGENS].forEach(o => desenhar(linhas || [], o));
+            },
+        };
+    })();
+</script>
+{% endmacro %}

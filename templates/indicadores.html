@@ -94,6 +94,10 @@
             // Dados carregados do Flask
             const dadosIndicadores = JSON.parse('{{ dados_json|tojson|safe }}') || [];
             const metasMensais = JSON.parse('{{ metas_json|tojson|safe }}') || [];
+            // % ou ‰ de cada indicador: percentuais vêm em fração (0,0855) e aparecem ×100 (8,55%);
+            // a densidade de infecção (fator 1000) já vem por mil
+            const unidades = {{ unidades|tojson }};
+            const unidadeDe = indicador => unidades[indicador] || { sufixo: '', escala: 1 };
 
             // Função para calcular e atualizar a média do indicador selecionado
             function atualizarMediaIndicador(indicadorSelecionado, dataInicial, dataFinal) {
@@ -105,12 +109,13 @@
                 });
 
                 const total = dadosFiltrados.reduce((sum, item) => sum + item['Quantidade'], 0);
-                const media = dadosFiltrados.length > 0 ? total / dadosFiltrados.length : 0;
+                const un = unidadeDe(indicadorSelecionado);
+                const media = dadosFiltrados.length > 0 ? total / dadosFiltrados.length * un.escala : 0;
 
                 document.getElementById('media-indicador').textContent = media.toLocaleString('pt-BR', {
                     minimumFractionDigits: 2,
                     maximumFractionDigits: 2
-                });
+                }) + un.sufixo;
 
                 return media; // Retornar a média para uso no gráfico
             }
@@ -165,24 +170,25 @@
                 // Garante que os meses estejam ordenados e únicos
                 const meses = [...new Set(dadosFiltrados.map(item => item['Mês']))].sort();
 
-                // Para cada mês, pega o resultado e a meta (meta pode ser 0)
+                // Para cada mês, pega o resultado e a meta (meta pode ser 0), na unidade do indicador
+                const un = unidadeDe(indicadorSelecionado);
                 const resultados = meses.map(mes => {
                     const item = dadosFiltrados.find(i => i['Mês'] === mes);
-                    return item ? item['Quantidade'] : 0;
+                    return item ? item['Quantidade'] * un.escala : 0;
                 });
 
                 // Trazer sempre a meta do indicador para cada mês, mesmo que seja 0
                 const metas = meses.map(mes => {
                     const meta = metasMensais.find(meta => meta['Indicador'] === indicadorSelecionado && meta['Mês'] === mes);
-                    return meta ? meta['Meta'] : 0;
+                    return meta ? meta['Meta'] * un.escala : 0;
                 });
 
                 // Calcular a média para o indicador selecionado
                 const media = atualizarMediaIndicador(indicadorSelecionado, dataInicial, dataFinal);
                 const linhaMedia = Array(meses.length).fill(media);
 
-                // valores no formato brasileiro (até 2 casas: há indicadores em taxa)
-                const fmt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+                // valores no formato brasileiro (até 2 casas), com % ou ‰ do indicador
+                const fmt = v => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + un.sufixo;
 
                 // Resultado mês a mês, com o valor escrito dentro de cada barra
                 const traceBarras = {
@@ -243,7 +249,8 @@
                 const layout = {
                     title: `Resultado Mensal com Meta e Média - Indicador: ${indicadorSelecionado}`,
                     xaxis: { title: 'Mês' },
-                    yaxis: { title: 'Quantidade', range: [0, (maiorValor || 1) * 1.18] },
+                    yaxis: { title: { '%': 'Percentual (%)', '‰': 'Por mil (‰)' }[un.sufixo] || 'Quantidade',
+                             ticksuffix: un.sufixo, range: [0, (maiorValor || 1) * 1.18] },
                     separators: ',.',
                     hovermode: 'x unified',
                     plot_bgcolor: 'rgba(0,0,0,0)',

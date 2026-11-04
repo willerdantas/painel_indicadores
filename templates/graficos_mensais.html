@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- import '_tempo_exames.html' as tabela_tempo -%}
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -118,6 +119,16 @@
             </div>
         </div>
 
+        <div class="content">
+            <div class="chart-container sem-grafico">
+                <div class="chart-header">
+                    <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame)</h4>
+                </div>
+                <p class="nota-tempo">Exames com data de realização ou, sem realização, data de baixa no período filtrado (solicitados até 2 anos antes). O tempo de cada exame é a diferença em dias entre essa data e a data da solicitação, sem a hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame. Diferente do gráfico acima, que é pelo mês da solicitação. Os botões abaixo do total geral abrem a tabela de cada origem: Externo (Ambulatório, Exame e UNACON), Emergência (Emergência, Salas de Parada e Salas de Medicação) e Interno (demais clínicas).</p>
+                {{ tabela_tempo.secao(origens) }}
+            </div>
+        </div>
+
         </div>
     </div>
 
@@ -128,8 +139,10 @@
         </div>
     </div>
 
+    {{ tabela_tempo.script() }}
     <script>
         let dadosGraficos = {{ graficos|tojson }};
+        let dadosTempoExames = {{ tempo_exames|tojson }};
 
         function formatarNumero(n) {
             return (n || 0).toLocaleString('pt-BR');
@@ -236,6 +249,7 @@
         function atualizarGraficos() {
             GRAFICOS.forEach(desenharGrafico);
             desenharGraficoTempo();
+            TempoExames.atualizar(dadosTempoExames);
         }
 
         function mostrarCarregamento() {
@@ -255,6 +269,7 @@
 
         function aplicarDadosRecebidos(data) {
             dadosGraficos = data.graficos || {};
+            dadosTempoExames = data.tempo_exames || [];
 
             document.getElementById('data-inicial').value = data.data_inicial;
             document.getElementById('data-final').value = data.data_final;
@@ -300,6 +315,7 @@
         }
 
         document.addEventListener('DOMContentLoaded', () => {
+            TempoExames.configurar();
             atualizarGraficos();
 
             document.getElementById('form-filtros').addEventListener('submit', (e) => {

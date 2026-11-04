@@ -293,6 +293,12 @@ class TabelaMensal:
     def _ajustar_linha_planilha(self, linha):
         """Ajuste específico da tabela em cada linha lida da planilha."""
 
+    # unidade de exibição (ex.: percentual): ver TabelaSimaq.unidade
+    colunas_na_unidade = ()
+
+    def unidade(self, item):
+        return None
+
     def importar_planilha(self, caminho, usuario, criar_cadastros=False):
         return self.salvar(self.ler_planilha(caminho), usuario, criar_cadastros)
 
@@ -573,6 +579,24 @@ class TabelaSimaq(TabelaNormalizada):
             with _cursor() as cur:
                 self._aplicar_fatores(cur, linhas)
         return qtd
+
+    # Unidade do resultado e da meta na tela: o banco guarda a fração nos
+    # percentuais (0,0855 = 8,55%; meta 0,1 = 10%), que aparecem ×100 com "%";
+    # com fator 1000 (densidade de infecção) o resultado já sai por mil, e a meta
+    # é digitada por mil (4,6‰). Os demais (Número de..., Tempo Médio...) são números.
+    colunas_na_unidade = ('resultado', 'meta')
+    PREFIXOS_PERCENTUAL = ('taxa', 'indice', 'percentual')
+
+    def unidade(self, item):
+        """{'sufixo', 'escala'} do indicador (item com 'indicador' e 'fator')."""
+        fator = item.get('fator') or 1
+        if fator == 1000:
+            return {'sufixo': '‰', 'escala': 1}
+        if fator == 100:
+            return {'sufixo': '%', 'escala': 1}
+        if fator == 1 and self._nome_comparavel(item['indicador']).startswith(self.PREFIXOS_PERCENTUAL):
+            return {'sufixo': '%', 'escala': 100}
+        return {'sufixo': '', 'escala': 1}
 
     # planilha "Coleta de dados_relatorio" exportada do SIMAQ (aba data, cabeçalho
     # na 1ª linha): B = competência ("Setembro de 2026"), C = indicador,

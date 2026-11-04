@@ -38,6 +38,8 @@
             Os itens da grade vêm das tabelas de cadastro; para incluir ou renomear, use a tela Cadastros.
             {% for c in t.colunas if c.do_item %}{{ c.rotulo }} é do cadastro do item (tela Cadastros).{% endfor %}
             {% for c in t.colunas if c.calculada %}<br>{{ c.rotulo }} é calculado: {{ c.descricao }}.{% endfor %}
+            {% if t.colunas_na_unidade %}<br>Taxas, índices e percentuais: resultado e meta em % (digite 10 para 10%);
+                densidade de infecção (fator 1.000): por mil (‰).{% endif %}
         </div>
 
         <div class="rolagem">
@@ -61,10 +63,12 @@
                         {% for c in t.campos_chave %}<input type="hidden" name="k__{{ c }}__{{ n }}" value="{{ l.chaves[c] }}">{% endfor %}
                     </td>
                     {% for c in t.colunas %}
+                    {# SIMAQ: % ou ‰ do indicador no resultado e na meta #}
+                    {% set sufixo = l.unidade.sufixo if l.unidade and c.nome in t.colunas_na_unidade else '' %}
                     {% if not c.editavel %}
-                    <td class="calculada">{{ l.valores[c.nome] | num_br(c.formato) }}</td>
+                    <td class="calculada">{{ l.valores[c.nome] | num_br(c.formato) }}{% if sufixo and l.valores[c.nome] is not none %}{{ sufixo }}{% endif %}</td>
                     {% else %}
-                    <td class="{{ 'texto' if c.formato == 'texto' else 'valor' }}">
+                    <td class="{{ 'texto' if c.formato == 'texto' else 'valor' }}{{ ' com-unidade' if sufixo }}"{% if sufixo %} data-unidade="{{ sufixo }}"{% endif %}>
                         <input type="text" name="v__{{ c.nome }}__{{ n }}" value="{{ l.valores[c.nome] | num_br(c.formato) }}"
                                {% if c.formato != 'texto' %}inputmode="decimal"{% endif %}
                                class="{{ 'campo-total' if c.total }} {{ 'herdado' if c.nome in l.herdados }}"

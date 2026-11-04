@@ -411,6 +411,43 @@ def test_importacao_coleta_simaq(tmp_path, monkeypatch):
     assert t._competencia('Março de 2026') == '2026-03' and t._competencia('xyz') is None
 
 
+def test_unidade_dos_indicadores_simaq():
+    u = banco_painel.SIMAQ.unidade
+    pct, mil, num = {'sufixo': '%', 'escala': 100}, {'sufixo': '‰', 'escala': 1}, {'sufixo': '', 'escala': 1}
+    assert u({'indicador': 'Taxa de Mortalidade Institucional', 'fator': 1}) == pct
+    assert u({'indicador': 'Índice de Satisfação do Usuário', 'fator': 1}) == pct
+    assert u({'indicador': 'Percentual de Pacientes Classificados', 'fator': 1}) == pct
+    assert u({'indicador': 'Densidade de Incidência de Infecção Hospitalar', 'fator': 1000}) == mil  # por mil
+    assert u({'indicador': 'Tempo Médio de Permanência', 'fator': 1}) == num
+    assert u({'indicador': 'Número de Internações', 'fator': 1}) == num
+    assert banco_painel.PRODUCAO.unidade({'procedimento': 'X'}) is None
+
+
+def test_lancar_simaq_meta_em_percentual_grava_fracao(monkeypatch):
+    import area_restrita
+    import painel
+    from flask import g
+    t = banco_painel.SIMAQ
+    monkeypatch.setattr(banco_painel, 'pronto', lambda: True)
+    monkeypatch.setattr(t, 'itens', lambda antes_de=None: [
+        {'tipo': 'ESTRATÉGICO', 'indicador': 'Taxa de Ocupação Hospitalar', 'fator': 1, 'ativo': True},
+        {'tipo': 'ESTRATÉGICO', 'indicador': 'Densidade de Infecção', 'fator': 1000, 'ativo': True}])
+    gravadas = []
+    monkeypatch.setattr(t, 'salvar', lambda linhas, usuario: gravadas.extend(linhas))
+    monkeypatch.setattr(t, 'do_mes', lambda mes: {})
+    monkeypatch.setattr(t, 'excluir', lambda mes, chaves: None)
+    dados = {'mes': '2026-10',
+             'k__tipo__1': 'ESTRATÉGICO', 'k__indicador__1': 'Taxa de Ocupação Hospitalar',
+             'v__numerador__1': '14230', 'v__denominador__1': '12558', 'v__meta__1': '98,55',
+             'k__tipo__2': 'ESTRATÉGICO', 'k__indicador__2': 'Densidade de Infecção',
+             'v__numerador__2': '43', 'v__denominador__2': '14807', 'v__meta__2': '4,6'}
+    with painel.app.test_request_context('/admin/simaq/salvar', method='POST', data=dados):
+        g.usuario = {'login': 'teste'}
+        area_restrita.admin_lancamento_salvar('simaq')
+    metas = {l['indicador']: l['meta'] for l in gravadas}
+    assert metas == {'Taxa de Ocupação Hospitalar': 0.9855, 'Densidade de Infecção': 4.6}  # % -> fração; ‰ como está
+
+
 def test_importacao_cadastra_itens_novos(monkeypatch):
     t = banco_painel.SIMAQ
     linhas = [{'mes': '2026-09', 'tipo': 'ESTRATÉGICO', 'indicador': 'Novo', 'numerador': 1, 'denominador': 2},
@@ -813,3 +850,107 @@ def test_emergencia_municipio_sem_uf_vai_para_a_uf_predominante():
     assert com_uf('SAO JOSE') == 'SAO JOSE'  # dividido entre UFs: fica como está
     assert com_uf('CAUCAIA') == 'CAUCAIA'    # sem a versão com UF no período
     assert com_uf('Sem município') == 'Sem município'
+
+
+def test_graficos_mensais_filtra_em_memoria_e_monta_tabela_de_tempo(cliente, monkeypatch):
+    """Gráficos Mensais: as solicitações do período vêm de uma consulta só (em
+    cache); classificação, filtros e a tabela de tempo por origem saem dela."""
+    import datetime as dt
+    import painel
+    import classificacao_exames
+
+    class Cursor:
+        def execute(self, sql, params=None):
+            self.linhas = ([{'isn_clinica': 2, 'dsc_clinica': 'AMBULATORIO'}, {'isn_clinica': 1, 'dsc_clinica': 'EMERGENCIA'},
+                            {'isn_clinica': 9, 'dsc_clinica': 'UTI'}] if 't_clinica' in sql else
+                           [{'isn_exame': 10, 'dsc_exame': 'HEMOGRAMA'}, {'isn_exame': 11, 'dsc_exame': 'HEMOGRAMA'},
+                            {'isn_exame': 20, 'dsc_exame': 'RAIO X'}])
+
+        def fetchall(self):
+            return self.linhas
+
+    class Conexao:
+        def cursor(self, **_):
+            return Cursor()
+
+        def close(self):
+            pass
+    monkeypatch.setattr(painel, 'get_db_connection', Conexao)
+    monkeypatch.setattr(classificacao_exames, 'nomes', lambda: ['IMAGEM', 'LABORATORIO'])
+    monkeypatch.setattr(classificacao_exames, 'por_exame', lambda: {10: 'LABORATORIO', 11: 'LABORATORIO', 20: 'IMAGEM'})
+    zeros = dict.fromkeys(painel._CHAVES_FAIXAS_TEMPO, 0)
+
+    def linha(mes, clinica, exame, realizados, ate_1d):
+        return {'mes': dt.date(2026, mes, 1), 'isn_clinica': clinica, 'isn_exame': exame, 'solicitados': realizados + 1,
+                'realizados': realizados, 'cancelados': 1, 'sem_agendamento': 0,
+                **zeros, 'tempo_ate_1d': ate_1d, 'tempo_soma_dias': realizados - ate_1d}
+    consultas = []
+
+    def solicitacoes(ini, fim):
+        consultas.append((ini, fim))
+        return [linha(9, 2, 10, 4, 3), linha(10, 2, 11, 2, 2), linha(10, 1, 20, 5, 5), linha(10, 9, 10, 1, 1),
+                linha(10, 77, 10, 50, 50)]  # clínica fora do cadastro: não entra
+    monkeypatch.setattr(painel, '_solicitacoes_mensais', solicitacoes)
+
+    # tabela de tempo: outra consulta, pelos exames realizados ou baixados no período
+    def tempo(clinica, exame, realizados, ate_1d, soma):
+        return {'isn_clinica': clinica, 'isn_exame': exame, 'realizados': realizados,
+                **zeros, 'tempo_ate_1d': ate_1d, 'tempo_soma_dias': soma}
+    monkeypatch.setattr(painel, '_tempo_exames_no_periodo', lambda ini, fim: [
+        tempo(2, 10, 7, 4, 9), tempo(2, 11, 3, 3, 0), tempo(1, 20, 6, 6, 0), tempo(9, 10, 2, 1, 1),
+        tempo(77, 10, 40, 40, 0)])  # clínica fora do cadastro: não entra
+    xhr = {'X-Requested-With': 'XMLHttpRequest'}
+
+    r = cliente.get('/graficos_mensais?data_inicial=2026-09-01&data_final=2026-10-31', headers=xhr).get_json()
+    assert r['graficos']['series']['realizados'] == {'IMAGEM': [0, 5], 'LABORATORIO': [4, 3]}
+    assert r['kpis']['total_solicitados'] == 16
+    assert r['graficos']['tempo']['tempo_ate_1d'] == [3, 8]
+    tabela = {(t['origem'], t['exame']): (t['realizados'], t['tempo_ate_1d'], t['tempo_soma_dias']) for t in r['tempo_exames']}
+    # os dois HEMOGRAMA (ids 10 e 11) do ambulatório viram uma linha só, na origem externo
+    assert tabela == {('externo', 'HEMOGRAMA'): (10, 7, 9), ('emergencia', 'RAIO X'): (6, 6, 0), ('interno', 'HEMOGRAMA'): (2, 1, 1)}
+
+    r = cliente.get('/graficos_mensais?data_inicial=2026-09-01&data_final=2026-10-31&classificacao=IMAGEM'
+                    '&clinica=EMERGENCIA', headers=xhr).get_json()
+    assert r['graficos']['series']['realizados'] == {'IMAGEM': [0, 5]}
+    assert [t['exame'] for t in r['tempo_exames']] == ['RAIO X']
+    # os filtros não entram na consulta: o mesmo período, a mesma chave do cache
+    assert consultas == [(dt.date(2026, 9, 1), dt.date(2026, 10, 31))] * 2
+
+    pagina = cliente.get('/graficos_mensais?data_inicial=2026-09-01&data_final=2026-10-31').get_data(as_text=True)
+    assert 'id="tabela-tempo-todos"' in pagina and pagina.count('class="botao-origem-tempo"') == 3
+    assert '"origem": "emergencia"' in pagina  # os dados da tabela chegam ao JavaScript da página
+
+
+def test_tempo_exames_pelos_realizados_ou_baixados_no_periodo(monkeypatch):
+    """Tabela de tempo: exames com realização (ou, sem ela, baixa) no período,
+    buscando as solicitações até 2 anos antes; o tempo é em dias, sem a hora."""
+    import datetime as dt
+    import ambulatorio
+    import painel
+    faixas, consultas = [], []
+
+    class Cursor:
+        def execute(self, sql, params):
+            consultas.append((sql, params))
+
+        def fetchall(self):
+            return [{'isn_clinica': 2, 'isn_exame': 10, 'realizados': 3, **dict.fromkeys(painel._CHAVES_FAIXAS_TEMPO, 1),
+                     'tempo_soma_dias': 5, '_': 0}]
+
+    class Conexao:
+        def cursor(self, **_):
+            return Cursor()
+
+        def close(self):
+            pass
+    monkeypatch.setattr(painel, 'get_db_connection', Conexao)
+    monkeypatch.setattr(painel, '_faixa_ids_exame_solic', lambda cur, ini, fim: faixas.append((ini, fim)) or (100, 200))
+    monkeypatch.setattr(ambulatorio, '_em_cache', lambda chave, calcular: calcular())
+
+    linhas = painel._tempo_exames_no_periodo(dt.date(2026, 10, 1), dt.date(2026, 10, 31))
+    assert faixas == [(dt.date(2024, 10, 1), dt.date(2026, 10, 31))]  # solicitações de até 2 anos antes
+    sql, params = consultas[0]
+    assert 'COALESCE(tes.dat_realizacao::date, tes.dat_agendamento) BETWEEN %s AND %s' in sql
+    assert '- tes.dat_solicitacao::date' in sql  # dias entre as datas, sem a hora
+    assert params == [dt.date(2026, 10, 1), dt.date(2026, 10, 31), 100, 200]
+    assert linhas[0]['realizados'] == 3 and linhas[0]['tempo_soma_dias'] == 5 and '_' not in linhas[0]

@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- import '_tempo_exames.html' as tabela_tempo -%}
 <!doctype html>
 <html lang="pt-BR">
 <head>
@@ -120,32 +121,13 @@
             </div>
         </div>
 
-        {# uma seção por origem da solicitação (interno, externo, emergência) #}
-        {% for valor, nome in origens %}
-        <div class="content secao-tempo" data-origem="{{ valor }}">
+        <div class="content">
             <div class="chart-container">
-                <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame) — {{ nome }}</h4>
-                <p class="nota-origem">Da solicitação até a realização ou, sem realização, até a baixa, sobre os exames realizados (com realização ou baixa). Em dias de calendário, pela diferença entre as datas: a baixa não tem hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame realizado.</p>
-                <div class="tabela-rolagem">
-                <table class="tabela-tempo" id="tabela-tempo-{{ valor }}">
-                    <thead>
-                        <tr>
-                            <th rowspan="2">Classificação</th>
-                            <th rowspan="2">Exame</th>
-                            <th colspan="12" class="grupo-origem">Até a Realização ou Baixa</th>
-                        </tr>
-                        <tr class="sub-origem">
-                            <th>Realizados</th><th>Média (dias)</th><th>Até 1 dia</th><th>1 a 2 dias</th><th>2 a 4 dias</th>
-                            <th>4 a 10 dias</th><th>10 a 15 dias</th><th>15 a 30 dias</th><th>30 a 60 dias</th>
-                            <th>60 a 120 dias</th><th>120 a 180 dias</th><th>Mais de 180 dias</th>
-                        </tr>
-                    </thead>
-                    <tbody></tbody>
-                </table>
-                </div>
+                <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame)</h4>
+                <p class="nota-origem">Exames com data de realização ou, sem realização, data de baixa no período filtrado (solicitados até 2 anos antes). O tempo de cada exame é a diferença em dias entre essa data e a data da solicitação, sem a hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame.</p>
+                {{ tabela_tempo.secao(origens) }}
             </div>
         </div>
-        {% endfor %}
 
         <div class="content">
             <div class="chart-container">
@@ -193,8 +175,10 @@
         </div>
     </div>
 
+    {{ tabela_tempo.script() }}
     <script>
         let dadosDetalhe = {{ dados_json|tojson }};
+        let dadosTempoExames = {{ tempo_exames|tojson }};
         let dadosResumo = {{ resumo_json|tojson }};
         let dadosResumoClassificacao = {{ resumo_classificacao_json|tojson }};
         let totalGeral = {{ total_geral|tojson }};
@@ -348,63 +332,6 @@
             tbody.innerHTML = html;
         }
 
-        // Tabelas de tempo por classificação e exame (uma por origem): da
-        // solicitação até a realização ou baixa. Os percentuais são sobre os
-        // realizados; a média em dias é a soma dos dias ÷ os exames das faixas.
-        const FAIXAS_TEMPO = ['ate_1d', '1_2d', '2_4d', '4_10d', '10_15d', '15_30d', '30_60d',
-                              '60_120d', '120_180d', 'acima_180d'].map(f => 'tempo_' + f);
-        const CAMPOS_TEMPO = ['realizados', ...FAIXAS_TEMPO, 'tempo_soma_dias'];
-        function mediaDias(v) {
-            const n = FAIXAS_TEMPO.reduce((s, k) => s + v[k], 0);
-            return n ? (v.tempo_soma_dias / n).toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 }) : '—';
-        }
-        function atualizarTabelaTempo(origem) {
-            const novo = () => Object.fromEntries(CAMPOS_TEMPO.map(k => [k, 0]));
-            const grupos = {};
-            const geral = novo();
-            dadosDetalhe.filter(r => r.origem === origem).forEach(r => {
-                const g = grupos[r.classificacao] ||= { total: novo(), exames: {} };
-                const e = g.exames[r.exame] ||= novo();
-                CAMPOS_TEMPO.forEach(k => {
-                    e[k] += r[k] || 0;
-                    g.total[k] += r[k] || 0;
-                    geral[k] += r[k] || 0;
-                });
-            });
-            const pct = (n, total) => total ? ` <small style="color:#6b7f86;">(${(n / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}%)</small>` : '';
-            const celulas = v => `<td class="inicio-grupo">${formatarNumero(v.realizados)}</td>` +
-                `<td class="col-media">${mediaDias(v)}</td>` +
-                FAIXAS_TEMPO.map(k => `<td>${formatarNumero(v[k])}${pct(v[k], v.realizados)}</td>`).join('');
-            const temDados = v => v.realizados > 0;
-            const ordem = v => v.realizados;
-
-            const tbody = document.querySelector(`#tabela-tempo-${origem} tbody`);
-            let html = '';
-            Object.keys(grupos).sort().forEach((classificacao, grupo) => {
-                const g = grupos[classificacao];
-                const exames = Object.entries(g.exames).filter(([, v]) => temDados(v));
-                if (exames.length === 0) return;  // classificação sem realização nem baixa
-                html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
-                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${classificacao}</td>
-                    <td style="text-align:left;color:#007C6B;">${exames.length} exames</td>${celulas(g.total)}
-                </tr>`;
-                exames
-                    .sort((a, b) => ordem(b[1]) - ordem(a[1]) || a[0].localeCompare(b[0]))
-                    .forEach(([exame, v]) => {
-                        html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
-                            <td></td>
-                            <td style="text-align:left;">${exame}</td>${celulas(v)}
-                        </tr>`;
-                    });
-            });
-            if (html) {
-                html += `<tr class="total-row"><td>TOTAL GERAL</td><td></td>${celulas(geral)}</tr>`;
-            } else {
-                html = '<tr><td colspan="14" style="text-align:center;color:#999;">Nenhum exame realizado desta origem no período selecionado.</td></tr>';
-            }
-            tbody.innerHTML = html;
-        }
-
         // Expande/recolhe as linhas de exames de um grupo ao clicar no cabeçalho
         function configurarToggle(tabelaId) {
             const tbody = document.querySelector(`#${tabelaId} tbody`);
@@ -423,17 +350,13 @@
         function configurarToggleDetalhe() {
             configurarToggle('tabela-detalhe');
             configurarToggle('tabela-exames-classificacao');
-            ORIGENS.forEach(o => configurarToggle(`tabela-tempo-${o}`));
+            TempoExames.configurar();
         }
 
         function atualizarTudo() {
             atualizarTabelaExamesClassificacao();
-            // com o filtro de origem, só a seção de tempo daquela origem aparece
-            const origem = document.getElementById('origem').value;
-            document.querySelectorAll('.secao-tempo').forEach(s => {
-                s.hidden = origem !== 'todos' && s.dataset.origem !== origem;
-            });
-            ORIGENS.forEach(o => atualizarTabelaTempo(o));
+            // com o filtro de origem, só o botão daquela origem aparece
+            TempoExames.atualizar(dadosTempoExames, document.getElementById('origem').value);
             atualizarSemAgendamento();
             atualizarTabelaDetalhe();
         }
@@ -456,6 +379,7 @@
         // Aplica os valores recebidos do servidor sem recarregar a página
         function aplicarDadosRecebidos(data) {
             dadosDetalhe = data.dados_json || [];
+            dadosTempoExames = data.tempo_exames || [];
             dadosResumo = data.resumo_json || [];
             dadosResumoClassificacao = data.resumo_classificacao_json || [];
             totalGeral = data.total_geral || {};

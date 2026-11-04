@@ -617,10 +617,17 @@ def admin_lancamento(chave):
         herdados = {c.nome for c in t.colunas if c.herda and valores[c.nome] is None and ultimo.get(c.nome) is not None}
         for n in herdados:
             valores[n] = ultimo[n]
+        # SIMAQ: resultado e meta na unidade do indicador (percentual ×100)
+        unidade = t.unidade(ultimo)
+        if unidade:
+            for n in t.colunas_na_unidade:
+                if valores[n] is not None:
+                    valores[n] = round(valores[n] * unidade['escala'], 10)
         linhas.append({
             'chaves': chaves,
             'valores': valores,
             'herdados': herdados,
+            'unidade': unidade,
             'grupo': (atual or ultimo).get(grupo) or 'Sem classificação',
             'rotulo': _rotulo_item(t, grupo, chaves),
             'inativo': not ultimo['ativo'],
@@ -645,6 +652,8 @@ def admin_lancamento_salvar(chave):
         return redirect(url_for(f'admin_{chave}', mes=mes))
 
     gravar, remover, erros = [], [], []
+    # SIMAQ: a meta vem digitada na unidade do indicador (ex.: 10 = 10%) e é gravada como fração
+    itens = {t.chave_de(i): i for i in t.itens()} if t.colunas_na_unidade else {}
     numeros = sorted({k.rsplit('__', 1)[1] for k in request.form if k.startswith('k__')})
     for n in numeros:
         chaves = {c: (request.form.get(f'k__{c}__{n}') or '').strip() for c in t.campos_chave}
@@ -655,6 +664,12 @@ def admin_lancamento_salvar(chave):
             continue
         if not all(chaves.values()):
             continue
+        item = itens.get(tuple(chaves[c] for c in t.campos_chave))
+        unidade = t.unidade(item) if item else None
+        if unidade and unidade['escala'] != 1:
+            for c in t.colunas_na_unidade:
+                if valores.get(c) is not None:
+                    valores[c] = round(valores[c] / unidade['escala'], 10)
         if t.em_branco(valores):
             remover.append(tuple(chaves[c] for c in t.campos_chave))  # linha em branco = sem lançamento no mês
         else:
@@ -676,7 +691,7 @@ def admin_lancamento_salvar(chave):
     return redirect(url_for(f'admin_{chave}', mes=mes))
 
 
-_MES_OPCIONAL_NA_IMPORTACAO = {'simaq'}
+_MES_OPCIONAL_NA_IMPORTACAO = {'simaq', 'producao'}
 
 
 def admin_lancamento_importar(chave):
@@ -686,7 +701,7 @@ def admin_lancamento_importar(chave):
     if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
         flash('Escolha uma planilha .xlsx.', 'erro')
         return redirect(url_for(f'admin_{chave}'))
-    # SIMAQ: o mês é opcional (sem ele, vale a coluna Mês de cada linha da planilha)
+    # SIMAQ e Produção: o mês é opcional (sem ele, vale a coluna Mês de cada linha da planilha)
     if (mes or chave not in _MES_OPCIONAL_NA_IMPORTACAO) and not _mes_valido(mes):
         flash('Informe o mês de referência da planilha.', 'erro')
         return redirect(url_for(f'admin_{chave}'))
