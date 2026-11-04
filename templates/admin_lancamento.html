@@ -95,12 +95,13 @@
         <form class="painel" method="post" action="{{ url_for('admin_simaq_importar_coleta') }}" enctype="multipart/form-data">
             <h2>Importar planilha SIMAQ</h2>
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
-            <label class="campo" for="mes-coleta" style="margin-top:0;">Mês de referência da planilha</label>
-            {{ seletor_mes('mes-coleta', 'mes', valor='', exemplo='06/2026') }}
+            <label class="campo" for="mes-coleta" style="margin-top:0;">Mês de referência (opcional)</label>
+            {{ seletor_mes('mes-coleta', 'mes', valor='', obrigatorio=False, exemplo='06/2026', dica=False) }}
             <div style="height:10px;"></div>
             <input type="file" name="planilha" accept=".xlsx" required style="font-size:13px; max-width:100%;">
-            <div class="dica">Relatório "Coleta de dados" exportado do SIMAQ: coluna C = indicador, E = numerador e
-                F = denominador. Grava no mês escolhido acima; se o mês já tiver lançamento, atualiza o numerador e o
+            <div class="dica">Relatório "Coleta de dados" exportado do SIMAQ: coluna B = competência, C = indicador,
+                E = numerador e F = denominador. Grava no mês escolhido acima; em branco, no mês da competência da
+                planilha. Se o mês já tiver lançamento, atualiza o numerador e o
                 denominador de cada indicador (a meta continua a mesma). Indicadores sem valor na planilha ficam como estão,
                 e os que não estiverem cadastrados não entram (aparecem no aviso).</div>
             <div class="acoes"><button type="submit" class="btn secundario">Importar</button></div>
@@ -109,15 +110,16 @@
         <form class="painel" method="post" action="{{ url_for('admin_' ~ chave ~ '_importar') }}" enctype="multipart/form-data">
             <h2>Importar planilha</h2>
             <input type="hidden" name="csrf" value="{{ csrf_token }}">
-            <label class="campo" for="mes-importacao" style="margin-top:0;">Mês de referência da planilha</label>
+            <label class="campo" for="mes-importacao" style="margin-top:0;">Mês de referência{{ ' (opcional)' if mes_opcional else ' da planilha' }}</label>
             {# vazio de propósito: o usuário informa o mês (como na importação de custos) #}
-            {{ seletor_mes('mes-importacao', 'mes', valor='', exemplo='06/2026') }}
+            {{ seletor_mes('mes-importacao', 'mes', valor='', obrigatorio=not mes_opcional, exemplo='06/2026', dica=not mes_opcional) }}
             <div style="height:10px;"></div>
             <input type="file" name="planilha" accept=".xlsx" required style="font-size:13px; max-width:100%;">
             <div class="dica">Primeira aba, com cabeçalho e as colunas nesta ordem:
                 {% for c in t.colunas_planilha %}{{ t.rotulo_campo(c) }}{{ ', ' if not loop.last }}{% endfor %}
                 (mesmo formato da planilha {{ t.planilha }}). Todas as linhas são lançadas no mês escolhido acima (a
-                coluna Mês pode ficar vazia, mas a planilha deve ter um mês só). Lançamentos do mesmo mês e item são substituídos; itens e categorias que ainda não existirem são cadastrados (confira-os depois na tela de Cadastros).</div>
+                coluna Mês pode ficar vazia, mas a planilha deve ter um mês só){% if mes_opcional %}; em branco, cada
+                linha vai para o mês da sua coluna Mês{% endif %}. Lançamentos do mesmo mês e item são substituídos; itens e categorias que ainda não existirem são cadastrados (confira-os depois na tela de Cadastros).</div>
             <div class="acoes"><button type="submit" class="btn secundario">Importar</button></div>
         </form>
 

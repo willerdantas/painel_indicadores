@@ -600,13 +600,14 @@ class TabelaSimaq(TabelaNormalizada):
             return None
         return f'{m.group(2)}-{meses.index(m.group(1)) + 1:02d}'
 
-    def importar_coleta(self, caminho, usuario, mes):
-        """Grava no mês escolhido o numerador e o denominador de cada indicador da
-        planilha de coleta. Mês já lançado: atualiza só esses dois valores (a meta
-        e os indicadores fora da planilha ficam como estão); meta vazia: vem do
-        mês anterior. Indicador fora do cadastro não entra
-        (a planilha não diz o tipo dele) e linha sem valor (aguardando validação)
-        é ignorada. Retorna {gravados, nao_cadastrados, sem_valor, competencia}."""
+    def importar_coleta(self, caminho, usuario, mes=None):
+        """Grava no mês escolhido (sem ele, no da competência da planilha) o
+        numerador e o denominador de cada indicador da planilha de coleta. Mês já
+        lançado: atualiza só esses dois valores (a meta e os indicadores fora da
+        planilha ficam como estão); meta vazia: vem do mês anterior. Indicador
+        fora do cadastro não entra (a planilha não diz o tipo dele) e linha sem
+        valor (aguardando validação) é ignorada.
+        Retorna {gravados, nao_cadastrados, sem_valor, competencia, mes}."""
         import pandas as pd
         df = pd.read_excel(caminho, sheet_name=0)
         if df.shape[1] <= self.COLETA_DENOMINADOR:
@@ -617,6 +618,11 @@ class TabelaSimaq(TabelaNormalizada):
             raise ValueError(f'a planilha tem {len(competencias)} competências ('
                              + ', '.join(f'{c[5:]}/{c[:4]}' for c in sorted(competencias))
                              + '); importe um mês por vez')
+        if not mes:
+            if not competencias:
+                raise ValueError('a coluna B (competência) não traz o mês, como "Setembro de 2026"; '
+                                 'informe o mês de referência')
+            mes = next(iter(competencias))
         # mesmo nome em dois tipos: vale o ativo
         cadastro = {self._nome_comparavel(i['indicador']): i
                     for i in sorted(self.itens(antes_de=mes), key=lambda i: bool(i['ativo']))}
@@ -646,7 +652,7 @@ class TabelaSimaq(TabelaNormalizada):
                              'numerador': numerador, 'denominador': denominador, 'meta': meta}
         qtd = self.salvar(list(linhas.values()), usuario)
         return {'gravados': qtd, 'nao_cadastrados': nao_cadastrados, 'sem_valor': sem_valor,
-                'competencia': next(iter(competencias), None)}
+                'competencia': next(iter(competencias), None), 'mes': mes}
 
     def _depois_de_cadastrar(self, linhas):
         # indicador novo: fator deduzido da planilha (os já cadastrados mantêm

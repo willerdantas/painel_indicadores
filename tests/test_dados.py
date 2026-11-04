@@ -399,11 +399,15 @@ def test_importacao_coleta_simaq(tmp_path, monkeypatch):
     monkeypatch.setattr(t, 'salvar', lambda linhas, usuario: gravadas.extend(linhas) or len(linhas))
     r = t.importar_coleta(str(caminho), 'teste', '2026-10')
     assert r == {'gravados': 3, 'nao_cadastrados': ['Indicador Novo'], 'sem_valor': ['Taxa de Reinternação'],
-                 'competencia': '2026-09'}
+                 'competencia': '2026-09', 'mes': '2026-10'}
     assert [(l['mes'], l['indicador'], l['numerador'], l['denominador'], l['meta']) for l in gravadas] == [
         ('2026-10', 'Taxa de Ocupação Hospitalar', 14230, 12558, 0.9),
         ('2026-10', 'Número de Internações', 1293, None, 1000),  # denominador 0 = sem denominador
         ('2026-10', 'Índice de Satisfação do Usuário', 350, 352, 0.9)]
+    # sem o mês da tela: vale a competência da planilha
+    gravadas.clear()
+    assert t.importar_coleta(str(caminho), 'teste')['mes'] == '2026-09'
+    assert {l['mes'] for l in gravadas} == {'2026-09'}
     assert t._competencia('Março de 2026') == '2026-03' and t._competencia('xyz') is None
 
 

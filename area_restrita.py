@@ -629,7 +629,8 @@ def admin_lancamento(chave):
         })
     linhas.sort(key=lambda l: (l['grupo'], l['rotulo']))
     return render_template('admin_lancamento.html', chave=chave, cfg=cfg, t=t, mes=mes, linhas=linhas,
-                           meses=meses, coluna_total=next((c for c in t.colunas if c.total), None))
+                           meses=meses, coluna_total=next((c for c in t.colunas if c.total), None),
+                           mes_opcional=chave in _MES_OPCIONAL_NA_IMPORTACAO)
 
 
 def admin_lancamento_salvar(chave):
@@ -675,6 +676,9 @@ def admin_lancamento_salvar(chave):
     return redirect(url_for(f'admin_{chave}', mes=mes))
 
 
+_MES_OPCIONAL_NA_IMPORTACAO = {'simaq'}
+
+
 def admin_lancamento_importar(chave):
     t = LANCAMENTOS[chave]['tabela']
     arquivo = request.files.get('planilha')
@@ -682,7 +686,8 @@ def admin_lancamento_importar(chave):
     if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
         flash('Escolha uma planilha .xlsx.', 'erro')
         return redirect(url_for(f'admin_{chave}'))
-    if not _mes_valido(mes):
+    # SIMAQ: o mês é opcional (sem ele, vale a coluna Mês de cada linha da planilha)
+    if (mes or chave not in _MES_OPCIONAL_NA_IMPORTACAO) and not _mes_valido(mes):
         flash('Informe o mês de referência da planilha.', 'erro')
         return redirect(url_for(f'admin_{chave}'))
     if not banco_painel.pronto():
@@ -693,12 +698,13 @@ def admin_lancamento_importar(chave):
         caminho = os.path.join(pasta, 'planilha.xlsx')
         arquivo.save(caminho)
         try:
-            qtd, novos = t.importar_cadastrando(caminho, g.usuario['login'], mes)
+            qtd, novos = t.importar_cadastrando(caminho, g.usuario['login'], mes or None)
         except Exception as e:
             flash(f'Não foi possível importar a planilha: {e}', 'erro')
             return redirect(url_for(f'admin_{chave}'))
-    flash(f'Planilha importada em {mes[5:]}/{mes[:4]}: {qtd} lançamentos gravados.' + _texto_itens_novos(novos), 'ok')
-    return redirect(url_for(f'admin_{chave}', mes=mes))
+    onde = f'em {mes[5:]}/{mes[:4]}' if mes else 'nos meses da planilha'
+    flash(f'Planilha importada {onde}: {qtd} lançamentos gravados.' + _texto_itens_novos(novos), 'ok')
+    return redirect(url_for(f'admin_{chave}', mes=mes or None))
 
 
 @_rota('/admin/simaq/importar-coleta', methods=['POST'])
@@ -708,8 +714,8 @@ def admin_simaq_importar_coleta():
     if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
         flash('Escolha a planilha de coleta do SIMAQ (.xlsx).', 'erro')
         return redirect(url_for('admin_simaq'))
-    if not _mes_valido(mes):
-        flash('Informe o mês de referência da planilha.', 'erro')
+    if mes and not _mes_valido(mes):  # sem mês: vale a competência da planilha
+        flash('Mês de referência inválido; use MM/AAAA ou deixe em branco para usar o da planilha.', 'erro')
         return redirect(url_for('admin_simaq'))
     if not banco_painel.pronto():
         flash(banco_painel.erro() or 'Banco indisponível.', 'erro')
@@ -719,10 +725,11 @@ def admin_simaq_importar_coleta():
         caminho = os.path.join(pasta, 'planilha.xlsx')
         arquivo.save(caminho)
         try:
-            r = banco_painel.SIMAQ.importar_coleta(caminho, g.usuario['login'], mes)
+            r = banco_painel.SIMAQ.importar_coleta(caminho, g.usuario['login'], mes or None)
         except Exception as e:
             flash(f'Não foi possível importar a planilha: {e}', 'erro')
-            return redirect(url_for('admin_simaq', mes=mes))
+            return redirect(url_for('admin_simaq', mes=mes or None))
+    mes = r['mes']
     texto = f'Planilha SIMAQ importada em {mes[5:]}/{mes[:4]}: {r["gravados"]} indicadores gravados.'
     if r['competencia'] and r['competencia'] != mes:
         c = r['competencia']
