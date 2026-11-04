@@ -6,6 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Indicadores Hospitalares</title>
 <script src="/static/chart.umd.min.js"></script>
+<script src="/static/js/tabela_rolagem.js"></script>
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
   if (typeof Chart === 'undefined') {
@@ -148,10 +149,32 @@
       <div class="graf-card full">
         <h3>Internações por dia</h3>
         <div class="chart-box"><canvas id="chart_internacoes_dia"></canvas></div>
+        <div class="tabela-info">
+          <div class="tabela-rolagem-fixa" id="caixa_internacoes_clinica">
+            <table class="tabela">
+              <thead><tr>
+                <th>Clínica da internação</th><th class="num">Total no período</th><th class="num">%</th>
+                <th class="num" title="Total no período dividido pelos dias do período">Média por dia</th>
+                <th class="num">Mediana por dia</th>
+              </tr></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="nota">Clínica da primeira movimentação da internação.</div>
+        </div>
       </div>
       <div class="graf-card full">
         <h3>Saídas por dia e destino</h3>
         <div class="chart-box"><canvas id="chart_saidas_dia"></canvas></div>
+        <div class="tabela-info">
+          <div class="tabela-rolagem-fixa" id="caixa_saidas_clinica">
+            <table class="tabela">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="nota">Clínica da movimentação em que a saída foi registrada.</div>
+        </div>
       </div>
       <div class="graf-card">
         <h3>Saídas por dia da semana</h3>
@@ -253,6 +276,113 @@ function novoGrafico(id, config) {
   charts[id] = new Chart(document.getElementById(id), config);
 }
 
+// Tabela abaixo de um gráfico por dia: total, %, média e mediana por dia de
+// cada item ({nome, total, valores por dia, cor?}) e do total; 5 linhas visíveis.
+function tabelaPorDia(caixaId, itens, total, totalValores, vazio) {
+  const caixa = document.getElementById(caixaId);
+  const qtdDias = totalValores.length;
+  const dec = n => n === null ? '—' : n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  const mediana = vals => {
+    if (!vals.length) return null;
+    const s = [...vals].sort((a, b) => a - b), m = Math.floor(s.length / 2);
+    return Math.round((s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) * 10) / 10;
+  };
+  const linha = (nome, qtd, valores, cor, classe) => `<tr class="${classe || ''}">
+      <td>${cor ? `<span class="marca-cor" style="background:${cor}"></span>` : ''}${escapeHtml(nome)}</td>
+      <td class="num">${fmt(qtd)}</td>
+      <td class="num">${total ? dec(Math.round(qtd / total * 1000) / 10) + '%' : '—'}</td>
+      <td class="num">${qtdDias ? dec(Math.round(qtd / qtdDias * 10) / 10) : '—'}</td>
+      <td class="num">${dec(mediana(valores))}</td></tr>`;
+  caixa.querySelector('tbody').innerHTML = itens.length
+    ? itens.map(x => linha(x.nome, x.total, x.valores, x.cor)).join('') + linha('Total', total, totalValores, null, 'total')
+    : `<tr><td colspan="5">${vazio}</td></tr>`;
+  limitarLinhasVisiveis(caixa, 5);
+}
+
+// Tabela abaixo do gráfico de saídas: clínica (linhas) x destino (colunas, na
+// ordem e cor do gráfico), total, % e média por dia; 5 linhas visíveis.
+function tabelaSaidasClinica(d) {
+  const caixa = document.getElementById('caixa_saidas_clinica');
+  const destinos = d.saidas_destinos.map(s => s.destino);
+  const qtdDias = d.dias.length;
+  const dec = n => n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  caixa.querySelector('thead').innerHTML = '<tr><th>Clínica</th>' +
+    destinos.map((nome, idx) => `<th class="num"><span class="marca-cor" style="background:${corDestino(nome, idx)}"></span>${escapeHtml(nome)}</th>`).join('') +
+    '<th class="num">Total</th><th class="num">%</th>' +
+    '<th class="num" title="Total no período dividido pelos dias do período">Média por dia</th></tr>';
+  const linha = (nome, qtdPorDestino, total, classe) => `<tr class="${classe || ''}">
+      <td>${escapeHtml(nome)}</td>
+      ${destinos.map(dest => `<td class="num">${qtdPorDestino[dest] ? fmt(qtdPorDestino[dest]) : '—'}</td>`).join('')}
+      <td class="num"><b>${fmt(total)}</b></td>
+      <td class="num">${d.saidas_total ? dec(Math.round(total / d.saidas_total * 1000) / 10) + '%' : '—'}</td>
+      <td class="num">${qtdDias ? dec(Math.round(total / qtdDias * 10) / 10) : '—'}</td></tr>`;
+  const clinicas = d.saidas_clinicas || [];
+  const totaisDestino = Object.fromEntries(d.saidas_destinos.map(s => [s.destino, s.total]));
+  caixa.querySelector('tbody').innerHTML = clinicas.length
+    ? clinicas.map(c => linha(c.nome, c.destinos, c.total)).join('') + linha('Total', totaisDestino, d.saidas_total, 'total')
+    : `<tr><td colspan="${destinos.length + 4}">Nenhuma saída no período.</td></tr>`;
+  limitarLinhasVisiveis(caixa, 5);
+}
+
+// Valores nos gráficos: acima de cada ponto/barra; nas barras empilhadas,
+// dentro de cada faixa (só se a faixa tiver altura e largura para o número).
+// Datasets com rotulo: false (média/mediana, que já aparecem na legenda)
+// ficam de fora; com muitos dias não cabe.
+const MAX_ROTULOS = 62;
+Chart.register({
+  id: 'rotulosHospitalar',
+  afterDatasetsDraw(chart) {
+    const { ctx } = chart;
+    const visiveis = chart.data.datasets.map((_, i) => i)
+      .filter(i => chart.isDatasetVisible(i) && chart.data.datasets[i].rotulo !== false);
+    if (!visiveis.length || chart.data.labels.length > MAX_ROTULOS) return;
+    const empilhado = !!(chart.options.scales.x && chart.options.scales.x.stacked);
+    const escrever = (valor, x, y, cor) => {
+      ctx.lineWidth = 3; ctx.lineJoin = 'round'; ctx.strokeStyle = 'rgba(255,255,255,.9)';
+      ctx.strokeText(fmt(valor), x, y);
+      ctx.fillStyle = cor; ctx.fillText(fmt(valor), x, y);
+    };
+    ctx.save();
+    ctx.font = `600 ${chart.data.labels.length > 31 ? 9 : 10}px "DM Sans", sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'bottom';
+    const tamanho = parseInt(ctx.font.match(/(\d+)px/)[1], 10);
+    const ladoUsado = {};   // por barra: y do último valor escrito ao lado (para não sobrepor)
+    visiveis.forEach(i => {
+      const meta = chart.getDatasetMeta(i), ds = chart.data.datasets[i];
+      const dentro = empilhado && meta.type === 'bar';
+      meta.data.forEach((el, j) => {
+        const v = ds.data[j];
+        if (v === null || v === undefined || (dentro && !v)) return;
+        if (dentro) {
+          const texto = fmt(v);
+          const meio = (el.y + el.base) / 2;
+          ctx.textBaseline = 'middle';
+          if (Math.abs(el.base - el.y) >= tamanho + 2 && ctx.measureText(texto).width <= el.width - 2) {
+            ctx.fillStyle = '#fff';
+            ctx.fillText(texto, el.x, meio);
+          } else {
+            // faixa pequena: o valor vai do lado direito da barra, na cor da faixa
+            // (subindo quando encostaria no valor de baixo, também ao lado)
+            const y = ladoUsado[j] !== undefined ? Math.min(meio, ladoUsado[j] - tamanho) : meio;
+            ladoUsado[j] = y;
+            ctx.textAlign = 'left';
+            const cor = Array.isArray(ds.borderColor) ? ds.borderColor[j] : ds.borderColor;
+            escrever(v, el.x + el.width / 2 + 2, y, cor || '#38464D');
+            ctx.textAlign = 'center';
+          }
+          ctx.textBaseline = 'bottom';
+        } else {
+          escrever(v, el.x, el.y - (meta.type === 'line' ? 6 : 3), meta.type === 'line' ? ds.borderColor : '#38464D');
+        }
+      });
+    });
+    ctx.restore();
+  }
+});
+// espaço no topo para o valor mais alto não ser cortado
+Chart.defaults.layout.padding = { top: 22 };
+
 function renderGraficos(d) {
   document.getElementById('graf_resumo').innerHTML =
     `Internações no período: <b>${fmt(d.internacoes_total)}</b> &nbsp;|&nbsp; ` +
@@ -272,12 +402,12 @@ function renderGraficos(d) {
         label: `Média: ${fmt(d.internacoes_media)}`,
         data: d.internacoes_media !== null ? Array(d.dias.length).fill(d.internacoes_media) : [],
         borderColor: '#EB600A', backgroundColor: 'transparent', borderWidth: 2,
-        borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+        borderDash: [6, 4], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1, rotulo: false
       }, {
         label: `Mediana: ${fmt(d.internacoes_mediana)}`,
         data: d.internacoes_mediana !== null ? Array(d.dias.length).fill(d.internacoes_mediana) : [],
         borderColor: '#2E758C', backgroundColor: 'transparent', borderWidth: 2,
-        borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1
+        borderDash: [2, 3], pointRadius: 0, pointHoverRadius: 0, fill: false, order: 1, rotulo: false
       }]
     },
     options: {
@@ -291,28 +421,41 @@ function renderGraficos(d) {
     }
   });
 
+  tabelaPorDia('caixa_internacoes_clinica', d.internacoes_clinicas || [], d.internacoes_total, d.internacoes,
+    'Nenhuma internação no período.');
+
   novoGrafico('chart_saidas_dia', {
     type: 'bar',
     data: {
       labels: d.dias,
-      datasets: d.saidas_destinos.map((dest, idx) => {
-        const cor = corDestino(dest.destino, idx);
-        return {
-          label: `${dest.destino} (${fmt(dest.total)})`, data: dest.valores,
-          backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 2, stack: 'saidas'
-        };
-      })
+      datasets: [
+        ...d.saidas_destinos.map((dest, idx) => {
+          const cor = corDestino(dest.destino, idx);
+          return {
+            label: `${dest.destino} (${fmt(dest.total)})`, data: dest.valores,
+            backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 2, stack: 'saidas', order: 2
+          };
+        }),
+        {
+          // total do dia, fora da pilha
+          label: `Total (${fmt(d.saidas_total)})`, type: 'line', stack: 'total', order: 0,
+          data: d.dias.map((_, j) => d.saidas_destinos.reduce((t, s) => t + (s.valores[j] || 0), 0)),
+          borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5,
+          pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 4, tension: 0.2, fill: false
+        }
+      ]
     },
     options: {
       responsive: true, maintainAspectRatio: false,
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
-        tooltip: { callbacks: { footer: items => 'Total: ' + fmt(items.reduce((s, i) => s + (i.parsed.y || 0), 0)) } }
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label.replace(/ \([\d.]+\)$/, '')}: ${fmt(c.parsed.y ?? 0)}` } }
       },
       scales: { x: { ...eixoDias, stacked: true }, y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } } }
     }
   });
+  tabelaSaidasClinica(d);
 
   novoGrafico('chart_saidas_semana', {
     type: 'bar',

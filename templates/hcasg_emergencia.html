@@ -194,7 +194,8 @@
       </div>
       <div class="card full">
         <h3>Pacientes internados pela emergência: primeira clínica de internação x classificação de risco</h3>
-        <div style="overflow-x:auto;">
+        <div class="chart-box" id="box_clinica_risco"><canvas id="chart_clinica_risco"></canvas></div>
+        <div style="overflow-x:auto; margin-top:1rem;">
           <table class="tabela-risco" id="tabela_clinica_risco">
             <thead><tr><th>Primeira clínica</th></tr></thead>
             <tbody><tr><td>—</td></tr></tbody>
@@ -222,6 +223,15 @@
       <div class="card full">
         <h3>Saídas por dia e destino</h3>
         <div class="chart-box"><canvas id="chart_saidas_dia"></canvas></div>
+        <table class="tabela-risco" id="tabela_saidas_destino" style="margin-top:1rem;">
+          <thead><tr>
+            <th>Destino</th><th class="num">Total no período</th><th class="num">%</th>
+            <th class="num" title="Total no período dividido pelos dias do período">Média por dia</th>
+            <th class="num">Mediana por dia</th>
+          </tr></thead>
+          <tbody></tbody>
+          <tfoot></tfoot>
+        </table>
       </div>
       <div class="card full">
         <h3>Taxa de conversão (% das saídas que foram para internação)</h3>
@@ -311,10 +321,51 @@ function toggleTodasClinicas(){
 // ---- Atendimentos de emergência ----
 const chartsAtend = {};
 
+// Valores nos gráficos: acima de cada ponto/barra ou, nas barras horizontais,
+// na ponta da barra. Linhas tracejadas (média, mediana, taxa do período) ficam
+// de fora: o valor já está na legenda. O gráfico de saídas tem rótulos próprios
+// (pluginRotulosSaidas); com muitos dias os números não cabem.
+const MAX_ROTULOS = 62;
+Chart.register({
+  id: 'rotulosEmergencia',
+  afterDatasetsDraw(chart) {
+    if ((chart.config.plugins || []).some(p => p.id === 'rotulosSaidas')) return;
+    if (chart.data.labels.length > MAX_ROTULOS) return;
+    const { ctx } = chart;
+    const horizontal = chart.options.indexAxis === 'y';
+    ctx.save();
+    ctx.font = `600 ${chart.data.labels.length > 31 ? 9 : 10}px "DM Sans", sans-serif`;
+    ctx.lineWidth = 3;
+    ctx.lineJoin = 'round';
+    ctx.strokeStyle = 'rgba(255,255,255,.9)';
+    chart.data.datasets.forEach((ds, i) => {
+      if (ds.borderDash || ds.rotulo === false || !chart.isDatasetVisible(i)) return;
+      const meta = chart.getDatasetMeta(i);
+      meta.data.forEach((el, j) => {
+        const v = ds.data[j];
+        if (v === null || v === undefined) return;
+        const texto = Number(v).toLocaleString('pt-BR') + (ds.sufixo || '');
+        let x = el.x, y = el.y;
+        if (horizontal) {
+          ctx.textAlign = 'left'; ctx.textBaseline = 'middle'; x += 4;
+        } else {
+          ctx.textAlign = 'center'; ctx.textBaseline = 'bottom'; y -= meta.type === 'line' ? 6 : 3;
+        }
+        ctx.strokeText(texto, x, y);
+        ctx.fillStyle = meta.type === 'line' ? (ds.borderColor || '#38464D') : '#38464D';
+        ctx.fillText(texto, x, y);
+      });
+    });
+    ctx.restore();
+  }
+});
+// espaço no topo (e à direita, nas barras horizontais) para o valor não ser cortado
+Chart.defaults.layout.padding = { top: 22, right: 18 };
+
 function corRisco(nome) {
   const n = (nome || '').toLowerCase();
-  if (n.includes('vermelh')) return '#EB600A';
-  if (n.includes('laranj'))  return '#F7975B';
+  if (n.includes('vermelh')) return '#D32F2F';
+  if (n.includes('laranj'))  return '#EB600A';  /* --orange */
   if (n.includes('amarel'))  return '#F3A133';
   if (n.includes('verde'))   return '#0F9688';
   if (n.includes('azul'))    return '#2E758C';
@@ -480,6 +531,7 @@ function barrasAtend(chave, id, itens, cor) {
     },
     options: {
       indexAxis: 'y', responsive: true, maintainAspectRatio: false,
+      layout: { padding: { right: 44 } },
       plugins: { legend: { display: false } },
       scales: { x: { beginAtZero: true, ticks: { precision: 0 } }, y: { ticks: { autoSkip: false, font: { size: 11 } } } }
     }
@@ -505,6 +557,8 @@ function renderClinicaRisco(m) {
     tabela.querySelector('thead').innerHTML = '<tr><th>Primeira clínica</th></tr>';
     tabela.querySelector('tbody').innerHTML = '<tr><td>Nenhum paciente internado pela emergência no período.</td></tr>';
     const pe = tabela.querySelector('tfoot'); if (pe) pe.remove();
+    if (chartsAtend.clinicaRisco) { chartsAtend.clinicaRisco.destroy(); delete chartsAtend.clinicaRisco; }
+    document.getElementById('box_clinica_risco').style.display = 'none';
     return;
   }
   tabela.querySelector('thead').innerHTML = '<tr><th>Primeira clínica</th>' +
@@ -522,6 +576,52 @@ function renderClinicaRisco(m) {
   if (!pe) { pe = document.createElement('tfoot'); tabela.appendChild(pe); }
   pe.innerHTML = '<tr><td>Total</td>' + m.totais.map(v => `<td class="num">${fmt(v)}</td>`).join('') +
     `<td class="num">${fmt(m.total)}</td><td class="num">100%</td></tr>`;
+  graficoClinicaRisco(m, dadosSaidas.dias);
+}
+
+// Internados pela emergência por dia da saída: barras empilhadas por
+// classificação de risco e a linha (onda) do total do dia. Rótulos como no
+// gráfico de saídas (pluginRotulosSaidas).
+function graficoClinicaRisco(m, dias) {
+  const fmt = n => Number(n).toLocaleString('pt-BR');
+  document.getElementById('box_clinica_risco').style.display = '';
+  const porDia = m.por_dia || [];
+  const totalDia = dias.map((_, j) => porDia.reduce((t, serie) => t + (serie[j] || 0), 0));
+  if (chartsAtend.clinicaRisco) chartsAtend.clinicaRisco.destroy();
+  chartsAtend.clinicaRisco = new Chart(document.getElementById('chart_clinica_risco'), {
+    type: 'bar',
+    data: {
+      labels: dias,
+      datasets: [
+        ...m.riscos.map((r, i) => ({
+          label: r, data: porDia[i] || [], stack: 'risco', order: 2,
+          backgroundColor: corRisco(r) + 'dd', borderColor: corRisco(r), borderWidth: 1, borderRadius: 2
+        })).filter(ds => ds.data.some(v => v)),
+        {
+          type: 'line', label: 'Total', data: totalDia, stack: 'total', order: 1,
+          borderColor: '#38464D', backgroundColor: '#38464D', borderWidth: 2,
+          pointRadius: dias.length > 62 ? 0 : 3, pointHoverRadius: 5, tension: 0.4,
+          cubicInterpolationMode: 'monotone', fill: false
+        }
+      ]
+    },
+    plugins: [pluginRotulosSaidas],
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15 } },
+        tooltip: {
+          filter: item => item.dataset.type !== 'line',
+          callbacks: { footer: items => 'Total: ' + fmt(items.reduce((s, i) => s + (i.parsed.y || 0), 0)) }
+        }
+      },
+      scales: {
+        x: { stacked: true, ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } },
+        y: { stacked: true, beginAtZero: true, suggestedMax: Math.max(1, ...totalDia) * 1.12, ticks: { precision: 0 } }
+      }
+    }
+  });
 }
 
 function carregarAtendimentos() {
@@ -633,6 +733,26 @@ function renderSaidas() {
     .filter(dest => !destinosOcultos.has(dest.isn_destino));
   const total = visiveis.reduce((s, dest) => s + dest.total, 0);
   const totaisDia = d.dias.map((_, i) => visiveis.reduce((s, dest) => s + (dest.valores[i] || 0), 0));
+  // tabela por destino (os mesmos destinos marcados no filtro)
+  const qtdDias = d.dias.length;
+  const dec = n => n === null ? '—' : n.toLocaleString('pt-BR', { maximumFractionDigits: 1 });
+  const mediana = vals => {
+    if (!vals.length) return null;
+    const s = [...vals].sort((a, b) => a - b), m = Math.floor(s.length / 2);
+    return Math.round((s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2) * 10) / 10;
+  };
+  const linha = (nome, cor, qtd, valores) => `<tr>
+      <td>${cor ? `<span class="risco-dot" style="background:${cor}"></span>` : ''}${escapeHtml(nome)}</td>
+      <td class="num">${fmt(qtd)}</td>
+      <td class="num">${total ? dec(Math.round(qtd / total * 1000) / 10) + '%' : '—'}</td>
+      <td class="num">${qtdDias ? dec(Math.round(qtd / qtdDias * 10) / 10) : '—'}</td>
+      <td class="num">${dec(mediana(valores))}</td></tr>`;
+  const tabelaSaidas = document.getElementById('tabela_saidas_destino');
+  tabelaSaidas.querySelector('tbody').innerHTML = visiveis.length
+    ? visiveis.map(dest => linha(dest.dsc_destino, dest.cor, dest.total, dest.valores)).join('')
+    : '<tr><td colspan="5">Nenhum destino selecionado.</td></tr>';
+  tabelaSaidas.querySelector('tfoot').innerHTML = visiveis.length ? linha('Total', null, total, totaisDia) : '';
+
   document.getElementById('saidas_resumo').innerHTML =
     `Total de saídas no período: <b>${fmt(total)}</b>` +
     visiveis.map(dest => ` &nbsp;|&nbsp; ${escapeHtml(dest.dsc_destino)}: <b>${fmt(dest.total)}</b>`).join('');
@@ -652,7 +772,8 @@ function renderSaidas() {
         {
           type: 'line', label: 'Total', data: totaisDia, stack: 'total', order: 1,
           borderColor: '#38464D', backgroundColor: '#38464D', borderWidth: 2,
-          pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5, tension: 0, fill: false
+          pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5, tension: 0.4,
+          cubicInterpolationMode: 'monotone', fill: false
         }
       ]
     },
@@ -693,7 +814,7 @@ function renderTaxaConversao(d) {
     data: {
       labels: d.dias,
       datasets: [{
-        label: 'Taxa de conversão', data: d.taxa_conversao,
+        label: 'Taxa de conversão', data: d.taxa_conversao, sufixo: '%',
         borderColor: '#EB600A', backgroundColor: 'rgba(235,96,10,.10)',
         borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
         tension: 0.25, fill: true, spanGaps: true, order: 2
@@ -767,7 +888,7 @@ function renderAcima24h(d) {
     data: {
       labels: d.dias,
       datasets: [{
-        label: '% acima de 24 h', data: d.perc_acima_24h,
+        label: '% acima de 24 h', data: d.perc_acima_24h, sufixo: '%',
         borderColor: '#2E758C', backgroundColor: 'rgba(46,117,140,.12)',
         borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
         tension: 0.25, fill: true, spanGaps: true, order: 2

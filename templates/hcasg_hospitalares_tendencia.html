@@ -15,6 +15,7 @@
   }
 </script>
 <script src="/static/js/tendencia.js"></script>
+<script src="/static/js/tabela_rolagem.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-hospitalares-tendencia">
@@ -180,6 +181,35 @@ function criarGraficoSaidas(container, titulo, meses, totais, destinosMensais) {
   container.appendChild(info);
 }
 
+// tabela abaixo do gráfico de internações: por primeira clínica, total, %,
+// média e mediana mensais e média por dia (total dividido pelos dias do período)
+function tabelaInternacoesClinica(container, clinicas, totais, dias) {
+  const totalGeral = (totais || []).reduce((a, v) => a + (Number(v) || 0), 0);
+  const totalDias = (dias || []).reduce((a, v) => a + (v || 0), 0);
+  const linha = (nome, vals, classe) => {
+    const nums = vals.map(v => (v === null || v === undefined) ? null : parseFloat(v));
+    const total = nums.reduce((a, b) => a + (b || 0), 0);
+    return `<tr class="${classe || ''}">
+      <td>${nome}</td>
+      <td class="num">${fmtNum(total)}</td>
+      <td class="num">${totalGeral ? fmtNum(Math.round(total / totalGeral * 1000) / 10) + '%' : '—'}</td>
+      <td class="num">${fmtNum(calcularMedia(nums))}</td>
+      <td class="num">${fmtNum(calcularMediana(nums))}</td>
+      <td class="num">${totalDias ? fmtNum(Math.round(total / totalDias * 10) / 10) : '—'}</td></tr>`;
+  };
+  const info = document.createElement('div');
+  info.className = 'tabela-info';
+  info.innerHTML = `<div class="tabela-rolagem-fixa"><table class="tabela">
+      <thead><tr><th>Clínica da internação</th><th class="num">Total no período</th><th class="num">%</th>
+        <th class="num">Média por mês</th><th class="num">Mediana por mês</th>
+        <th class="num" title="Total no período dividido pelos dias do período">Média por dia</th></tr></thead>
+      <tbody>${(clinicas || []).map(c => linha(c.nome, c.valores)).join('')}
+        ${linha('Total', totais || [], 'total')}</tbody></table></div>
+    <div class="nota">Clínica da primeira movimentação da internação.</div>`;
+  container.appendChild(info);
+  limitarLinhasVisiveis(info.querySelector('.tabela-rolagem-fixa'), 5);
+}
+
 function carregarGraficos() {
   const params = new URLSearchParams({
     clinica: v('clinica'), enfermaria: v('enfermaria'), leito: v('leito'),
@@ -210,7 +240,7 @@ function carregarGraficos() {
         { key: 'leito_dia', titulo: 'Leito-dia', cor: '#F7975B' },
         { key: 'tmph', titulo: 'Tempo Médio de Permanência (dias)', cor: '#2E758C' },
         { key: 'giro', titulo: 'Giro de Leito (saídas/leito)', cor: '#00A1A2' },
-        { key: 'internacoes', titulo: 'Número de Internações', cor: '#53B7D9' },
+        { key: 'internacoes', titulo: 'Número de Internações', cor: '#53B7D9', total: true },
         { key: 'saidas', titulo: 'Saídas por Destino', cor: '#3BB5A3' },
         { key: 'taxa_mortalidade_hospitalar', titulo: 'Taxa de Mortalidade Hospitalar (%)', cor: '#EB600A', sufixo: '%' },
         { key: 'taxa_mortalidade_institucional', titulo: 'Taxa de Mortalidade Institucional (%)', cor: '#F3A133', sufixo: '%' }
@@ -221,13 +251,17 @@ function carregarGraficos() {
         const temDados = valores && valores.some(v => v !== null && v !== undefined && Number(v) !== 0);
         if (!temDados) return;
         const card = document.createElement('div');
-        card.className = 'chart-card' + (ind.key === 'saidas' ? ' largura-total' : '');
-        card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
+        card.className = 'chart-card' + (['saidas', 'internacoes'].includes(ind.key) ? ' largura-total' : '');
+        const total = ind.total
+          ? `<div class="resumo-total">Total no período: <b>${valores.reduce((a, v) => a + (Number(v) || 0), 0).toLocaleString('pt-BR')}</b></div>`
+          : '';
+        card.innerHTML = `<h3>${ind.titulo}</h3>${total}<div class="chart-container"><canvas></canvas></div>`;
         container.appendChild(card);
         if (ind.key === 'saidas') {
           criarGraficoSaidas(card, ind.titulo, d.meses, d[ind.key], d.saidas_destinos_mensais);
         } else {
           criarGrafico(card, ind.titulo, d.meses, d[ind.key], ind.cor, true, ind.sufixo);
+          if (ind.key === 'internacoes') tabelaInternacoesClinica(card, d.internacoes_clinicas, d.internacoes, d.dias_mes);
         }
       });
     })

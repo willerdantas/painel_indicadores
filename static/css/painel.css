@@ -176,6 +176,7 @@ html { scroll-padding-top: 110px; }
 
 /* 5. Conteúdo e títulos ------------------------------------------------------- */
 .wrapper, .page-content { width: 100%; max-width: 1400px; margin: 0 auto; padding: 1.5rem 2rem 2rem; }
+.pg-hcasg-hospitalares .wrapper, .pg-hcasg-emergencia .wrapper { max-width: 1460px; }
 .main-container { width: 100%; }
 .content { display: flex; flex-wrap: wrap; gap: 1.5rem; width: 100%; margin-bottom: 1.5rem; }
 .section-title {
@@ -1351,6 +1352,13 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-hospitalares-tendencia .charts-grid.stacked { grid-template-columns: 1fr; }
 .pg-hcasg-hospitalares-tendencia .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
 .pg-hcasg-hospitalares-tendencia .chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
+/* tabela com N linhas visíveis, cabeçalho e total fixos (static/js/tabela_rolagem.js) */
+.tabela-rolagem-fixa { overflow-y: auto; border-bottom: 1px solid var(--border); }
+.tabela-rolagem-fixa thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+.tabela-rolagem-fixa tr.total td { position: sticky; bottom: -1px; background: var(--card); z-index: 1; box-shadow: 0 1px 0 var(--card); }
+.pg-hcasg-hospitalares-tendencia .tabela-info .nota { font-size: .72rem; color: var(--muted); margin-top: .5rem; }
+.pg-hcasg-hospitalares-tendencia .resumo-total { font-size: .85rem; color: var(--muted); margin: -.5rem 0 .75rem; }
+.pg-hcasg-hospitalares-tendencia .resumo-total b { color: var(--dark); font-family: 'Syne', sans-serif; font-size: 1rem; }
 .pg-hcasg-hospitalares-tendencia .chart-container { height: 300px; }
 .pg-hcasg-hospitalares-tendencia .error-bar { display: none; }
 @media(max-width:900px) {

@@ -603,6 +603,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     # no mês do cadastro, pela clínica da primeira movimentação).
     rows_internacoes_mes = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT DATE_TRUNC('month', ti.dat_cadastro)::date AS mes,
+               pc.dsc_clinica,
                COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
         FROM t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
@@ -610,9 +611,16 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
           AND ti.dat_cadastro::date BETWEEN %s AND %s
           AND pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
         {filt_sql}
-        GROUP BY DATE_TRUNC('month', ti.dat_cadastro)::date
+        GROUP BY 1, 2
     """, [dt_ini, dt_fim] + filt_vals)
-    mapa_internacoes = {r["mes"]: r["qtd"] for r in (rows_internacoes_mes or [])}
+    # cada internação tem uma só primeira clínica: o total do mês é a soma das clínicas
+    mapa_internacoes = {}
+    internacoes_clinica = {}
+    idx_mes = {mes: i for i, mes in enumerate(meses_keys)}
+    for r in rows_internacoes_mes or []:
+        mapa_internacoes[r["mes"]] = mapa_internacoes.get(r["mes"], 0) + r["qtd"]
+        if r["mes"] in idx_mes:
+            internacoes_clinica.setdefault(r["dsc_clinica"].strip(), [0] * len(meses_keys))[idx_mes[r["mes"]]] += r["qtd"]
 
     result = {
         "meses": _meses_labels(meses_keys),
@@ -700,6 +708,15 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             "dsc_destino": info["dsc_destino"],
             "valores": [info["por_mes"].get(mes, 0) for mes in meses_keys]
         }
+
+    # internações por primeira clínica (do maior total para o menor) e os dias
+    # de cada mês na janela (o mês corrente conta só até hoje), para a média por dia
+    result["internacoes_clinicas"] = [
+        {"nome": nome, "valores": valores}
+        for nome, valores in sorted(internacoes_clinica.items(), key=lambda x: (-sum(x[1]), x[0]))
+    ]
+    result["dias_mes"] = [max(0, (min(_add_months(mes, 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
+                          for mes in meses_keys]
 
     return result
 
@@ -1688,12 +1705,12 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                      COALESCE(til.dat_internacao_info, til.dat_internacao),
                      til.isn_internacao_leito
         )
-        SELECT ip.dia, COUNT(DISTINCT ip.isn_internacao) AS qtd
+        SELECT ip.dia, pc.dsc_clinica, COUNT(DISTINCT ip.isn_internacao) AS qtd
         FROM internacoes_periodo ip
         JOIN primeira_clinica pc ON pc.isn_internacao = ip.isn_internacao
         WHERE pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
         {filt_sql}
-        GROUP BY ip.dia
+        GROUP BY ip.dia, pc.dsc_clinica
     """, [dt_ini, dt_fim] + filt_vals)
 
     rows_saidas = _consultas.submit(fetch_all, f"""
@@ -1749,6 +1766,7 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         SELECT
             dt_alta AS dia,
             hora_alta AS hora,
+            dsc_clinica AS clinica,
             CASE
                 WHEN isn_destino = 4
                      AND ts_alta IS NOT NULL AND dat_cadastro IS NOT NULL
@@ -1770,7 +1788,7 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                 )
               )
           AND dt_alta BETWEEN %s AND %s
-        GROUP BY 1, 2, 3
+        GROUP BY 1, 2, 3, 4
     """, [dt_ini, dt_fim, dt_fim, dt_ini] + filt_vals + [dt_ini, dt_fim])
 
     _consultas.shutdown(wait=True)
@@ -1780,19 +1798,26 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
     dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
     idx_dia = {d: i for i, d in enumerate(dias)}
 
+    # cada internação tem uma só primeira clínica: o total do dia é a soma das clínicas
     internacoes = [0] * len(dias)
+    internacoes_clinica = {}
     for r in rows_internacoes or []:
-        internacoes[idx_dia[r["dia"]]] = int(r["qtd"])
+        i = idx_dia[r["dia"]]
+        internacoes[i] += int(r["qtd"])
+        internacoes_clinica.setdefault(r["dsc_clinica"].strip(), [0] * len(dias))[i] += int(r["qtd"])
 
     por_destino = {}            # rótulo -> (isn_destino, valores por dia)
     saidas_dia = [0] * len(dias)
     saidas_hora = [0] * 24
     sem_hora = 0
+    saidas_clinica = {}         # clínica da alta -> {destino: qtd}
     for r in rows_saidas or []:
         i, qtd = idx_dia[r["dia"]], int(r["qtd"])
         if r["destino"] not in por_destino:
             por_destino[r["destino"]] = (int(r["isn_destino"]), [0] * len(dias))
         por_destino[r["destino"]][1][i] += qtd
+        por_clinica = saidas_clinica.setdefault(r["clinica"].strip(), {})
+        por_clinica[r["destino"]] = por_clinica.get(r["destino"], 0) + qtd
         saidas_dia[i] += qtd
         if r["hora"] is None:
             sem_hora += qtd
@@ -1814,10 +1839,20 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         "internacoes_total": total_internacoes,
         "internacoes_media": round(total_internacoes / len(dias), 1) if dias else None,
         "internacoes_mediana": round(statistics.median(internacoes), 1) if dias else None,
+        # por primeira clínica, do maior total para o menor (valores por dia)
+        "internacoes_clinicas": [
+            {"nome": nome, "total": sum(valores), "valores": valores}
+            for nome, valores in sorted(internacoes_clinica.items(), key=lambda x: (-sum(x[1]), x[0]))
+        ],
         "saidas_total": total_saidas,
         "saidas_destinos": [
             {"destino": rotulo, "isn_destino": isn, "valores": valores, "total": sum(valores)}
             for rotulo, (isn, valores) in sorted(por_destino.items(), key=lambda x: (x[1][0], x[0]))
+        ],
+        # clínica da movimentação com a alta x destino, do maior total para o menor
+        "saidas_clinicas": [
+            {"nome": nome, "destinos": destinos, "total": sum(destinos.values())}
+            for nome, destinos in sorted(saidas_clinica.items(), key=lambda x: (-sum(x[1].values()), x[0]))
         ],
         "dias_semana": _DIAS_SEMANA,
         "saidas_dia_semana": totais_semana,
@@ -2600,7 +2635,7 @@ def get_saidas_emergencia(data_ini, data_fim):
                 til.isn_internacao_leito DESC
         ),
         saidas_internacao AS MATERIALIZED (
-            SELECT u.isn_internacao, ti.dat_cadastro, tp.num_prontuario
+            SELECT u.isn_internacao, ti.dat_cadastro, tp.num_prontuario, u.ts_saida::date AS dia
             FROM ultimo_registro u
             JOIN t_internacao ti ON ti.isn_internacao = u.isn_internacao
             JOIN t_paciente tp ON tp.isn_paciente = ti.isn_paciente
@@ -2641,15 +2676,16 @@ def get_saidas_emergencia(data_ini, data_fim):
             CASE WHEN v.id_internacao IS NULL THEN 'Sem internação vinculada'
                  ELSE COALESCE(TRIM(pc.dsc_clinica), 'Sem movimentação') END AS clinica,
             rf.isn_risco,
+            s.dia,
             COUNT(*) AS qtd
         FROM saidas_internacao s
         LEFT JOIN vinculadas v ON v.id_emergencia = s.isn_internacao
         LEFT JOIN primeira_clinica pc ON pc.isn_internacao = v.id_internacao
         LEFT JOIN risco_final rf ON rf.isn_internacao = s.isn_internacao
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
     ''', [dt_ini, dt_fim, dt_ini, dt_fim])
-    internacao_clinica_risco = _montar_clinica_risco(
-        rows_clinica_risco, fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco"))
+    riscos_cadastro = fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco")
+    internacao_clinica_risco = _montar_clinica_risco(rows_clinica_risco, riscos_cadastro)
 
     nomes = {
         int(r["isn_destino"]): r["dsc_destino"]
@@ -2659,6 +2695,15 @@ def get_saidas_emergencia(data_ini, data_fim):
     }
     dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
     idx_dia = {d: i for i, d in enumerate(dias)}
+    # mesmas internações por dia da saída e classificação de risco (na ordem
+    # das colunas da tabela; risco fora do cadastro conta como "Sem classificação")
+    isn_riscos = [r["isn_risco"] for r in riscos_cadastro or []]
+    pos_risco = {isn: i for i, isn in enumerate(isn_riscos)}
+    por_dia_risco = [[0] * len(dias) for _ in range(len(isn_riscos) + 1)]
+    for r in rows_clinica_risco or []:
+        if r["dia"] in idx_dia:
+            por_dia_risco[pos_risco.get(r["isn_risco"], len(isn_riscos))][idx_dia[r["dia"]]] += int(r["qtd"])
+    internacao_clinica_risco["por_dia"] = por_dia_risco
     valores = {dest: [0] * len(dias) for dest in DESTINOS_SAIDA_PS}
     acima_24h_dia = [0] * len(dias)
     for r in rows or []:
