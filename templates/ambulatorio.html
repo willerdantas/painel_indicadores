@@ -300,10 +300,14 @@ Chart.register({
         if (soma && ultima[j]) escrever(soma, ultima[j]);
       });
     } else {
-      visiveis.forEach(i => chart.getDatasetMeta(i).data.forEach((el, j) => {
-        const v = chart.data.datasets[i].data[j];
-        if (v) escrever(v, el);
-      }));
+      // linhas tracejadas (média, mediana) ficam de fora: o valor está na legenda
+      visiveis.filter(i => !chart.data.datasets[i].borderDash).forEach(i => {
+        const linha = chart.getDatasetMeta(i).type === 'line';
+        chart.getDatasetMeta(i).data.forEach((el, j) => {
+          const v = chart.data.datasets[i].data[j];
+          if (v) escrever(v, linha ? { x: el.x, y: el.y - 3 } : el);
+        });
+      });
     }
     ctx.restore();
   }
@@ -538,8 +542,11 @@ function render(d) {
       interaction: { intersect: false, mode: 'index' },
       plugins: {
         legend: { display: true, position: 'bottom', labels: { usePointStyle: true, pointStyle: 'line', padding: 15 } },
-        tooltip: { filter: item => item.datasetIndex === 0 }
+        tooltip: { filter: item => item.datasetIndex === 0 },
+        // com muitos dias os números não cabem
+        valores: { mostrar: d.dias.length <= 62 }
       },
+      layout: { padding: { top: 18, right: 12 } },
       scales: {
         y: { beginAtZero: true, ticks: { precision: 0 } },
         x: { ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: true, maxTicksLimit: 31 } }
