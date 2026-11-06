@@ -54,7 +54,7 @@
             <input type="hidden" name="unidade_id" value="{{ unidade.id }}">
             <input type="hidden" name="unidade_nome" value="{{ unidade.nome }}">
             <div style="display:flex; flex-wrap:wrap; justify-content:space-between; align-items:baseline; gap:10px;">
-                <h2 style="margin:0;">{{ unidade.nome }} <span class="dica" style="font-family:'DM Sans', sans-serif; font-weight:400;">{{ unidade.grupo }}</span></h2>
+                <h2 style="margin:0;">{{ unidade.nome }} <span class="dica" style="font-family:Arial, sans-serif; font-weight:400;">{{ unidade.grupo }}</span></h2>
                 <div class="total-unidade">Total da unidade: <span id="total-unidade">—</span></div>
             </div>
             <div class="dica" style="margin:8px 0 12px;">Valor de cada despesa nesta unidade em {{ mes[5:] }}/{{ mes[:4] }}, no formato

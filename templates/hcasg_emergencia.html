@@ -330,7 +330,7 @@ Chart.register({
     const { ctx } = chart;
     const horizontal = chart.options.indexAxis === 'y';
     ctx.save();
-    ctx.font = `600 ${chart.data.labels.length > 31 ? 9 : 10}px "DM Sans", sans-serif`;
+    ctx.font = `600 ${chart.data.labels.length > 31 ? 9 : 10}px Arial, sans-serif`;
     ctx.lineWidth = 3;
     ctx.lineJoin = 'round';
     ctx.strokeStyle = 'rgba(255,255,255,.9)';
@@ -702,14 +702,14 @@ const pluginRotulosSaidas = {
         const v = ds.data[j];
         if (!v) return;
         if (ds.type === 'line') {
-          ctx.font = 'bold 11px "DM Sans", sans-serif';
+          ctx.font = 'bold 11px Arial, sans-serif';
           ctx.fillStyle = '#38464D';
           ctx.textBaseline = 'bottom';
           ctx.fillText(fmt(v), el.x, el.y - 6);
         } else {
           const altura = Math.abs(el.base - el.y);
           if (altura < 14 || el.width < 16) return;  // segmento pequeno demais para o número
-          ctx.font = '10px "DM Sans", sans-serif';
+          ctx.font = '10px Arial, sans-serif';
           ctx.fillStyle = '#fff';
           ctx.textBaseline = 'middle';
           ctx.fillText(fmt(v), el.x, (el.y + el.base) / 2);

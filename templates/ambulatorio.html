@@ -284,7 +284,7 @@ Chart.register({
     };
     const visiveis = chart.data.datasets.map((_, i) => i).filter(i => chart.isDatasetVisible(i));
     ctx.save();
-    ctx.font = '600 10px "DM Sans", sans-serif';
+    ctx.font = '600 10px Arial, sans-serif';
     ctx.fillStyle = '#3d4f55';
     if (opts.total) {
       // a barra da última série visível termina onde a pilha termina
@@ -340,7 +340,7 @@ const pluginPercentual = {
     const total = ds.data.reduce((s, x) => s + x, 0);
     if (!total) return;
     ctx.save();
-    ctx.font = 'bold 12px "DM Sans", sans-serif';
+    ctx.font = 'bold 12px Arial, sans-serif';
     ctx.fillStyle = '#fff';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';

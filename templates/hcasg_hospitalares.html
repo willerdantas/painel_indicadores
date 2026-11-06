@@ -333,7 +333,7 @@ Chart.register({
       ctx.fillStyle = cor; ctx.fillText(fmt(valor), x, y);
     };
     ctx.save();
-    ctx.font = `600 ${chart.data.labels.length > 31 ? 9 : 10}px "DM Sans", sans-serif`;
+    ctx.font = `600 ${chart.data.labels.length > 31 ? 9 : 10}px Arial, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'bottom';
     const tamanho = parseInt(ctx.font.match(/(\d+)px/)[1], 10);

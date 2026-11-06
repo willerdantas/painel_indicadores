@@ -57,7 +57,7 @@ const rotulosValores = {
       const meta = chart.getDatasetMeta(i);
       const tamanho = meta.data.length > 24 ? 9 : 11;
       const dentro = empilhado && meta.type === 'bar';
-      ctx.font = `600 ${tamanho}px "DM Sans", sans-serif`;
+      ctx.font = `600 ${tamanho}px Arial, sans-serif`;
       meta.data.forEach((el, j) => {
         const v = ds.data[j];
         if (v === null || v === undefined || isNaN(v) || (dentro && !v)) return;

@@ -40,13 +40,16 @@
     --raio-g:    14px;
     --sombra:    0 2px 8px rgba(0, 0, 0, .06);
     --sombra-g:  0 2px 4px rgba(0,0,0,.06), 0 8px 20px rgba(0,60,58,.18), 0 18px 36px -12px rgba(0,60,58,.25);
-    --fonte:        'DM Sans', sans-serif;
-    --fonte-titulo: 'Syne', sans-serif;
+    --fonte:        Arial, sans-serif;
+    --fonte-titulo: Arial, sans-serif;
 }
 
 /* 2. Base -------------------------------------------------------------------- */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 html { -webkit-text-size-adjust: 100%; }
+button, input, select, textarea { font-family: inherit; }
+/* gráficos Plotly: o texto vem com a fonte no estilo do próprio elemento */
+.js-plotly-plot text { font-family: Arial, sans-serif !important; }
 body {
     display: flex;
     flex-direction: column;
@@ -728,7 +731,7 @@ html { scroll-padding-top: 110px; }
 .pg-admin-classificacoes .dica.intro { position: relative; color: #fff; opacity: .9; margin: -12px 0 10px; font-size: 13px; }
 .pg-admin-classificacoes .grade-classificacao { position: relative; display: grid; grid-template-columns: minmax(340px, 460px) minmax(0, 1fr); gap: 20px; align-items: start; }
 .pg-admin-classificacoes h2 { display: flex; justify-content: space-between; align-items: baseline; }
-.pg-admin-classificacoes h2 .qtd { font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); }
+.pg-admin-classificacoes h2 .qtd { font-family: Arial, sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); }
 .pg-admin-classificacoes .form-novo, .pg-admin-classificacoes .lote, .pg-admin-classificacoes .filtros-exames { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 12px; }
 .pg-admin-classificacoes .form-novo, .pg-admin-classificacoes .lote { padding: 10px 12px; background: var(--bg); border-radius: 10px; }
 .pg-admin-classificacoes .form-novo input[type=text], .pg-admin-classificacoes .lote select, .pg-admin-classificacoes .filtros-exames input, .pg-admin-classificacoes .filtros-exames select { width: auto; flex: 1 1 180px; font-size: 14px; padding: 8px 10px; background: #fff; }
@@ -759,11 +762,11 @@ html { scroll-padding-top: 110px; }
   .pg-admin-classificacoes .grade-classificacao { grid-template-columns: 1fr; }
 }
 
-.pg-admin-cadastros .grupo-titulo { position: relative; color: #fff; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin: 26px 0 12px; }
+.pg-admin-cadastros .grupo-titulo { position: relative; color: #fff; font-family: Arial, sans-serif; font-size: 15px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; margin: 26px 0 12px; }
 .pg-admin-cadastros .cadastros { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(440px, 1fr)); gap: 20px; align-items: start; }
 .pg-admin-cadastros .cadastro { scroll-margin-top: 20px; }
 .pg-admin-cadastros .cadastro h2 { display: flex; justify-content: space-between; align-items: baseline; }
-.pg-admin-cadastros .cadastro h2 .qtd { font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); }
+.pg-admin-cadastros .cadastro h2 .qtd { font-family: Arial, sans-serif; font-size: 12px; font-weight: 500; color: var(--muted); }
 .pg-admin-cadastros .form-novo { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 12px; background: var(--bg); border-radius: 10px; margin-bottom: 12px; }
 .pg-admin-cadastros .form-novo input[type=text], .pg-admin-cadastros .form-novo select { width: auto; flex: 1 1 140px; background: #fff; font-size: 14px; padding: 8px 10px; }
 .pg-admin-cadastros .form-novo input.curto { flex: 0 1 90px; }
@@ -831,7 +834,7 @@ html { scroll-padding-top: 110px; }
 .pg-admin-importacao-custos .matriz td:first-child, .pg-admin-importacao-custos .matriz th:first-child { position: sticky; left: 0; background: #fff; z-index: 1; min-width: 220px; }
 .pg-admin-importacao-custos .matriz thead th:first-child { z-index: 3; }
 .pg-admin-importacao-custos .matriz tr.grupo td:first-child { background: var(--claro); }
-.pg-admin-importacao-custos details summary { cursor: pointer; font-family: 'Syne', sans-serif; font-size: 15px; font-weight: 700; color: var(--dark); }
+.pg-admin-importacao-custos details summary { cursor: pointer; font-family: Arial, sans-serif; font-size: 15px; font-weight: 700; color: var(--dark); }
 .pg-admin-importacao-custos .barra-acoes { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-top: 18px; }
 .pg-admin-importacao-custos .barra-acoes form { display: inline; }
 .pg-admin-importacao-custos input[type=month] { padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; font: inherit; background: var(--bg); }
@@ -853,7 +856,7 @@ html { scroll-padding-top: 110px; }
 .pg-admin-lancamento .tabela-lanc td.quem { font-size: 12px; color: var(--muted); white-space: nowrap; }
 .pg-admin-lancamento .tabela-lanc th.num { text-align: right; }
 .pg-admin-lancamento .tabela-lanc td.calculada { text-align: right; font-variant-numeric: tabular-nums; color: var(--green); font-weight: 600; }
-.pg-admin-lancamento .total-mes { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: var(--green); }
+.pg-admin-lancamento .total-mes { font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; color: var(--green); }
 .pg-admin-lancamento .lista-meses a { color: var(--green); text-decoration: none; font-weight: 500; }
 .pg-admin-lancamento .lista-meses a:hover { text-decoration: underline; }
 .pg-admin-lancamento .lista-meses tr.atual td { background: var(--claro); }
@@ -870,7 +873,7 @@ html { scroll-padding-top: 110px; }
 .pg-admin-lancamento-custos .filtros label.campo { margin-top: 0; }
 .pg-admin-lancamento-custos .filtros select { min-width: 280px; max-width: 420px; }
 .pg-admin-lancamento-custos .navegar { display: flex; gap: 6px; }
-.pg-admin-lancamento-custos .total-unidade { font-family: 'Syne', sans-serif; font-size: 16px; font-weight: 700; color: var(--green); }
+.pg-admin-lancamento-custos .total-unidade { font-family: Arial, sans-serif; font-size: 16px; font-weight: 700; color: var(--green); }
 .pg-admin-lancamento-custos .alerta { border-radius: 10px; padding: 10px 14px; font-size: 14px; margin: 12px 0; }
 .pg-admin-lancamento-custos .alerta.aviso { background: var(--aviso-fundo); border: 1px solid var(--amber); color: var(--orange); }
 .pg-admin-lancamento-custos .lado { display: flex; flex-direction: column; gap: 20px; }
@@ -1027,7 +1030,7 @@ html { scroll-padding-top: 110px; }
 .pg-exames-por-clinica .filters { display: flex; flex-wrap: wrap; gap: 20px; max-width: 100%; align-items: flex-end; }
 .pg-exames-por-clinica .filter-actions { display: flex; flex-direction: column; gap: 10px; min-width: 160px; justify-content: flex-end; }
 .pg-exames-por-clinica .filter-group { display: flex; flex-direction: column; min-width: 180px; }
-.pg-exames-por-clinica select, .pg-exames-por-clinica input[type="date"] { font-family: 'DM Sans', sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
+.pg-exames-por-clinica select, .pg-exames-por-clinica input[type="date"] { font-family: Arial, sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
 .pg-exames-por-clinica select:focus, .pg-exames-por-clinica input[type="date"]:focus { border-color: var(--primaria); }
 .pg-exames-por-clinica .kpi-container { display: flex; gap: 16px; flex-wrap: nowrap; overflow-x: auto; }
 .pg-exames-por-clinica .kpi-box { flex: 1; min-width: 150px; }
@@ -1035,7 +1038,7 @@ html { scroll-padding-top: 110px; }
 .pg-exames-por-clinica .chart-container { flex: 1 1 900px; min-width: 600px; max-width: 100%; overflow-x: auto; display: flex; flex-direction: column; justify-content: flex-start; }
 .pg-exames-por-clinica table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; background: #fff; position: relative; z-index: 3; display: block; overflow-x: auto; max-width: 100%; }
 .pg-exames-por-clinica th, .pg-exames-por-clinica td { border: 1px solid var(--border); padding: 7px; text-align: center; white-space: nowrap; }
-.pg-exames-por-clinica th { background: var(--bg); color: var(--primaria); font-family: 'Syne', sans-serif; font-weight: 700; letter-spacing: 0.03em; position: sticky; top: 0; }
+.pg-exames-por-clinica th { background: var(--bg); color: var(--primaria); font-family: Arial, sans-serif; font-weight: 700; letter-spacing: 0.03em; position: sticky; top: 0; }
 .pg-exames-por-clinica tr:nth-child(even) { background: var(--bg); }
 .pg-exames-por-clinica tr.total-row { background: var(--claro); font-weight: bold; }
 .pg-exames-por-clinica tr.total-row td { color: var(--green); }
@@ -1047,13 +1050,13 @@ html { scroll-padding-top: 110px; }
 .tempo-exames table { display: table; width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; background: #fff; }
 .tempo-exames .tabela-rolagem { overflow-x: auto; }
 .tempo-exames th, .tempo-exames td { border: 1px solid var(--border); padding: 7px; text-align: center; white-space: nowrap; }
-.tempo-exames th { background: var(--bg); color: var(--primaria); font-family: 'Syne', sans-serif; font-weight: 700; letter-spacing: 0.03em; position: sticky; top: 0; }
+.tempo-exames th { background: var(--bg); color: var(--primaria); font-family: Arial, sans-serif; font-weight: 700; letter-spacing: 0.03em; position: sticky; top: 0; }
 .tempo-exames tr:nth-child(even) { background: var(--bg); }
 .tempo-exames tr.total-row { background: var(--claro); font-weight: bold; }
 .tempo-exames tr.total-row td { color: var(--green); }
 .tempo-exames td:first-child { text-align: left; font-weight: 500; }
 .tempo-exames tr.clinica-toggle-row { cursor: pointer; }
-.tempo-exames .secao-tempo h5 { font-family: 'Syne', sans-serif; font-size: 13px; color: var(--dark); margin: 0; }
+.tempo-exames .secao-tempo h5 { font-family: Arial, sans-serif; font-size: 13px; color: var(--dark); margin: 0; }
 .tempo-exames .secao-tempo[hidden], .tempo-exames .botao-origem-tempo[hidden] { display: none; }
 .tempo-exames .secao-tempo { margin-top: 14px; }
 .tempo-exames .botoes-origem-tempo { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 14px; }
@@ -1068,7 +1071,7 @@ html { scroll-padding-top: 110px; }
 .pg-exames-por-clinica #tabela-exames-classificacao td:nth-child(2), .tempo-exames .tabela-tempo td:nth-child(2) { text-align: left; white-space: normal; min-width: 180px; }
 .pg-exames-por-clinica #tabela-exames-classificacao td.col-total { font-weight: 700; background: rgba(0,161,162,.06); }
 .pg-exames-por-clinica .painel-sem-agend { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
-.pg-exames-por-clinica .titulo-barras { font-family: 'Syne', sans-serif; font-size: 13px; color: var(--dark); margin: 0 0 8px; }
+.pg-exames-por-clinica .titulo-barras { font-family: Arial, sans-serif; font-size: 13px; color: var(--dark); margin: 0 0 8px; }
 .pg-exames-por-clinica .lista-barras { display: flex; flex-direction: column; gap: 6px; }
 .pg-exames-por-clinica .barra-linha { display: grid; grid-template-columns: minmax(110px, 38%) 1fr auto; align-items: center; gap: 8px; font-size: 13px; }
 .pg-exames-por-clinica .barra-nome { text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--dark); }
@@ -1096,8 +1099,8 @@ html { scroll-padding-top: 110px; }
 /* ---------- página: faturamento ---------- */
 .pg-faturamento .filters { display: flex; flex-wrap: wrap; gap: 20px; }
 .pg-faturamento .filter-group { display: flex; flex-direction: column; min-width: 200px; }
-.pg-faturamento label { font-family: 'DM Sans', sans-serif; font-size: .72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
-.pg-faturamento input[type="date"], .pg-faturamento select { padding: .5rem .75rem; font-family: 'DM Sans', sans-serif; font-size: .875rem; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
+.pg-faturamento label { font-family: Arial, sans-serif; font-size: .72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
+.pg-faturamento input[type="date"], .pg-faturamento select { padding: .5rem .75rem; font-family: Arial, sans-serif; font-size: .875rem; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
 .pg-faturamento input[type="date"]:focus, .pg-faturamento select:focus { border-color: var(--primaria); }
 .pg-faturamento .kpi-container { display: flex; gap: 16px; flex-wrap: wrap; }
 .pg-faturamento .kpi-box { flex: 1; min-width: 200px; }
@@ -1117,7 +1120,7 @@ html { scroll-padding-top: 110px; }
 .pg-financeiro .chart-box { position: relative; height: 300px; }
 .pg-financeiro .filtros-tabela { display: grid; grid-template-columns: minmax(240px, 2fr) repeat(2, minmax(180px, 1fr)); gap: 14px; margin-bottom: 10px; }
 .pg-financeiro .filtros-tabela label { display: block; font-size: .72rem; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
-.pg-financeiro .filtros-tabela input, .pg-financeiro .filtros-tabela select { width: 100%; padding: .5rem .75rem; font-family: 'DM Sans', sans-serif; font-size: .875rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--dark); outline: none; }
+.pg-financeiro .filtros-tabela input, .pg-financeiro .filtros-tabela select { width: 100%; padding: .5rem .75rem; font-family: Arial, sans-serif; font-size: .875rem; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--dark); outline: none; }
 .pg-financeiro .filtros-tabela input:focus, .pg-financeiro .filtros-tabela select:focus { border-color: var(--primaria); }
 .pg-financeiro .tabela-rolagem { overflow: auto; max-height: 640px; }
 /* empenhos: 10 por página, sem altura máxima (rolagem só se a tela for estreita) */
@@ -1163,7 +1166,7 @@ html { scroll-padding-top: 110px; }
 .pg-graficos-mensais .filter-actions { display: flex; flex-direction: column; gap: 10px; min-width: 160px; justify-content: flex-end; }
 .pg-graficos-mensais .filter-actions button, .pg-graficos-mensais .filter-actions a { display: inline-block; }
 .pg-graficos-mensais .filter-group { display: flex; flex-direction: column; min-width: 180px; flex: 1; }
-.pg-graficos-mensais select, .pg-graficos-mensais input[type="date"] { font-family: 'DM Sans', sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
+.pg-graficos-mensais select, .pg-graficos-mensais input[type="date"] { font-family: Arial, sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
 .pg-graficos-mensais select:focus, .pg-graficos-mensais input[type="date"]:focus { border-color: var(--primaria); }
 .pg-graficos-mensais .kpi-container { display: flex; gap: 16px; flex-wrap: nowrap; overflow-x: auto; }
 .pg-graficos-mensais .kpi-box { flex: 1; min-width: 150px; }
@@ -1175,8 +1178,8 @@ html { scroll-padding-top: 110px; }
 .dados-de { margin: 6px 0 0; text-align: right; font-size: 0.8rem; color: #6c757d; }
 .pg-graficos-mensais .chart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 14px; flex-wrap: wrap; gap: 10px; }
 .pg-graficos-mensais .toggle-group { display: flex; align-items: center; gap: 8px; background: var(--bg); border-radius: 6px; padding: 4px; }
-.pg-graficos-mensais .toggle-group label { font-family: 'DM Sans', sans-serif; font-size: 12px; font-weight: 500; color: var(--dark); margin: 0; }
-.pg-graficos-mensais .toggle-btn { font-family: 'Syne', sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.2s; }
+.pg-graficos-mensais .toggle-group label { font-family: Arial, sans-serif; font-size: 12px; font-weight: 500; color: var(--dark); margin: 0; }
+.pg-graficos-mensais .toggle-btn { font-family: Arial, sans-serif; font-size: 11px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; padding: 6px 14px; border: none; border-radius: 4px; cursor: pointer; background: transparent; color: var(--muted); transition: all 0.2s; }
 .pg-graficos-mensais .toggle-btn.active { background: var(--primaria); color: #fff; }
 @media (max-width: 900px) {
   .pg-graficos-mensais .content { flex-direction: column; gap: 20px; }
@@ -1215,7 +1218,7 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-emergencia .chip input:focus-visible + span { outline: 2px solid var(--green); outline-offset: 2px; }
 .pg-hcasg-emergencia .atend-filtros-nota { font-size: .72rem; color: var(--muted); flex-basis: 100%; }
 .pg-hcasg-emergencia .atend-resumo { font-size: .85rem; color: var(--muted); margin-bottom: 1rem; }
-.pg-hcasg-emergencia .atend-resumo b { color: var(--dark); font-family: 'Syne', sans-serif; font-size: 1rem; }
+.pg-hcasg-emergencia .atend-resumo b { color: var(--dark); font-family: Arial, sans-serif; font-size: 1rem; }
 .pg-hcasg-emergencia .atend-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .pg-hcasg-emergencia .card { min-width: 0; background: var(--card); border: 1px solid var(--border); border-radius: var(--raio); box-shadow: var(--sombra); padding: 1.1rem 1.25rem; }
 .pg-hcasg-emergencia .card h3 { font-family: var(--fonte-titulo); font-size: .9rem; font-weight: 700; color: var(--dark); margin-bottom: .75rem; }
@@ -1249,7 +1252,7 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-emergencia-comparativo .tabela-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); overflow-x: auto; }
 .pg-hcasg-emergencia-comparativo table.comparativo { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .pg-hcasg-emergencia-comparativo table.comparativo th, .pg-hcasg-emergencia-comparativo table.comparativo td { padding: .7rem .9rem; text-align: left; border-bottom: 1px solid var(--border); }
-.pg-hcasg-emergencia-comparativo table.comparativo th { font-family: 'Syne', sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+.pg-hcasg-emergencia-comparativo table.comparativo th { font-family: Arial, sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
 .pg-hcasg-emergencia-comparativo table.comparativo th.num, .pg-hcasg-emergencia-comparativo table.comparativo td.num { text-align: right; }
 .pg-hcasg-emergencia-comparativo table.comparativo tr:last-child td { border-bottom: none; }
 .pg-hcasg-emergencia-comparativo table.comparativo tr:hover td { background: rgba(59,181,163,.06); }
@@ -1330,7 +1333,7 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-hospitalares-comparativo .tabela-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); overflow-x: auto; }
 .pg-hcasg-hospitalares-comparativo table.comparativo { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .pg-hcasg-hospitalares-comparativo table.comparativo th, .pg-hcasg-hospitalares-comparativo table.comparativo td { padding: .7rem .9rem; text-align: left; border-bottom: 1px solid var(--border); }
-.pg-hcasg-hospitalares-comparativo table.comparativo th { font-family: 'Syne', sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+.pg-hcasg-hospitalares-comparativo table.comparativo th { font-family: Arial, sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
 .pg-hcasg-hospitalares-comparativo table.comparativo th.num, .pg-hcasg-hospitalares-comparativo table.comparativo td.num { text-align: right; }
 .pg-hcasg-hospitalares-comparativo table.comparativo tr:last-child td { border-bottom: none; }
 .pg-hcasg-hospitalares-comparativo table.comparativo tr:hover td { background: rgba(59,181,163,.06); }
@@ -1366,7 +1369,7 @@ html { scroll-padding-top: 110px; }
 .tabela-rolagem-fixa tr.total td { position: sticky; bottom: -1px; background: var(--card); z-index: 1; box-shadow: 0 1px 0 var(--card); }
 .pg-hcasg-hospitalares-tendencia .tabela-info .nota { font-size: .72rem; color: var(--muted); margin-top: .5rem; }
 .pg-hcasg-hospitalares-tendencia .resumo-total { font-size: .85rem; color: var(--muted); margin: -.5rem 0 .75rem; }
-.pg-hcasg-hospitalares-tendencia .resumo-total b { color: var(--dark); font-family: 'Syne', sans-serif; font-size: 1rem; }
+.pg-hcasg-hospitalares-tendencia .resumo-total b { color: var(--dark); font-family: Arial, sans-serif; font-size: 1rem; }
 .pg-hcasg-hospitalares-tendencia .chart-container { height: 300px; }
 .pg-hcasg-hospitalares-tendencia .error-bar { display: none; }
 @media(max-width:900px) {
@@ -1407,7 +1410,7 @@ html { scroll-padding-top: 110px; }
 .pg-ambulatorio-comparativo .tabela-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); overflow-x: auto; }
 .pg-ambulatorio-comparativo table.comparativo { width: 100%; border-collapse: collapse; font-size: .88rem; }
 .pg-ambulatorio-comparativo table.comparativo th, .pg-ambulatorio-comparativo table.comparativo td { padding: .7rem .9rem; text-align: left; border-bottom: 1px solid var(--border); }
-.pg-ambulatorio-comparativo table.comparativo th { font-family: 'Syne', sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+.pg-ambulatorio-comparativo table.comparativo th { font-family: Arial, sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
 .pg-ambulatorio-comparativo table.comparativo th.num, .pg-ambulatorio-comparativo table.comparativo td.num { text-align: right; }
 .pg-ambulatorio-comparativo table.comparativo tr:last-child td { border-bottom: none; }
 .pg-ambulatorio-comparativo table.comparativo tr:hover td { background: rgba(59,181,163,.06); }
@@ -1462,7 +1465,7 @@ html { scroll-padding-top: 110px; }
 .pg-lean-auditoria .summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
 .pg-lean-auditoria .sum-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.1rem 1.25rem; text-align: center; }
 .pg-lean-auditoria .sum-card .lbl { font-size: .68rem; font-weight: 600; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: .35rem; }
-.pg-lean-auditoria .sum-card .val { font-family: 'Syne', sans-serif; font-size: 1.6rem; font-weight: 800; color: var(--dark); }
+.pg-lean-auditoria .sum-card .val { font-family: Arial, sans-serif; font-size: 1.6rem; font-weight: 800; color: var(--dark); }
 .pg-lean-auditoria .sum-card .sub { font-size: .75rem; color: var(--muted); margin-top: .2rem; }
 .pg-lean-auditoria .sum-card.c-dest .val { color: var(--teal); }
 .pg-lean-auditoria .sum-card.c-fall .val { color: var(--orange); }
@@ -1551,13 +1554,13 @@ html { scroll-padding-top: 110px; }
 .pg-login .aviso-banco { margin-bottom: 18px; padding: 12px 14px; border-radius: 10px; background: var(--aviso-fundo); border: 1px solid var(--amber); font-size: 13px; line-height: 1.5; color: var(--dark); }
 .pg-login .aviso-banco strong { display: block; color: var(--orange); margin-bottom: 2px; }
 .pg-login .aviso-banco code { font-family: Consolas, monospace; font-weight: 700; }
-.pg-login .login-card h1 { font-family: 'Syne', sans-serif; font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--dark); margin-bottom: 22px; }
+.pg-login .login-card h1 { font-family: Arial, sans-serif; font-size: 20px; font-weight: 700; letter-spacing: 3px; text-transform: uppercase; color: var(--dark); margin-bottom: 22px; }
 .pg-login label { display: block; font-size: 12px; font-weight: 500; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
 .pg-login input { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-family: inherit; font-size: 15px; color: var(--dark); background: var(--bg); margin-bottom: 16px; }
 .pg-login input:focus { outline: none; border-color: var(--primaria); background: #fff; }
 .pg-login .erro { background: var(--erro-fundo); border: 1px solid var(--peach); color: var(--orange); border-radius: 8px; padding: 10px 12px; font-size: 14px; margin-bottom: 16px; }
 .pg-login .acoes { display: flex; gap: 10px; align-items: center; justify-content: space-between; margin-top: 4px; }
-.pg-login button { font-family: 'Syne', sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--primaria); border: none; border-radius: 8px; padding: 11px 26px; cursor: pointer; transition: background .15s; }
+.pg-login button { font-family: Arial, sans-serif; font-size: 13px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; color: #fff; background: var(--primaria); border: none; border-radius: 8px; padding: 11px 26px; cursor: pointer; transition: background .15s; }
 .pg-login button:hover { background: var(--green); }
 .pg-login .voltar { font-size: 14px; color: var(--green); text-decoration: none; }
 .pg-login .voltar:hover { text-decoration: underline; }
@@ -1584,13 +1587,13 @@ html { scroll-padding-top: 110px; }
   .pg-producao-hospitalar .legenda-grafico { flex-basis: auto; width: 100%; padding-top: 0; }
 }
 .pg-producao-hospitalar .acoes-relatorio { display: flex; gap: 8px; margin-right: 10px; }
-.pg-producao-hospitalar .btn-relatorio { font-family: 'Syne', sans-serif; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; background: #fff; color: var(--green); border: 2px solid var(--primaria); border-radius: 6px; padding: 8px 14px; cursor: pointer; white-space: nowrap; transition: background 0.2s, color 0.2s; }
+.pg-producao-hospitalar .btn-relatorio { font-family: Arial, sans-serif; font-size: 0.75rem; font-weight: 700; letter-spacing: 0.05em; background: #fff; color: var(--green); border: 2px solid var(--primaria); border-radius: 6px; padding: 8px 14px; cursor: pointer; white-space: nowrap; transition: background 0.2s, color 0.2s; }
 .pg-producao-hospitalar .btn-relatorio:hover { background: var(--primaria); color: #fff; }
 .pg-producao-hospitalar .btn-relatorio:disabled { opacity: 0.6; cursor: wait; }
 .pg-producao-hospitalar .filters { display: flex; flex-wrap: wrap; gap: 20px; max-width: 100%; }
 .pg-producao-hospitalar .filter-actions { display: flex; flex-direction: column; gap: 10px; min-width: 160px; justify-content: flex-end; }
 .pg-producao-hospitalar .filter-group { display: flex; flex-direction: column; min-width: 180px; }
-.pg-producao-hospitalar select, .pg-producao-hospitalar input[type="date"] { font-family: 'DM Sans', sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
+.pg-producao-hospitalar select, .pg-producao-hospitalar input[type="date"] { font-family: Arial, sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
 .pg-producao-hospitalar select:focus, .pg-producao-hospitalar input[type="date"]:focus { border-color: var(--primaria); }
 .pg-producao-hospitalar ul.checkbox-list { list-style: none; padding: 0; margin: 0; max-height: 160px; overflow-y: auto; min-width: 160px; border: 1px solid var(--border); border-radius: 4px; background: var(--bg); }
 .pg-producao-hospitalar ul.checkbox-list li { padding: 3px 0; }
@@ -1599,12 +1602,12 @@ html { scroll-padding-top: 110px; }
 .pg-producao-hospitalar .content { display: flex; flex-wrap: wrap; gap: 40px; max-width: 100%; width: 100%; }
 .pg-producao-hospitalar .charts-row { display: flex; flex-direction: row; gap: 32px; width: 100%; margin-bottom: 25px; }
 .pg-producao-hospitalar .chart-half { flex: 1 1 0; min-width: 320px; max-width: 50%; background: #fff; border: 1px solid var(--border); border-radius: 10px; padding: 24px 20px; margin-bottom: 0; overflow-x: auto; position: relative; z-index: 2; display: flex; flex-direction: column; justify-content: flex-start; }
-.pg-producao-hospitalar .chart-half h4 { font-family: 'DM Sans', sans-serif; font-size: 0.95rem; font-weight: 500; color: var(--dark); margin: 0 0 14px 0; }
+.pg-producao-hospitalar .chart-half h4 { font-family: Arial, sans-serif; font-size: 0.95rem; font-weight: 500; color: var(--dark); margin: 0 0 14px 0; }
 .pg-producao-hospitalar .chart-container { flex: 1 1 900px; min-width: 600px; max-width: 110%; overflow-x: auto; display: flex; flex-direction: column; justify-content: flex-start; }
 .pg-producao-hospitalar .js-plotly-plot { z-index: 1 !important; position: relative !important; }
 .pg-producao-hospitalar table { width: 100%; border-collapse: separate; border-spacing: 0; margin-top: 10px; background: #fff; position: relative; z-index: 3; display: block; overflow-x: auto; max-width: 100%; }
 .pg-producao-hospitalar th, .pg-producao-hospitalar td { border: 1px solid var(--border); padding: 7px; text-align: center; white-space: nowrap; }
-.pg-producao-hospitalar th { background: var(--bg); color: var(--primaria); font-family: 'Syne', sans-serif; font-weight: 700; letter-spacing: 0.03em; }
+.pg-producao-hospitalar th { background: var(--bg); color: var(--primaria); font-family: Arial, sans-serif; font-weight: 700; letter-spacing: 0.03em; }
 .pg-producao-hospitalar tr.servico-row, .pg-producao-hospitalar tr.exame-row { background: var(--bg); }
 .pg-producao-hospitalar tr.servico-row td, .pg-producao-hospitalar tr.exame-row td { border-bottom: 1px solid var(--border); }
 .pg-producao-hospitalar tr.servico-row td:first-child, .pg-producao-hospitalar tr.exame-row td:first-child { color: var(--primaria); font-weight: bold; }
