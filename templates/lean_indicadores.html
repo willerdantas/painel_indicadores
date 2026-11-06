@@ -16,7 +16,7 @@
   </div>
 </div>
 
-{{ cabecalho('Indicadores LEAN', 'Painel de Gestão', links=[('/lean/tendencias', '📈 Tendência Mensal'), ('/lean/auditoria', '🔍 Auditoria dos dados')]) }}
+{{ cabecalho('Indicadores LEAN', 'Painel de Gestão', links=[('/lean/tendencias', 'Tendência Mensal'), ('/lean/auditoria', 'Auditoria dos dados')]) }}
 
 <div class="wrapper">
 
@@ -73,39 +73,33 @@
         <div class="label">Paciente-dia</div>
         <div class="value" id="paciente_dia">—</div>
         <div class="unit">dias</div>
-        <div class="icon">🗓</div>
       </div>
       <div class="kpi c2">
         <div class="label">Saídas</div>
         <div class="value" id="saidas">—</div>
         <div class="unit">por destino</div>
         <div class="detail" id="saidas_detalhe">—</div>
-        <div class="icon">↗</div>
       </div>
       <div class="kpi c3">
         <div class="label">Tempo Médio Permanência</div>
         <div class="value" id="tmph">—</div>
         <div class="unit">dias (paciente-dia/saídas)</div>
-        <div class="icon">📅</div>
       </div>
       <div class="kpi c4">
         <div class="label">Giro de Leito</div>
         <div class="value" id="giro">—</div>
         <div class="unit">saídas / leito</div>
-        <div class="icon">🔄</div>
       </div>
       <div class="kpi c5">
         <div class="label">Internações</div>
         <div class="value" id="internacoes">—</div>
         <div class="kpi-hover-detail" id="internacoes_detalhe"></div>
-        <div class="icon">🏨</div>
       </div>
       <div class="kpi c6">
         <div class="label">Leitos Disponíveis</div>
         <div class="value" id="leitos_ativos">—</div>
         <div class="unit">média diária (arred. para cima)</div>
         <div class="kpi-hover-detail" id="leitos_ativos_detalhe"></div>
-        <div class="icon">🛏️</div>
       </div>
     </div>
 
@@ -116,59 +110,50 @@
         <div class="value" id="los_sem">—</div>
         <div class="unit">minutos (PS)</div>
         <div class="sub" id="los_sem_sub"></div>
-        <div class="icon">⏱</div>
       </div>
       <div class="kpi c2">
         <div class="label">LOS Com Internação</div>
         <div class="value" id="los_com">—</div>
         <div class="unit">minutos</div>
         <div class="sub" id="los_com_sub"></div>
-        <div class="icon">🏥</div>
       </div>
       <div class="kpi c3">
         <div class="label">Tempo Porta-Médico</div>
         <div class="value" id="porta_medico">—</div>
         <div class="unit">minutos</div>
-        <div class="icon">👨‍⚕️</div>
       </div>
       <div class="kpi c4">
         <div class="label">Giro de Leito PS</div>
         <div class="value" id="giro_ps">—</div>
         <div class="unit">saídas PS / leitos PS</div>
-        <div class="icon">🔁</div>
       </div>
       <div class="kpi c5">
         <div class="label">Paciente-dia PS</div>
         <div class="value" id="paciente_dia_tmp_ps">—</div>
         <div class="unit">dias</div>
-        <div class="icon">🗓</div>
       </div>
       <div class="kpi c6">
         <div class="label">Saídas PS</div>
         <div class="value" id="saidas_tmp_ps">—</div>
         <div class="unit">por destino</div>
         <div class="detail" id="saidas_tmp_ps_detalhe">—</div>
-        <div class="icon">↗</div>
       </div>
       <div class="kpi c7">
         <div class="label">TMP Leitos PS</div>
         <div class="value" id="tmp_ps">—</div>
         <div class="unit">dias (paciente-dia/saídas)</div>
-        <div class="icon">🛏</div>
       </div>
       <div class="kpi c8">
         <div class="label">Internações PS</div>
         <div class="value" id="internacoes_ps">—</div>
         <div class="sub" id="internacoes_ps_sub"></div>
         <div class="kpi-hover-detail" id="internacoes_detalhe_ps"></div>
-        <div class="icon">🛋</div>
       </div>
       <div class="kpi c9">
         <div class="label">Leitos Disponíveis PS</div>
         <div class="value" id="leitos_ativos_ps">—</div>
         <div class="unit">média diária (arred. para cima)</div>
         <div class="kpi-hover-detail" id="leitos_ativos_ps_detalhe"></div>
-        <div class="icon">🛏️</div>
       </div>
     </div>
   </div>

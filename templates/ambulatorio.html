@@ -23,7 +23,7 @@
   </div>
 </div>
 
-{{ cabecalho('Ambulatório', 'Painel de Gestão', links=[('/ambulatorio/tendencia', '📈 Tendência Mensal'), ('/ambulatorio/comparativo', '📊 Comparativo')]) }}
+{{ cabecalho('Ambulatório', 'Painel de Gestão', links=[('/ambulatorio/tendencia', 'Tendência Mensal'), ('/ambulatorio/comparativo', 'Comparativo')]) }}
 
 <div class="wrapper">
 
@@ -71,37 +71,31 @@
         <div class="label">Atendimentos</div>
         <div class="value" id="k_total">—</div>
         <div class="unit">no período</div>
-        <div class="icon">🩺</div>
       </div>
       <div class="kpi c3">
         <div class="label">Média Diária</div>
         <div class="value" id="k_media">—</div>
         <div class="unit" id="k_media_dias" title="Dias sem nenhum atendimento (sábados, domingos e feriados) não entram na média nem na mediana">por dia com atendimento</div>
-        <div class="icon">📅</div>
       </div>
       <div class="kpi c4">
         <div class="label">Concluídos</div>
         <div class="value" id="k_concluidos">—</div>
         <div class="unit">concluído + alta ambulatorial</div>
-        <div class="icon">✅</div>
       </div>
       <div class="kpi c5">
         <div class="label">Alta Ambulatorial</div>
         <div class="value" id="k_altas">—</div>
         <div class="unit" id="k_taxa_alta">—</div>
-        <div class="icon">🏁</div>
       </div>
       <div class="kpi c9">
         <div class="label">Faltas</div>
         <div class="value" id="k_faltas">—</div>
         <div class="unit" id="k_absenteismo">—</div>
-        <div class="icon">🚫</div>
       </div>
       <div class="kpi c6">
         <div class="label">Especialidades</div>
         <div class="value" id="k_especialidades">—</div>
         <div class="unit">com atendimento no período</div>
-        <div class="icon">🏷️</div>
       </div>
     </div>
   </div>

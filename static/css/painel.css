@@ -375,7 +375,6 @@ html { scroll-padding-top: 110px; }
     line-height: 1.35;
     color: rgba(255, 255, 255, .92);
 }
-.kpi .icon { position: absolute; right: 1.25rem; top: 50%; transform: translateY(-50%); font-size: 2rem; opacity: .25; }
 .kpi-hover-detail {
     max-height: 0;
     overflow: hidden;
@@ -518,7 +517,7 @@ html { scroll-padding-top: 110px; }
 }
 .aviso-login { position: relative; color: #fff; font-size: 1rem; text-align: center; }
 
-/* cartões do menu: no máximo 4 por linha, centralizados, com ícone em marca d'água */
+/* cartões do menu: no máximo 4 por linha, centralizados */
 .cards-row {
     position: relative;
     display: flex;
@@ -554,29 +553,12 @@ html { scroll-padding-top: 110px; }
     transition: box-shadow .2s, transform .2s, color .2s, outline-color .2s;
 }
 .cards-row .card span { position: relative; z-index: 1; }
-.cards-row .card svg.marca {
-    position: absolute;
-    right: -14px;
-    bottom: -16px;
-    width: 112px;
-    height: 112px;
-    fill: none;
-    stroke: var(--primaria);
-    stroke-width: 1.6;
-    stroke-linecap: round;
-    stroke-linejoin: round;
-    opacity: .13;
-    transform: rotate(-8deg);
-    transition: opacity .2s, transform .2s;
-    pointer-events: none;
-}
 .cards-row .card:hover {
     transform: translateY(-4px);
     color: var(--green);
     outline-color: rgba(0, 161, 162, .55);
     box-shadow: 0 4px 8px rgba(0,0,0,.08), 0 14px 32px rgba(0,60,58,.24), 0 26px 48px -14px rgba(0,60,58,.32);
 }
-.cards-row .card:hover svg.marca { opacity: .22; transform: rotate(-4deg) scale(1.06); }
 .cards-row .card:focus-visible { outline: 3px solid #fff; outline-offset: 3px; }
 
 /* 11. Área restrita (painéis, botões, mensagens e etiquetas) --------------------- */
@@ -1466,7 +1448,6 @@ html { scroll-padding-top: 110px; }
   .pg-index .cards-row .card { flex: 1 1 100%; max-width: 340px; }
 }
 .pg-index .card { overflow: hidden; height: 150px; display: flex; align-items: center; justify-content: center; }
-.pg-index .card svg.marca { width: 112px; height: 112px; }
 
 /* ---------- página: indicadores ---------- */
 .pg-indicadores .content { display: flex; gap: 20px; flex-wrap: wrap; }

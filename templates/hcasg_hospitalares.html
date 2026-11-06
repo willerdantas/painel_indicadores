@@ -24,7 +24,7 @@
   </div>
 </div>
 
-{{ cabecalho('Indicadores Hospitalares', 'Painel de Gestão', links=[('/hcasg/hospitalares/tendencia', '📈 Tendência Mensal'), ('/hcasg/hospitalares/comparativo', '📊 Comparativo')]) }}
+{{ cabecalho('Indicadores Hospitalares', 'Painel de Gestão', links=[('/hcasg/hospitalares/tendencia', 'Tendência Mensal'), ('/hcasg/hospitalares/comparativo', 'Comparativo')]) }}
 
 <div class="wrapper">
 
@@ -81,63 +81,53 @@
         <div class="label">Paciente-dia</div>
         <div class="value" id="paciente_dia">—</div>
         <div class="unit">dias</div>
-        <div class="icon">🗓</div>
       </div>
       <div class="kpi c2">
         <div class="label">Saídas</div>
         <div class="value" id="saidas">—</div>
         <div class="unit">por destino</div>
         <div class="kpi-hover-detail" id="saidas_detalhe">—</div>
-        <div class="icon">↗</div>
       </div>
       <div class="kpi c3">
         <div class="label">Tempo Médio Permanência</div>
         <div class="value" id="tmph">—</div>
         <div class="unit">dias (paciente-dia/saídas)</div>
-        <div class="icon">📅</div>
       </div>
       <div class="kpi c4">
         <div class="label">Giro de Leito</div>
         <div class="value" id="giro">—</div>
         <div class="unit">saídas / leito</div>
-        <div class="icon">🔄</div>
       </div>
       <div class="kpi c8">
         <div class="label">Leito-Dia</div>
         <div class="value" id="leito_dia">—</div>
         <div class="unit">leitos disponíveis somados dia a dia</div>
-        <div class="icon">🛏️</div>
       </div>
       <div class="kpi c9">
         <div class="label">Taxa de Ocupação</div>
         <div class="value" id="taxa_ocupacao">—</div>
         <div class="unit">% (paciente-dia / leito-dia)</div>
-        <div class="icon">📊</div>
       </div>
       <div class="kpi c5">
         <div class="label">Internações</div>
         <div class="value" id="internacoes">—</div>
         <div class="kpi-hover-detail" id="internacoes_detalhe"></div>
-        <div class="icon">🏨</div>
       </div>
       <div class="kpi c6">
         <div class="label">Leitos Disponíveis</div>
         <div class="value" id="leitos_ativos">—</div>
         <div class="unit">média diária (arred. para cima)</div>
         <div class="kpi-hover-detail" id="leitos_ativos_detalhe"></div>
-        <div class="icon">🛏️</div>
       </div>
       <div class="kpi c10">
         <div class="label">Taxa de Mortalidade Hospitalar</div>
         <div class="value" id="taxa_mortalidade_hospitalar">—</div>
         <div class="unit">% (total óbitos / saídas)</div>
-        <div class="icon">⚕️</div>
       </div>
       <div class="kpi c11">
         <div class="label">Taxa de Mortalidade Institucional</div>
         <div class="value" id="taxa_mortalidade_institucional">—</div>
         <div class="unit">% (óbitos institucionais / saídas)</div>
-        <div class="icon">⚕️</div>
       </div>
     </div>
   </div>

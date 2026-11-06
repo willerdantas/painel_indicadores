@@ -23,7 +23,7 @@
   </div>
 </div>
 
-{{ cabecalho('Indicadores da Emergência', 'Painel de Gestão', links=[('/hcasg/emergencia/tendencia', '📈 Tendência Mensal'), ('/hcasg/emergencia/comparativo', '📊 Comparativo')]) }}
+{{ cabecalho('Indicadores da Emergência', 'Painel de Gestão', links=[('/hcasg/emergencia/tendencia', 'Tendência Mensal'), ('/hcasg/emergencia/comparativo', 'Comparativo')]) }}
 
 <div class="wrapper">
 
@@ -81,27 +81,23 @@
         <div class="value" id="los_sem">—</div>
         <div class="unit">minutos (PS)</div>
         <div class="sub" id="los_sem_sub"></div>
-        <div class="icon">⏱</div>
       </div>
       <div class="kpi c2">
         <div class="label">LOS Com Internação</div>
         <div class="value" id="los_com">—</div>
         <div class="unit">minutos</div>
         <div class="sub" id="los_com_sub"></div>
-        <div class="icon">🏥</div>
       </div>
       <div class="kpi c3">
         <div class="label">Tempo Porta-Médico</div>
         <div class="value" id="porta_medico">—</div>
         <div class="unit">minutos</div>
-        <div class="icon">👨‍⚕️</div>
       </div>
       <div class="kpi c9">
         <div class="label">Leitos Disponíveis PS</div>
         <div class="value" id="leitos_ativos_ps">—</div>
         <div class="unit">média diária (arred. para cima)</div>
         <div class="kpi-hover-detail" id="leitos_ativos_ps_detalhe"></div>
-        <div class="icon">🛏️</div>
       </div>
     </div>
   </div>
