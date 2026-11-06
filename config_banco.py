@@ -76,14 +76,21 @@ _TABELAS_INTERNACAO = (
     't_internacao_atendimento', 't_internacao_leito', 't_internacao_risco',
     't_leito', 't_leito_interditado', 't_paciente', 't_risco', 't_tipo_atendimento',
 )
-MODULOS_HOSPITALAR = (
-    ('Indicadores LEAN', _TABELAS_INTERNACAO),                    # indicadores_hcasg.py
-    ('Indicadores Hospitalares', _TABELAS_INTERNACAO),
-    ('Indicadores da Emergência', _TABELAS_INTERNACAO),
-    ('Exames', ('t_clinica', 't_exame', 't_exame_solic')),  # painel.py (classificação: schema do painel)
-    ('Ambulatório', ('t_especialidade', 't_internacao', 't_marcacao', 't_marcacao_situacao')),  # ambulatorio.py
-)
-TABELAS_USADAS = tuple(sorted({t for _nome, tabelas in MODULOS_HOSPITALAR for t in tabelas}))
+# Por página (chaves de paginas_visiveis.py): o cabeçalho de cada página avisa
+# as que faltam (banco_hospitalar.faltando_na_pagina).
+TABELAS_POR_PAGINA = {
+    'lean': _TABELAS_INTERNACAO,                    # indicadores_hcasg.py
+    'hospitalares': _TABELAS_INTERNACAO,
+    'emergencia': _TABELAS_INTERNACAO + ('t_municipio', 't_uf'),  # município: ambulatorio._municipio_sexo
+    'exames': ('t_clinica', 't_exame', 't_exame_solic'),  # painel.py (classificação: schema do painel)
+    'ambulatorio': ('t_especialidade', 't_internacao', 't_internacao_atendimento', 't_internacao_leito',
+                    't_leito', 't_marcacao', 't_marcacao_situacao', 't_municipio', 't_paciente',
+                    't_uf'),  # ambulatorio.py
+}
+MODULOS_HOSPITALAR = tuple((nome, TABELAS_POR_PAGINA[chave]) for chave, nome in (
+    ('lean', 'Indicadores LEAN'), ('hospitalares', 'Indicadores Hospitalares'),
+    ('emergencia', 'Indicadores da Emergência'), ('exames', 'Exames'), ('ambulatorio', 'Ambulatório')))
+TABELAS_USADAS = tuple(sorted({t for tabelas in TABELAS_POR_PAGINA.values() for t in tabelas}))
 
 _SCHEMA_VALIDO = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')
 

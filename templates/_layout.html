@@ -11,6 +11,8 @@
   cabecalho(): logo (leva ao início), título/subtítulo, links da página e o
   botão "Voltar ao início" (id_voltar: o id que o JavaScript da página usa).
   Ações extras (ex.: botões de relatório) entram com {% call cabecalho(...) %}.
+  Abaixo do cabeçalho, o aviso das tabelas do sistema hospitalar que a página
+  usa e faltam no servidor (tabelas_faltando, em area_restrita.py).
 
   Logos: logo('cabecalho') e logo('carregando') dão o endereço da imagem
   (trocável em Configuração do Banco; ver logos.py).
@@ -38,6 +40,13 @@
         {% if voltar %}<button type="button" id="{{ id_voltar }}" class="btn-voltar">{{ texto_voltar }}</button>{% endif %}
     </nav>
 </header>
+{% set faltam = tabelas_faltando() %}
+{% if faltam %}
+<div class="aviso-tabelas" role="alert">
+    <strong>Tabelas do sistema hospitalar que faltam neste servidor:</strong> {{ faltam | join(', ') }}.
+    Os indicadores que dependem delas aparecem vazios ou zerados; os demais usam as tabelas já importadas.
+</div>
+{% endif %}
 {% endmacro %}
 
 {% macro rodape() %}

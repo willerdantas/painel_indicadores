@@ -22,6 +22,7 @@ from decimal import Decimal
 import psycopg2
 from flask import abort, flash, g, jsonify, redirect, render_template, request, send_file, session, url_for
 
+import banco_hospitalar
 import banco_painel
 import classificacao_exames
 import config_banco
@@ -195,6 +196,13 @@ def logo(tipo):
     """Endereço da logo nos templates (inclusive nas macros do _layout.html):
     logo('cabecalho') ou logo('carregando')."""
     return _enderecos_logos()[tipo]
+
+
+@_gancho('template_global', 'tabelas_faltando')
+def tabelas_faltando():
+    """Tabelas do sistema hospitalar que a página atual usa e faltam no
+    servidor (aviso no cabeçalho do _layout.html)."""
+    return banco_hospitalar.faltando_na_pagina(paginas_visiveis.pagina_da_rota(request.path))
 
 
 @_rota('/logo/<tipo>')
@@ -520,6 +528,7 @@ def admin_banco_salvar():
     except (OSError, ValueError) as e:  # ValueError: chave de criptografia malformada
         return jsonify({'ok': False, 'erro': f'Não foi possível salvar: {e}'}), 500
     # banco ou schema dos dados podem ter mudado: refaz tabelas/migração no destino novo
+    banco_hospitalar.esquecer_estrutura()
     pronto = banco_painel.reiniciar()
     tabelas = []
     if pronto:

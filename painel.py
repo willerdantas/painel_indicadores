@@ -10,7 +10,7 @@ from indicadores_hcasg import get_filtros as hcasg_get_filtros
 from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
 from indicadores_hcasg import get_indicadores_hospitalar, get_indicadores_emergencia
 import indicadores_hcasg as hcasg
-import config_banco
+import banco_hospitalar
 import ambulatorio
 import banco_painel
 import custos
@@ -49,11 +49,10 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PASTA_DADOS = os.path.join(BASE_DIR, 'dados')
 ARQUIVO_EXCEL = 'PRODUÇÃO HOSPITALAR CONSOLIDADA.xlsx'
 
-# Configuração do banco PostgreSQL: centralizada em config_banco.py
-# (editável pela página /admin/banco, variáveis DB_* ou padrões).
 def get_db_connection():
-    """Cria e retorna uma conexão com o PostgreSQL"""
-    return config_banco.conectar()
+    """Conexão com o banco do sistema hospitalar (banco_hospitalar.py), para
+    as consultas de exames que fazem várias leituras na mesma conexão."""
+    return banco_hospitalar.conectar()
 
 
 # Margem de segurança da faixa de IDs: cobre solicitações lançadas fora de
@@ -666,7 +665,9 @@ def aquecer_cache_exames():
 
 
 def _consultar_eventos_exames(data_inicial, data_final):
-    """A consulta de _eventos_exames, sem cache."""
+    """A consulta de _eventos_exames, sem cache (vazia sem t_exame_solic no servidor)."""
+    if banco_hospitalar.faltando(['t_exame_solic']):
+        return []
     conn = get_db_connection()
     try:
         cur = conn.cursor(cursor_factory=RealDictCursor)
@@ -700,12 +701,14 @@ def _consultar_eventos_exames(data_inicial, data_final):
 
 def _cadastros_exames(cur):
     """Clínicas e exames do sistema hospitalar, em ordem de nome:
-    ({isn_clinica: nome}, {isn_exame: nome})."""
-    cur.execute("SELECT isn_clinica, dsc_clinica FROM t_clinica ORDER BY dsc_clinica")
-    clinicas = {int(r['isn_clinica']): r['dsc_clinica'] for r in cur.fetchall()}
-    cur.execute("SELECT isn_exame, dsc_exame FROM t_exame ORDER BY dsc_exame")
-    exames = {int(r['isn_exame']): r['dsc_exame'] for r in cur.fetchall()}
-    return clinicas, exames
+    ({isn_clinica: nome}, {isn_exame: nome}). Tabela ausente no servidor: {}
+    (sem o cadastro, os exames daquela clínica ou exame não entram)."""
+    def ler(tabela, isn, dsc):
+        if banco_hospitalar.faltando([tabela]):
+            return {}
+        cur.execute(f"SELECT {isn}, {dsc} FROM {tabela} ORDER BY {dsc}")
+        return {int(r[isn]): r[dsc] for r in cur.fetchall()}
+    return ler('t_clinica', 'isn_clinica', 'dsc_clinica'), ler('t_exame', 'isn_exame', 'dsc_exame')
 
 
 def _eventos_com_nomes(data_inicial, data_final, nome_clinica, nome_exame, aceita):

@@ -27,73 +27,12 @@ compõem cada indicador. Assim todas as páginas mostram os mesmos números.
 """
 
 import statistics
-import time
 from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 
-import psycopg2
-import psycopg2.extras
-import psycopg2.errorcodes
-
-import config_banco
-
-# ---------------------------------------------------------------------------
-# Conexão: dados de acesso e schema vêm de config_banco.py (página
-# /admin/banco, variáveis DB_* ou padrões). As consultas não fixam schema;
-# vale o search_path da conexão.
-# ---------------------------------------------------------------------------
-
-_RETRY_ERRORS = {
-    psycopg2.errorcodes.ADMIN_SHUTDOWN,
-    psycopg2.errorcodes.CRASH_SHUTDOWN,
-    psycopg2.errorcodes.CANNOT_CONNECT_NOW,
-    psycopg2.errorcodes.CONNECTION_FAILURE,
-    psycopg2.errorcodes.SQLCLIENT_UNABLE_TO_ESTABLISH_SQLCONNECTION,
-}
-_MAX_RETRIES = 4
-_RETRY_DELAY = 2
-
-
-def get_conn():
-    return config_banco.conectar()
-
-
-def _should_retry(exc):
-    # Falhas de conexão (servidor reiniciando, recusando conexões, conexão
-    # caída no meio da consulta) chegam como OperationalError sem pgcode.
-    if isinstance(exc, psycopg2.OperationalError) and not exc.pgcode:
-        return True
-    return exc.pgcode in _RETRY_ERRORS or "conflict with recovery" in str(exc).lower()
-
-
-def _executar(sql, params, fetch):
-    last_exc = None
-    for attempt in range(_MAX_RETRIES):
-        conn = None
-        try:
-            conn = get_conn()
-            # `with conn` só faz commit/rollback; o close() fica no finally.
-            with conn, conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor) as cur:
-                cur.execute(sql, params or [])
-                return fetch(cur)
-        except psycopg2.Error as e:
-            last_exc = e
-            if _should_retry(e) and attempt < _MAX_RETRIES - 1:
-                time.sleep(_RETRY_DELAY)
-                continue
-            raise
-        finally:
-            if conn is not None:
-                conn.close()
-    raise last_exc
-
-
-def fetch_one(sql, params=None):
-    return _executar(sql, params, lambda cur: cur.fetchone())
-
-
-def fetch_all(sql, params=None):
-    return _executar(sql, params, lambda cur: cur.fetchall())
+# Conexão e consultas (com nova tentativa quando a conexão cai; consulta que
+# cita tabela ausente no servidor devolve vazio): banco_hospitalar.py.
+from banco_hospitalar import fetch_all, fetch_one
 
 
 # ---------------------------------------------------------------------------
@@ -2468,7 +2407,7 @@ def _municipios_mensal(dt_ini, dt_fim, idx_mes):
     """Atendimentos de emergência por mês, por município ("NOME/UF") e por
     macrorregião de saúde: [{"nome", "valores"}] do maior total para o menor."""
     # import tardio: ambulatorio importa este módulo
-    from ambulatorio import _MUNICIPIO_SEXO, _JOINS_MUNICIPIO_SEXO, macrorregiao_do_municipio
+    from ambulatorio import _municipio_sexo, _joins_municipio_sexo, macrorregiao_do_municipio
     import banco_painel
 
     rows = fetch_all(f"""
@@ -2478,8 +2417,8 @@ def _municipios_mensal(dt_ini, dt_fim, idx_mes):
             WHERE ti.isn_tipo_atendimento = 2
               AND ti.dat_cadastro::date BETWEEN %s AND %s
         )
-        SELECT a.mes,{_MUNICIPIO_SEXO}, COUNT(*) AS qtd
-        FROM atend a{_JOINS_MUNICIPIO_SEXO}
+        SELECT a.mes,{_municipio_sexo()}, COUNT(*) AS qtd
+        FROM atend a{_joins_municipio_sexo()}
         GROUP BY 1, 2, 3
     """, [dt_ini, dt_fim])
     macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
@@ -2505,12 +2444,12 @@ def _atendimentos_por_municipio(atend_cte, atend_vals):
     macrorregião de saúde, com o mesmo agrupamento do Ambulatório (cadastro
     Regiões de Saúde); do maior para o menor."""
     # import tardio: ambulatorio importa este módulo
-    from ambulatorio import _MUNICIPIO_SEXO, _JOINS_MUNICIPIO_SEXO, macrorregiao_do_municipio
+    from ambulatorio import _municipio_sexo, _joins_municipio_sexo, macrorregiao_do_municipio
     import banco_painel
 
     rows = fetch_all(atend_cte + f"""
-        SELECT a.isn_paciente AS paciente,{_MUNICIPIO_SEXO}, COUNT(*) AS qtd
-        FROM atend a{_JOINS_MUNICIPIO_SEXO}
+        SELECT a.isn_paciente AS paciente,{_municipio_sexo()}, COUNT(*) AS qtd
+        FROM atend a{_joins_municipio_sexo()}
         GROUP BY 1, 2, 3
     """, atend_vals)
     macro_do_municipio = banco_painel.macrorregiao_dos_municipios()

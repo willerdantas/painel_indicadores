@@ -14,6 +14,7 @@ os.environ.pop('ADMIN_PASS', None)
 os.environ.setdefault('FLASK_SECRET_KEY', 'teste')
 os.environ['PAINEL_AQUECER_CACHE'] = '0'  # sem consultas de exames em segundo plano
 
+import banco_hospitalar  # noqa: E402
 import banco_painel  # noqa: E402
 import logos  # noqa: E402
 import paginas_visiveis  # noqa: E402
@@ -24,6 +25,9 @@ import usuarios  # noqa: E402
 banco_painel.iniciar = lambda forcar=False: False
 banco_painel.iniciar_em_segundo_plano = lambda: None
 banco_painel.pronto = lambda: False
+# tabelas do sistema hospitalar "não conferidas": nenhuma dada como ausente
+# (os testes de tabela faltando trocam por uma estrutura falsa)
+banco_hospitalar.estrutura = lambda: None
 
 _ARQUIVO_DB_REAL = usuarios.ARQUIVO_DB
 usuarios.ARQUIVO_DB = os.path.join(tempfile.mkdtemp(), 'usuarios_import.db')

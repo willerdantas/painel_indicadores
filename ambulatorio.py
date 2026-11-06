@@ -41,7 +41,9 @@ import time
 from datetime import date, timedelta
 
 import banco_painel
-from indicadores_hcasg import fetch_all, _DIAS_SEMANA, _meses_iso, _meses_labels
+import banco_hospitalar
+from banco_hospitalar import fetch_all
+from indicadores_hcasg import _DIAS_SEMANA, _meses_iso, _meses_labels
 
 _CACHE_TTL = 600  # segundos
 _cache = {}
@@ -101,39 +103,97 @@ def _consultar(nome, sql, params):
     return rows
 
 
-# marcação de cada atendimento de "atend" (especialidade e status)
-_CTE_MARCACAO = """
+# O SQL abaixo é montado a cada consulta com as tabelas e colunas que o
+# servidor tem (banco_hospitalar.tem_colunas): onde o sistema hospitalar não
+# tem t_marcacao.isn_especialidade, a especialidade vem só de
+# t_marcacao.dsc_especialidade; sem uma tabela de apoio (t_especialidade,
+# t_marcacao_situacao, t_municipio, t_uf, t_paciente), o campo fica como
+# "Sem ..." e o resto da página continua.
+_COLUNAS_MARCACAO = (('isn_especialidade', 'numeric'), ('dsc_especialidade', 'text'),
+                     ('isn_marcacao_situacao', 'numeric'), ('isn_tipo_consulta', 'numeric'))
+
+
+def _cte_marcacao():
+    """CTE "marcacao": a marcação de cada atendimento de "atend" (a mais
+    recente, se houver mais); coluna que t_marcacao não tem vem NULL."""
+    if not banco_hospitalar.tem_colunas('t_marcacao', 'isn_internacao', 'isn_marcacao'):
+        nulas = ', '.join(f'NULL::{tipo} AS {c}' for c, tipo in _COLUNAS_MARCACAO)
+        return f"""
+        marcacao AS (SELECT NULL::numeric AS isn_internacao, {nulas} WHERE false)"""
+    colunas = ',\n                '.join(f'tm.{c}' if banco_hospitalar.tem_colunas('t_marcacao', c)
+                                         else f'NULL::{tipo} AS {c}' for c, tipo in _COLUNAS_MARCACAO)
+    return f"""
         marcacao AS MATERIALIZED (
-            -- uma marcação por atendimento (a mais recente, se houver mais)
             SELECT DISTINCT ON (tm.isn_internacao)
                 tm.isn_internacao,
-                tm.isn_especialidade,
-                tm.dsc_especialidade,
-                tm.isn_marcacao_situacao,
-                tm.isn_tipo_consulta
+                {colunas}
             FROM t_marcacao tm
             WHERE tm.isn_internacao IN (SELECT isn_internacao FROM atend)
             ORDER BY tm.isn_internacao, tm.isn_marcacao DESC
         )"""
-_ESPECIALIDADE_STATUS = """
-            COALESCE(NULLIF(TRIM(te.dsc_especialidade), ''),
-                     NULLIF(TRIM(m.dsc_especialidade), ''),
+
+
+def _com_especialidade_cadastrada():
+    return (banco_hospitalar.tem_colunas('t_marcacao', 'isn_especialidade')
+            and banco_hospitalar.tem_colunas('t_especialidade', 'isn_especialidade', 'dsc_especialidade'))
+
+
+def _com_situacao():
+    return banco_hospitalar.tem_colunas('t_marcacao_situacao', 'isn_marcacao_situacao', 'dsc_marcacao_situacao')
+
+
+def _especialidade_status():
+    """Colunas especialidade e status (o nome do cadastro de especialidades,
+    senão o texto gravado na marcação)."""
+    cadastro = "NULLIF(TRIM(te.dsc_especialidade), ''),\n                     " if _com_especialidade_cadastrada() else ''
+    situacao = 'tms.dsc_marcacao_situacao' if _com_situacao() else 'NULL'
+    return f"""
+            COALESCE({cadastro}NULLIF(TRIM(m.dsc_especialidade), ''),
                      'Sem especialidade')                 AS especialidade,
-            COALESCE(tms.dsc_marcacao_situacao, 'Sem marcação') AS status,"""
-_JOINS_ESPECIALIDADE_STATUS = """
-        LEFT JOIN marcacao m ON m.isn_internacao = a.isn_internacao
-        LEFT JOIN t_especialidade te ON te.isn_especialidade = m.isn_especialidade
+            COALESCE({situacao}, 'Sem marcação') AS status,"""
+
+
+def _joins_especialidade_status():
+    joins = """
+        LEFT JOIN marcacao m ON m.isn_internacao = a.isn_internacao"""
+    if _com_especialidade_cadastrada():
+        joins += """
+        LEFT JOIN t_especialidade te ON te.isn_especialidade = m.isn_especialidade"""
+    if _com_situacao():
+        joins += """
         LEFT JOIN t_marcacao_situacao tms ON tms.isn_marcacao_situacao = m.isn_marcacao_situacao"""
-# município do atendimento (com a UF: há nomes iguais em estados diferentes) e
-# sexo do paciente; "a" precisa ter isn_paciente, isn_municipio e isn_uf
-_MUNICIPIO_SEXO = """
-            COALESCE(NULLIF(TRIM(tmu.dsc_municipio), '') || COALESCE('/' || NULLIF(TRIM(tuf.sgl_uf), ''), ''),
-                     'Sem município') AS municipio,
-            COALESCE(NULLIF(TRIM(tp.dsc_sexo), ''), 'Não informado') AS sexo"""
-_JOINS_MUNICIPIO_SEXO = """
-        LEFT JOIN t_municipio tmu ON tmu.isn_municipio = a.isn_municipio
-        LEFT JOIN t_uf tuf ON tuf.isn_uf = a.isn_uf
+    return joins
+
+
+def _com_paciente():
+    return banco_hospitalar.tem_colunas('t_paciente', 'isn_paciente', 'dsc_sexo', 'dat_nascimento')
+
+
+def _municipio_sexo():
+    """Colunas municipio (com a UF: há nomes iguais em estados diferentes) e
+    sexo do paciente; "a" precisa ter isn_paciente, isn_municipio e isn_uf."""
+    municipio = "NULLIF(TRIM(tmu.dsc_municipio), '')" if banco_hospitalar.tem_colunas(
+        't_municipio', 'isn_municipio', 'dsc_municipio') else 'NULL'
+    uf = "COALESCE('/' || NULLIF(TRIM(tuf.sgl_uf), ''), '')" if banco_hospitalar.tem_colunas(
+        't_uf', 'isn_uf', 'sgl_uf') else "''"
+    sexo = "NULLIF(TRIM(tp.dsc_sexo), '')" if _com_paciente() else 'NULL'
+    return f"""
+            COALESCE({municipio} || {uf}, 'Sem município') AS municipio,
+            COALESCE({sexo}, 'Não informado') AS sexo"""
+
+
+def _joins_municipio_sexo():
+    joins = ''
+    if banco_hospitalar.tem_colunas('t_municipio', 'isn_municipio', 'dsc_municipio'):
+        joins += """
+        LEFT JOIN t_municipio tmu ON tmu.isn_municipio = a.isn_municipio"""
+    if banco_hospitalar.tem_colunas('t_uf', 'isn_uf', 'sgl_uf'):
+        joins += """
+        LEFT JOIN t_uf tuf ON tuf.isn_uf = a.isn_uf"""
+    if _com_paciente():
+        joins += """
         LEFT JOIN t_paciente tp ON tp.isn_paciente = a.isn_paciente"""
+    return joins
 # atendimentos do período e a marcação de cada um
 _ATEND_PERIODO = """
             SELECT ti.isn_internacao, ti.dat_cadastro, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
@@ -141,9 +201,10 @@ _ATEND_PERIODO = """
             WHERE ti.isn_tipo_atendimento = 4
               -- intervalo na própria coluna (sem ::date) para poder usar índice em dat_cadastro
               AND ti.dat_cadastro >= %s AND ti.dat_cadastro < %s"""
-_CTE_ATENDIMENTOS = f"""
+def _cte_atendimentos():
+    return f"""
         WITH atend AS MATERIALIZED ({_ATEND_PERIODO}
-        ),{_CTE_MARCACAO}"""
+        ),{_cte_marcacao()}"""
 
 
 def _resumo_periodo(dt_ini, dt_fim):
@@ -171,9 +232,9 @@ def _perfil_atendimentos(internacoes):
             SELECT ti.isn_internacao, ti.isn_paciente, ti.isn_municipio, ti.isn_uf
             FROM t_internacao ti
             WHERE ti.isn_internacao = ANY(%s)
-        ),{_CTE_MARCACAO}
-        SELECT a.isn_internacao AS internacao,{_ESPECIALIDADE_STATUS}{_MUNICIPIO_SEXO}
-        FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
+        ),{_cte_marcacao()}
+        SELECT a.isn_internacao AS internacao,{_especialidade_status()}{_municipio_sexo()}
+        FROM atend a{_joins_especialidade_status()}{_joins_municipio_sexo()}
     """, [list(internacoes)])
     return {r["internacao"]: (r["especialidade"].strip(), r["status"].strip(), r["sexo"].strip(),
                               r["municipio"].strip()) for r in rows}
@@ -249,12 +310,13 @@ def _visitas_periodo(dt_ini, dt_fim):
     completos na data do atendimento, de t_paciente.dat_nascimento (sem data
     ou fora de 0 a 120 anos: None)."""
     def calcular():
-        rows = _consultar('atendimentos', f"""{_CTE_ATENDIMENTOS}
-            SELECT a.isn_internacao AS internacao, a.isn_paciente AS paciente,{_ESPECIALIDADE_STATUS}
-                a.dat_cadastro::date AS dia,{_MUNICIPIO_SEXO},
-                date_part('year', age(a.dat_cadastro::date, tp.dat_nascimento::date))::int AS idade,
+        nascimento = 'tp.dat_nascimento::date' if _com_paciente() else 'NULL::date'
+        rows = _consultar('atendimentos', f"""{_cte_atendimentos()}
+            SELECT a.isn_internacao AS internacao, a.isn_paciente AS paciente,{_especialidade_status()}
+                a.dat_cadastro::date AS dia,{_municipio_sexo()},
+                date_part('year', age(a.dat_cadastro::date, {nascimento}))::int AS idade,
                 m.isn_tipo_consulta AS tipo
-            FROM atend a{_JOINS_ESPECIALIDADE_STATUS}{_JOINS_MUNICIPIO_SEXO}
+            FROM atend a{_joins_especialidade_status()}{_joins_municipio_sexo()}
         """, [dt_ini, dt_fim + timedelta(days=1)])
         return [
             (r["paciente"], r["especialidade"].strip(), r["status"].strip(), r["dia"], r["municipio"].strip(),

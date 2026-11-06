@@ -17,7 +17,7 @@ sistema hospitalar, quando existir:
 Exame sem associação aparece nos painéis como "SEM CLASSIFICAÇÃO".
 """
 
-import config_banco
+import banco_hospitalar
 import banco_painel
 from banco_painel import _cursor, schema
 
@@ -105,19 +105,14 @@ def excluir(classificacao_id):
 # ---------------------------------------------------------------- associação dos exames
 
 def exames():
-    """Exames do sistema hospitalar com a classificação atual (id ou None)."""
-    conn = config_banco.conectar()
-    try:
-        with conn.cursor() as cur:
-            cur.execute('SELECT isn_exame, dsc_exame FROM t_exame ORDER BY dsc_exame, isn_exame')
-            lista = cur.fetchall()
-    finally:
-        conn.close()
+    """Exames do sistema hospitalar com a classificação atual (id ou None);
+    lista vazia se t_exame não existe no servidor."""
+    lista = banco_hospitalar.fetch_all('SELECT isn_exame, dsc_exame FROM t_exame ORDER BY dsc_exame, isn_exame')
     with _cursor() as cur:
         cur.execute(f'SELECT isn_exame, classificacao_id FROM {schema()}.exame_classificacao')
         atual = {int(r['isn_exame']): r['classificacao_id'] for r in cur.fetchall()}
-    return [{'isn_exame': int(isn), 'exame': (dsc or '').strip(), 'classificacao_id': atual.get(int(isn))}
-            for isn, dsc in lista]
+    return [{'isn_exame': int(r['isn_exame']), 'exame': (r['dsc_exame'] or '').strip(),
+             'classificacao_id': atual.get(int(r['isn_exame']))} for r in lista]
 
 
 def associar(mudancas):
