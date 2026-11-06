@@ -12,6 +12,7 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, RAIZ)
 os.environ.pop('ADMIN_PASS', None)
 os.environ.setdefault('FLASK_SECRET_KEY', 'teste')
+os.environ['PAINEL_AQUECER_CACHE'] = '0'  # sem consultas de exames em segundo plano
 
 import banco_painel  # noqa: E402
 import logos  # noqa: E402

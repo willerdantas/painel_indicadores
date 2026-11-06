@@ -64,17 +64,17 @@
             <div class="kpi-box">
                 <h5>Total Solicitados</h5>
                 <p data-kpi="total_solicitados">{{ "{:,.0f}".format(kpis['total_solicitados']) }}</p>
-                <div class="kpi-label">No período</div>
+                <div class="kpi-label">Solicitação no período</div>
             </div>
             <div class="kpi-box">
                 <h5>Total Realizados</h5>
                 <p data-kpi="total_realizados">{{ "{:,.0f}".format(kpis['total_realizados']) }}</p>
-                <div class="kpi-label">Realizados ou baixados</div>
+                <div class="kpi-label">Realização ou baixa no período</div>
             </div>
             <div class="kpi-box">
                 <h5>Total Cancelados</h5>
                 <p data-kpi="total_cancelados">{{ "{:,.0f}".format(kpis['total_cancelados']) }}</p>
-                <div class="kpi-label">No período</div>
+                <div class="kpi-label">Cancelamento no período</div>
             </div>
             <div class="kpi-box">
                 <h5>Sem Agendamento</h5>
@@ -94,6 +94,7 @@
             </div>
             {% endfor %}
         </div>
+        <p class="dados-de" data-dados-de>{% if dados_de %}Dados de {{ dados_de }}{% endif %}</p>
 
         {% for id, titulo in [('solicitados', 'Exames Solicitados por Mês'),
                               ('realizados', 'Exames Realizados por Mês'),
@@ -112,9 +113,9 @@
         <div class="content">
             <div class="chart-container">
                 <div class="chart-header">
-                    <h4>Exames Solicitados no Mês — Tempo até a Realização ou Baixa</h4>
+                    <h4>Exames Realizados no Mês — Tempo desde a Solicitação</h4>
                 </div>
-                <p class="nota-tempo">Exames solicitados em cada mês e realizados (com realização ou baixa), pelo tempo da solicitação até a realização ou, sem realização, até a baixa, em dias de calendário: as mesmas faixas da tabela "Tempo do Exame até a Realização ou Baixa" em Exames. Nos meses mais recentes ainda há exames por realizar, que entram depois nas faixas mais longas.</p>
+                <p class="nota-tempo">Exames realizados ou baixados em cada mês (pela data da realização ou da baixa, a mais antiga quando há as duas), pelo tempo desde a solicitação, em dias, sem a hora: as mesmas faixas da tabela abaixo.</p>
                 <div id="grafico-tempo"></div>
             </div>
         </div>
@@ -124,7 +125,7 @@
                 <div class="chart-header">
                     <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame)</h4>
                 </div>
-                <p class="nota-tempo">Exames com data de realização ou, sem realização, data de baixa no período filtrado (solicitados até 2 anos antes). O tempo de cada exame é a diferença em dias entre essa data e a data da solicitação, sem a hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame. Diferente do gráfico acima, que é pelo mês da solicitação. Os botões abaixo do total geral abrem a tabela de cada origem: Externo (Ambulatório, Exame e UNACON), Emergência (Emergência, Salas de Parada e Salas de Medicação) e Interno (demais clínicas).</p>
+                <p class="nota-tempo">Exames com data de realização ou de baixa no período filtrado (a mais antiga, quando há as duas; solicitados até 2 anos antes). O tempo de cada exame é a diferença em dias entre essa data e a data da solicitação, sem a hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame. Os botões abaixo do total geral abrem a tabela de cada origem: Externo (Ambulatório, Exame e UNACON), Emergência (Emergência, Salas de Parada e Salas de Medicação) e Interno (demais clínicas).</p>
                 {{ tabela_tempo.secao(origens) }}
             </div>
         </div>
@@ -236,7 +237,7 @@
             Plotly.react('grafico-tempo', [...barras, linhaTotal], {
                 barmode: 'stack',
                 separators: ',.',
-                xaxis: { title: 'Mês da solicitação', tickangle: -45, tickfont: { size: 12 } },
+                xaxis: { title: 'Mês da realização ou baixa', tickangle: -45, tickfont: { size: 12 } },
                 yaxis: { title: 'Realizados', gridcolor: '#e0e0e0', range: [0, maximo * 1.15], tickformat: ',d' },
                 plot_bgcolor: '#fff',
                 paper_bgcolor: '#fff',
@@ -277,6 +278,7 @@
             document.querySelectorAll('[data-kpi]').forEach(el => {
                 el.textContent = formatarNumero(data.kpis[el.dataset.kpi]);
             });
+            document.querySelector('[data-dados-de]').textContent = data.dados_de ? `Dados de ${data.dados_de}` : '';
 
             atualizarGraficos();
         }

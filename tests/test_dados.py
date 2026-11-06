@@ -852,10 +852,10 @@ def test_emergencia_municipio_sem_uf_vai_para_a_uf_predominante():
     assert com_uf('Sem município') == 'Sem município'
 
 
-def test_graficos_mensais_filtra_em_memoria_e_monta_tabela_de_tempo(cliente, monkeypatch):
-    """Gráficos Mensais: as solicitações do período vêm de uma consulta só (em
-    cache); classificação, filtros e a tabela de tempo por origem saem dela."""
-    import datetime as dt
+
+
+def _cadastros_exames_falsos(monkeypatch):
+    """t_clinica / t_exame e a classificação para as rotas de exames, sem banco."""
     import painel
     import classificacao_exames
 
@@ -878,36 +878,48 @@ def test_graficos_mensais_filtra_em_memoria_e_monta_tabela_de_tempo(cliente, mon
     monkeypatch.setattr(painel, 'get_db_connection', Conexao)
     monkeypatch.setattr(classificacao_exames, 'nomes', lambda: ['IMAGEM', 'LABORATORIO'])
     monkeypatch.setattr(classificacao_exames, 'por_exame', lambda: {10: 'LABORATORIO', 11: 'LABORATORIO', 20: 'IMAGEM'})
-    zeros = dict.fromkeys(painel._CHAVES_FAIXAS_TEMPO, 0)
 
-    def linha(mes, clinica, exame, realizados, ate_1d):
-        return {'mes': dt.date(2026, mes, 1), 'isn_clinica': clinica, 'isn_exame': exame, 'solicitados': realizados + 1,
-                'realizados': realizados, 'cancelados': 1, 'sem_agendamento': 0,
-                **zeros, 'tempo_ate_1d': ate_1d, 'tempo_soma_dias': realizados - ate_1d}
+
+def _evento(tipo, mes, clinica, exame, qtd, ate_1d=0, soma=0, sem_agendamento=0):
+    import datetime as dt
+    import painel
+    return {'tipo': tipo, 'mes': dt.date(2026, mes, 1), 'isn_clinica': clinica, 'isn_exame': exame, 'qtd': qtd,
+            **dict.fromkeys(painel._CHAVES_FAIXAS_TEMPO, 0), 'tempo_ate_1d': ate_1d, 'tempo_soma_dias': soma,
+            'sem_agendamento': sem_agendamento, 'nao_cancelados': qtd}
+
+
+# eventos de 09 e 10/2026: cada indicador no mês da sua própria data
+_EVENTOS_EXAMES = [
+    _evento('solicitado', 9, 2, 10, 5, sem_agendamento=1), _evento('solicitado', 10, 2, 11, 3),
+    _evento('solicitado', 10, 1, 20, 6), _evento('solicitado', 10, 9, 10, 2),
+    _evento('realizado', 9, 2, 10, 4, ate_1d=3, soma=2), _evento('realizado', 10, 2, 11, 2, ate_1d=2),
+    _evento('realizado', 10, 1, 20, 5, ate_1d=5), _evento('realizado', 10, 9, 10, 1, ate_1d=1),
+    _evento('cancelado', 10, 2, 10, 1), _evento('cancelado', 10, 1, 20, 2),
+    _evento('solicitado', 10, 77, 10, 50),  # clínica fora do cadastro: não entra
+]
+
+
+def test_graficos_mensais_cada_indicador_pela_sua_data(cliente, monkeypatch):
+    """Gráficos Mensais: solicitados, realizados e cancelados no mês da sua
+    data, vindos de uma consulta só (em cache); filtros aplicados em memória."""
+    import datetime as dt
+    import painel
+    _cadastros_exames_falsos(monkeypatch)
     consultas = []
-
-    def solicitacoes(ini, fim):
-        consultas.append((ini, fim))
-        return [linha(9, 2, 10, 4, 3), linha(10, 2, 11, 2, 2), linha(10, 1, 20, 5, 5), linha(10, 9, 10, 1, 1),
-                linha(10, 77, 10, 50, 50)]  # clínica fora do cadastro: não entra
-    monkeypatch.setattr(painel, '_solicitacoes_mensais', solicitacoes)
-
-    # tabela de tempo: outra consulta, pelos exames realizados ou baixados no período
-    def tempo(clinica, exame, realizados, ate_1d, soma):
-        return {'isn_clinica': clinica, 'isn_exame': exame, 'realizados': realizados,
-                **zeros, 'tempo_ate_1d': ate_1d, 'tempo_soma_dias': soma}
-    monkeypatch.setattr(painel, '_tempo_exames_no_periodo', lambda ini, fim: [
-        tempo(2, 10, 7, 4, 9), tempo(2, 11, 3, 3, 0), tempo(1, 20, 6, 6, 0), tempo(9, 10, 2, 1, 1),
-        tempo(77, 10, 40, 40, 0)])  # clínica fora do cadastro: não entra
+    monkeypatch.setattr(painel, '_eventos_exames', lambda ini, fim: consultas.append((ini, fim)) or _EVENTOS_EXAMES)
     xhr = {'X-Requested-With': 'XMLHttpRequest'}
 
     r = cliente.get('/graficos_mensais?data_inicial=2026-09-01&data_final=2026-10-31', headers=xhr).get_json()
-    assert r['graficos']['series']['realizados'] == {'IMAGEM': [0, 5], 'LABORATORIO': [4, 3]}
-    assert r['kpis']['total_solicitados'] == 16
-    assert r['graficos']['tempo']['tempo_ate_1d'] == [3, 8]
+    series = r['graficos']['series']
+    assert series['solicitados'] == {'IMAGEM': [0, 6], 'LABORATORIO': [5, 5]}
+    assert series['realizados'] == {'IMAGEM': [0, 5], 'LABORATORIO': [4, 3]}
+    assert series['cancelados'] == {'IMAGEM': [0, 2], 'LABORATORIO': [0, 1]}
+    assert series['sem_agendamento'] == {'IMAGEM': [0, 0], 'LABORATORIO': [1, 0]}
+    assert r['kpis']['total_solicitados'] == 16 and r['kpis']['total_cancelados'] == 3
+    assert r['graficos']['tempo']['tempo_ate_1d'] == [3, 8]  # pelo mês da realização ou baixa
     tabela = {(t['origem'], t['exame']): (t['realizados'], t['tempo_ate_1d'], t['tempo_soma_dias']) for t in r['tempo_exames']}
     # os dois HEMOGRAMA (ids 10 e 11) do ambulatório viram uma linha só, na origem externo
-    assert tabela == {('externo', 'HEMOGRAMA'): (10, 7, 9), ('emergencia', 'RAIO X'): (6, 6, 0), ('interno', 'HEMOGRAMA'): (2, 1, 1)}
+    assert tabela == {('externo', 'HEMOGRAMA'): (6, 5, 2), ('emergencia', 'RAIO X'): (5, 5, 0), ('interno', 'HEMOGRAMA'): (1, 1, 0)}
 
     r = cliente.get('/graficos_mensais?data_inicial=2026-09-01&data_final=2026-10-31&classificacao=IMAGEM'
                     '&clinica=EMERGENCIA', headers=xhr).get_json()
@@ -921,11 +933,28 @@ def test_graficos_mensais_filtra_em_memoria_e_monta_tabela_de_tempo(cliente, mon
     assert '"origem": "emergencia"' in pagina  # os dados da tabela chegam ao JavaScript da página
 
 
-def test_tempo_exames_pelos_realizados_ou_baixados_no_periodo(monkeypatch):
-    """Tabela de tempo: exames com realização (ou, sem ela, baixa) no período,
-    buscando as solicitações até 2 anos antes; o tempo é em dias, sem a hora."""
+def test_exames_por_clinica_cada_indicador_pela_sua_data(cliente, monkeypatch):
+    import painel
+    _cadastros_exames_falsos(monkeypatch)
+    monkeypatch.setattr(painel, '_eventos_exames', lambda ini, fim: _EVENTOS_EXAMES)
+    xhr = {'X-Requested-With': 'XMLHttpRequest'}
+
+    r = cliente.get('/exames_por_clinica?data_inicial=2026-09-01&data_final=2026-10-31', headers=xhr).get_json()
+    assert {k: r['kpis'][k] for k in ['total_solicitados', 'total_realizados', 'total_cancelados', 'total_sem_agendamento']} == {
+        'total_solicitados': 16, 'total_realizados': 12, 'total_cancelados': 3, 'total_sem_agendamento': 1}
+    linhas = {(d['clinica'], d['exame']): (d['solicitados'], d['realizados'], d['cancelados']) for d in r['dados_json']}
+    assert linhas == {('AMBULATORIO', 'HEMOGRAMA'): (8, 6, 1), ('EMERGENCIA', 'RAIO X'): (6, 5, 2), ('UTI', 'HEMOGRAMA'): (2, 1, 0)}
+    assert sum(t['realizados'] for t in r['tempo_exames']) == 12
+
+    r = cliente.get('/exames_por_clinica?data_inicial=2026-09-01&data_final=2026-10-31&origem=externo', headers=xhr).get_json()
+    assert [(d['clinica'], d['solicitados']) for d in r['dados_json']] == [('AMBULATORIO', 8)]
+    assert {t['origem'] for t in r['tempo_exames']} == {'externo'}
+
+
+def test_eventos_exames_cada_um_pela_sua_data(monkeypatch):
+    """Uma leitura: solicitação, realização ou baixa (a mais antiga) e
+    cancelamento no período, buscando as solicitações até 2 anos antes."""
     import datetime as dt
-    import ambulatorio
     import painel
     faixas, consultas = [], []
 
@@ -934,8 +963,9 @@ def test_tempo_exames_pelos_realizados_ou_baixados_no_periodo(monkeypatch):
             consultas.append((sql, params))
 
         def fetchall(self):
-            return [{'isn_clinica': 2, 'isn_exame': 10, 'realizados': 3, **dict.fromkeys(painel._CHAVES_FAIXAS_TEMPO, 1),
-                     'tempo_soma_dias': 5, '_': 0}]
+            return [{'tipo': 'realizado', 'mes': dt.date(2026, 10, 1), 'isn_clinica': 2, 'isn_exame': 10, 'qtd': 3,
+                     **dict.fromkeys(painel._CHAVES_FAIXAS_TEMPO, 1), 'tempo_soma_dias': 5,
+                     'sem_agendamento': 0, 'nao_cancelados': 3}]
 
     class Conexao:
         def cursor(self, **_):
@@ -945,12 +975,64 @@ def test_tempo_exames_pelos_realizados_ou_baixados_no_periodo(monkeypatch):
             pass
     monkeypatch.setattr(painel, 'get_db_connection', Conexao)
     monkeypatch.setattr(painel, '_faixa_ids_exame_solic', lambda cur, ini, fim: faixas.append((ini, fim)) or (100, 200))
-    monkeypatch.setattr(ambulatorio, '_em_cache', lambda chave, calcular: calcular())
+    monkeypatch.setattr(painel, '_eventos_cache', {})
 
-    linhas = painel._tempo_exames_no_periodo(dt.date(2026, 10, 1), dt.date(2026, 10, 31))
+    linhas = painel._eventos_exames(dt.date(2026, 10, 1), dt.date(2026, 10, 31))
     assert faixas == [(dt.date(2024, 10, 1), dt.date(2026, 10, 31))]  # solicitações de até 2 anos antes
     sql, params = consultas[0]
-    assert 'COALESCE(tes.dat_realizacao::date, tes.dat_agendamento) BETWEEN %s AND %s' in sql
-    assert '- tes.dat_solicitacao::date' in sql  # dias entre as datas, sem a hora
+    assert "('solicitado', tes.dat_solicitacao::date)" in sql
+    assert "('realizado', LEAST(tes.dat_realizacao::date, tes.dat_agendamento))" in sql  # a mais antiga das duas
+    assert "('cancelado', tes.dat_cancelamento::date)" in sql
+    assert '- tes.dat_solicitacao::date' in sql  # tempo em dias entre as datas, sem a hora
     assert params == [dt.date(2026, 10, 1), dt.date(2026, 10, 31), 100, 200]
-    assert linhas[0]['realizados'] == 3 and linhas[0]['tempo_soma_dias'] == 5 and '_' not in linhas[0]
+    assert linhas[0]['tipo'] == 'realizado' and linhas[0]['qtd'] == 3 and linhas[0]['tempo_soma_dias'] == 5
+
+
+def _esperar(condicao):
+    import threading
+    for _ in range(200):
+        if condicao():
+            return True
+        threading.Event().wait(0.01)
+    return False
+
+
+def test_eventos_exames_cache_renovado_em_segundo_plano(monkeypatch):
+    """A leitura leva mais de 30 s: até 10 min o cache serve como está;
+    depois serve na hora e renova em segundo plano; vencido (24 h) ou sem
+    cache, espera a consulta. Ficam só os últimos 4 períodos usados."""
+    import datetime as dt
+    import re
+    import types
+    import painel
+    agora, consultas = [1000.0], []
+    monkeypatch.setattr(painel, '_eventos_cache', {})
+    monkeypatch.setattr(painel, 'time', types.SimpleNamespace(monotonic=lambda: agora[0]))
+    monkeypatch.setattr(painel, '_consultar_eventos_exames',
+                        lambda ini, fim: consultas.append((ini, fim)) or [{'n': len(consultas)}])
+    ini, fim = dt.date(2026, 10, 1), dt.date(2026, 10, 31)
+
+    assert painel._eventos_exames(ini, fim) == [{'n': 1}]
+    assert re.fullmatch(r'\d\d/\d\d/\d{4} \d\d:\d\d', painel._horario_eventos_exames(ini, fim))
+    agora[0] += 599
+    assert painel._eventos_exames(ini, fim) == [{'n': 1}] and len(consultas) == 1
+    agora[0] += 2  # passou de 10 min: o anterior na hora, o novo em segundo plano
+    assert painel._eventos_exames(ini, fim) == [{'n': 1}]
+    assert _esperar(lambda: painel._eventos_cache[(ini, fim)][2] == [{'n': 2}])
+    assert painel._eventos_exames(ini, fim) == [{'n': 2}] and len(consultas) == 2
+    agora[0] += 24 * 3600  # vencido: espera a consulta nova
+    assert painel._eventos_exames(ini, fim) == [{'n': 3}]
+
+    for dia in range(1, 5):
+        painel._eventos_exames(dt.date(2026, 1, dia), dt.date(2026, 1, dia))
+    assert len(painel._eventos_cache) == 4 and (ini, fim) not in painel._eventos_cache
+    assert painel._horario_eventos_exames(ini, fim) == ''
+
+
+def test_aquecer_cache_exames_periodos_padrao(monkeypatch):
+    import painel
+    periodos = []
+    monkeypatch.setattr(painel, '_eventos_exames', lambda ini, fim: periodos.append((ini, fim)))
+    painel.aquecer_cache_exames()
+    assert _esperar(lambda: len(periodos) == 2)
+    assert periodos == [painel._periodo_padrao_exames(), painel._periodo_padrao_graficos_mensais()]

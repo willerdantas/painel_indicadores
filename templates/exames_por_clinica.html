@@ -62,17 +62,17 @@
             <div class="kpi-box">
                 <h5>Total Solicitados</h5>
                 <p data-kpi="total_solicitados">{{ "{:,.0f}".format(kpis['total_solicitados']) }}</p>
-                <div class="kpi-label">No período</div>
+                <div class="kpi-label">Solicitação no período</div>
             </div>
             <div class="kpi-box">
                 <h5>Total Realizados</h5>
                 <p data-kpi="total_realizados">{{ "{:,.0f}".format(kpis['total_realizados']) }}</p>
-                <div class="kpi-label">Realizados ou baixados</div>
+                <div class="kpi-label">Realização ou baixa no período</div>
             </div>
             <div class="kpi-box">
                 <h5>Total Cancelados</h5>
                 <p data-kpi="total_cancelados">{{ "{:,.0f}".format(kpis['total_cancelados']) }}</p>
-                <div class="kpi-label">No período</div>
+                <div class="kpi-label">Cancelamento no período</div>
             </div>
             <div class="kpi-box">
                 <h5>Sem Data de Agendamento</h5>
@@ -92,11 +92,13 @@
             </div>
             {% endfor %}
         </div>
+        <p class="dados-de" data-dados-de>{% if dados_de %}Dados de {{ dados_de }}{% endif %}</p>
 
         <div class="content">
             <div class="chart-container">
                 <h4>Total por Exame (por Classificação)</h4>
                 <p class="nota-origem">Externo: Ambulatório, Exame e UNACON · Emergência: Emergência, Salas de Parada e Salas de Medicação · Interno: demais clínicas</p>
+                <p class="nota-origem">Cada coluna pela sua data no período: solicitados pela solicitação, realizados pela realização ou baixa (a mais antiga, quando há as duas) e cancelados pelo cancelamento.</p>
                 <div class="tabela-rolagem">
                 <table id="tabela-exames-classificacao">
                     <thead>
@@ -124,7 +126,7 @@
         <div class="content">
             <div class="chart-container">
                 <h4>Tempo do Exame até a Realização ou Baixa (por Classificação e Exame)</h4>
-                <p class="nota-origem">Exames com data de realização ou, sem realização, data de baixa no período filtrado (solicitados até 2 anos antes). O tempo de cada exame é a diferença em dias entre essa data e a data da solicitação, sem a hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame.</p>
+                <p class="nota-origem">Exames com data de realização ou de baixa no período filtrado (a mais antiga, quando há as duas; solicitados até 2 anos antes). O tempo de cada exame é a diferença em dias entre essa data e a data da solicitação, sem a hora. "Até 1 dia" inclui os do mesmo dia; a média é dos dias de cada exame.</p>
                 {{ tabela_tempo.secao(origens) }}
             </div>
         </div>
@@ -390,6 +392,7 @@
             document.querySelectorAll('[data-kpi]').forEach(el => {
                 el.textContent = formatarNumero(data.kpis[el.dataset.kpi]);
             });
+            document.querySelector('[data-dados-de]').textContent = data.dados_de ? `Dados de ${data.dados_de}` : '';
 
             atualizarTudo();
         }
