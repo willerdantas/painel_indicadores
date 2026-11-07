@@ -15,6 +15,7 @@
   }
 </script>
 <script src="/static/js/tendencia.js"></script>
+<script src="/static/js/cid_risco.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-emergencia-tendencia">
@@ -281,6 +282,17 @@ function carregarGraficos() {
         const titulo = 'Atendimentos por Município';
         criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, comCor(top), somaSeries(municipios),
           { mediaMediana: true, tabela: 'Município', dias: d.risco_mensal && d.risco_mensal.dias });
+      }
+
+      // atendimentos por CID x classificação de risco, no período todo
+      if (d.por_cid_risco && d.por_cid_risco.linhas.length) {
+        const card = document.createElement('div');
+        card.className = 'chart-card largura-total';
+        card.innerHTML = `<h3>Atendimentos por CID e Classificação de Risco</h3>
+          <div class="cid-resumo"></div>
+          <div class="tabela-info tabela-cid"><table class="tabela"><thead></thead><tbody></tbody></table></div>`;
+        container.appendChild(card);
+        preencherCidRisco(card.querySelector('table'), card.querySelector('.cid-resumo'), d.por_cid_risco);
       }
 
       // saídas da emergência por destino, com o total e a média/mediana do total

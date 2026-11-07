@@ -12,6 +12,7 @@
     document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
   }
 </script>
+<script src="/static/js/cid_risco.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-emergencia">
@@ -186,6 +187,16 @@
               <tbody id="tb_atend_municipio"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+      <div class="card full">
+        <h3>Atendimentos por CID e classificação de risco</h3>
+        <div class="atend-resumo" id="cid_risco_resumo">—</div>
+        <div class="tabela-municipio">
+          <table class="tabela-risco" id="tabela_cid_risco">
+            <thead><tr><th>CID</th></tr></thead>
+            <tbody><tr><td>—</td></tr></tbody>
+          </table>
         </div>
       </div>
       <div class="card full">
@@ -512,6 +523,7 @@ function renderAtendimentos(d) {
   document.getElementById('box_municipio').style.height = Math.max(200, top.length * 24 + 40) + 'px';
   barrasAtend('municipio', 'chart_atend_municipio', top, '#00A1A2');
   tabelaAtend('tb_atend_municipio', municipios);
+  preencherCidRisco(document.getElementById('tabela_cid_risco'), document.getElementById('cid_risco_resumo'), d.por_cid_risco);
 }
 
 function barrasAtend(chave, id, itens, cor) {

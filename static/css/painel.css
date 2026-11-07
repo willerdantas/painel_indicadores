@@ -1237,7 +1237,8 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-emergencia .tabela-municipio .tabela-risco th, .pg-hcasg-emergencia .tabela-municipio .tabela-risco td { padding: 6px 8px; font-size: .8rem; }
 .pg-hcasg-emergencia .tabela-municipio thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
 .pg-hcasg-emergencia .tabela-municipio tr.total td { position: sticky; bottom: 0; background: var(--card); font-weight: 700; }
-.pg-hcasg-emergencia .risco-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .5rem; vertical-align: middle; background: var(--muted); }
+.pg-hcasg-emergencia #tabela_cid_risco th.num { white-space: nowrap; }
+.pg-hcasg-emergencia .risco-dot, .pg-hcasg-emergencia-tendencia .risco-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: .5rem; vertical-align: middle; background: var(--muted); }
 @media(max-width:900px) {
   .pg-hcasg-emergencia .kpis { grid-template-columns: repeat(2, minmax(200px, 1fr)); }
   .pg-hcasg-emergencia .atend-grid { grid-template-columns: 1fr; }
@@ -1291,6 +1292,13 @@ html { scroll-padding-top: 110px; }
 .pg-hcasg-emergencia-tendencia .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
 .pg-hcasg-emergencia-tendencia .chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
 .pg-hcasg-emergencia-tendencia .chart-container { height: 300px; }
+.pg-hcasg-emergencia-tendencia .cid-resumo { font-size: .85rem; color: var(--muted); }
+.pg-hcasg-emergencia-tendencia .cid-resumo b { color: var(--dark); font-size: 1rem; }
+.pg-hcasg-emergencia-tendencia .tabela-cid { max-height: 420px; overflow: auto; margin-top: .75rem; }
+.pg-hcasg-emergencia-tendencia .tabela-cid .tabela { border-collapse: separate; border-spacing: 0; }  /* a borda acompanha a célula fixa */
+.pg-hcasg-emergencia-tendencia .tabela-cid .tabela th, .pg-hcasg-emergencia-tendencia .tabela-cid .tabela td { padding: 6px 8px; font-size: .8rem; }
+.pg-hcasg-emergencia-tendencia .tabela-cid thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+.pg-hcasg-emergencia-tendencia .tabela-cid tr.total td { position: sticky; bottom: 0; background: var(--card); }
 .pg-hcasg-emergencia-tendencia .error-bar { display: none; }
 @media(max-width:900px) {
   .pg-hcasg-emergencia-tendencia .charts-grid { grid-template-columns: 1fr; }

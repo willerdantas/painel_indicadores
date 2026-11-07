@@ -32,7 +32,7 @@ from datetime import date, timedelta
 
 # Conexão e consultas (com nova tentativa quando a conexão cai; consulta que
 # cita tabela ausente no servidor devolve vazio): banco_hospitalar.py.
-from banco_hospitalar import fetch_all, fetch_one
+from banco_hospitalar import faltando, fetch_all, fetch_one, tem_colunas
 
 
 # ---------------------------------------------------------------------------
@@ -2242,6 +2242,24 @@ def get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito):
 
 _DIAS_SEMANA = ["Segunda", "Terça", "Quarta", "Quinta", "Sexta", "Sábado", "Domingo"]
 
+# Cada internação tem vários registros em t_internacao_risco (o primeiro, da
+# abertura da triagem, vem com isn_risco nulo; reclassificações geram novos).
+# Usa-se uma classificação por atendimento: a marcada com flg_ultimo = 1 entre
+# as que têm risco, senão a mais recente com risco.
+_RISCO_FINAL_CTE = """
+    , risco_final AS (
+        SELECT DISTINCT ON (tir.isn_internacao)
+            tir.isn_internacao,
+            tir.isn_risco
+        FROM t_internacao_risco tir
+        JOIN atend a ON a.isn_internacao = tir.isn_internacao
+        WHERE tir.isn_risco IS NOT NULL
+        ORDER BY tir.isn_internacao,
+                 COALESCE(tir.flg_ultimo, 0) DESC,
+                 tir.isn_internacao_risco DESC
+    )
+"""
+
 
 def _horas_da_faixa(hora_ini, hora_fim):
     """Horas (0-23) da faixa, inclusive. Se hora_ini > hora_fim a faixa
@@ -2315,23 +2333,8 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
 
     por_hora = [qtd_por_hora.get(h, 0) for h in horas]
 
-    # Cada internação tem vários registros em t_internacao_risco (o primeiro,
-    # da abertura da triagem, vem com isn_risco nulo; reclassificações geram
-    # novos). Usa-se uma classificação por atendimento: a marcada com
-    # flg_ultimo = 1 entre as que têm risco, senão a mais recente com risco.
     def contar_por_risco(vals):
-        rows = fetch_all(atend_cte + """
-            , risco_final AS (
-                SELECT DISTINCT ON (tir.isn_internacao)
-                    tir.isn_internacao,
-                    tir.isn_risco
-                FROM t_internacao_risco tir
-                JOIN atend a ON a.isn_internacao = tir.isn_internacao
-                WHERE tir.isn_risco IS NOT NULL
-                ORDER BY tir.isn_internacao,
-                         COALESCE(tir.flg_ultimo, 0) DESC,
-                         tir.isn_internacao_risco DESC
-            )
+        rows = fetch_all(atend_cte + _RISCO_FINAL_CTE + """
             SELECT rf.isn_risco, COUNT(*) AS qtd
             FROM atend a
             LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao
@@ -2347,6 +2350,7 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
     riscos = fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco")
     linhas_risco = [(r["dsc_risco"], qtd_por_risco.get(r["isn_risco"], 0)) for r in (riscos or [])]
     linhas_risco.append(("Sem classificação", qtd_por_risco.get(None, 0)))
+    por_cid_risco = _atendimentos_por_cid_risco(atend_cte, atend_vals, riscos)
 
     total = sum(por_dia)
     qtd_dias = len(dias)
@@ -2374,7 +2378,54 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
         ],
         "por_municipio": por_municipio,
         "por_macrorregiao": por_macrorregiao,
+        "por_cid_risco": por_cid_risco,
     }
+
+
+def _atendimentos_por_cid_risco(atend_cte, atend_vals, riscos):
+    """Atendimentos por CID x classificação de risco. O CID vem do registro do
+    atendimento (t_internacao_atendimento; o de t_internacao não é preenchido na
+    emergência); sem CID informado, entra como "Sem CID". Sem t_internacao_risco
+    no servidor, tudo fica em "Sem classificação"."""
+    if not tem_colunas("t_internacao_atendimento", "isn_cid10"):
+        return _montar_clinica_risco([], riscos, "cid")
+    com_risco = not faltando(["t_internacao_risco"])
+    rows = fetch_all(atend_cte + (_RISCO_FINAL_CTE if com_risco else "") + f"""
+        , cid_atend AS (
+            SELECT DISTINCT ON (tia.isn_internacao) tia.isn_internacao, tia.isn_cid10
+            FROM t_internacao_atendimento tia
+            JOIN atend a ON a.isn_internacao = tia.isn_internacao
+            WHERE tia.isn_cid10 IS NOT NULL
+            ORDER BY tia.isn_internacao, tia.isn_internacao_atendimento DESC
+        )
+        SELECT COALESCE(TRIM(c.cod_cid10) || ' - ' || TRIM(c.dsc_cid10), 'Sem CID') AS cid,
+               {"rf.isn_risco" if com_risco else "NULL::numeric AS isn_risco"},
+               COUNT(*) AS qtd
+        FROM atend a
+        LEFT JOIN cid_atend ca ON ca.isn_internacao = a.isn_internacao
+        LEFT JOIN t_cid10 c ON c.isn_cid10 = ca.isn_cid10
+        {"LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao" if com_risco else ""}
+        GROUP BY 1, 2
+    """, atend_vals)
+    return _montar_clinica_risco(rows, riscos, "cid")
+
+
+def get_cid_risco_mensal(mes_ini=None, mes_fim=None):
+    """Atendimentos por CID x classificação de risco na janela de meses da
+    Tendência Mensal. Não usa os filtros de clínica/enfermaria/leito (como os
+    demais atendimentos da emergência). Fora de get_mensal_emergencia_fluxo porque
+    o Comparativo também chama essa função e não usa esta tabela."""
+    dt_ini, dt_fim = _resolve_month_window(mes_ini, mes_fim)
+    atend_cte = """
+        WITH atend AS MATERIALIZED (
+            SELECT ti.isn_internacao
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 2
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        )
+    """
+    riscos = fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco")
+    return _atendimentos_por_cid_risco(atend_cte, [dt_ini, dt_fim], riscos)
 
 
 def _com_uf(qtd_por_municipio):
@@ -2481,17 +2532,18 @@ DESTINOS_SAIDA_PS = (1, 3, 4, 13)
 DESTINOS_SAIDA_PS_SQL = ", ".join(str(v) for v in DESTINOS_SAIDA_PS)
 
 
-def _montar_clinica_risco(rows, riscos):
-    """Linhas = primeira clínica de internação; colunas = classificações de
-    t_risco + 'Sem classificação'; ordenado do maior total para o menor."""
+def _montar_clinica_risco(rows, riscos, chave="clinica"):
+    """Linhas = primeira clínica de internação (ou outra chave das rows); colunas
+    = classificações de t_risco + 'Sem classificação'; ordenado do maior total
+    para o menor."""
     colunas = [(r["isn_risco"], r["dsc_risco"]) for r in (riscos or [])] + [(None, "Sem classificação")]
     idx = {isn: i for i, (isn, _) in enumerate(colunas)}
     por_clinica = {}
     for r in rows or []:
-        valores = por_clinica.setdefault(r["clinica"], [0] * len(colunas))
+        valores = por_clinica.setdefault(r[chave], [0] * len(colunas))
         valores[idx.get(r["isn_risco"], len(colunas) - 1)] += int(r["qtd"])
-    linhas = sorted(({"clinica": c, "valores": v, "total": sum(v)} for c, v in por_clinica.items()),
-                    key=lambda x: (-x["total"], x["clinica"]))
+    linhas = sorted(({chave: c, "valores": v, "total": sum(v)} for c, v in por_clinica.items()),
+                    key=lambda x: (-x["total"], x[chave]))
     return {
         "riscos": [dsc.strip() for _, dsc in colunas],
         "linhas": linhas,
