@@ -7,6 +7,7 @@
 <title>Indicadores Hospitalares</title>
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/js/tabela_rolagem.js"></script>
+<script src="/static/js/cid_destino.js"></script>
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
   if (typeof Chart === 'undefined') {
@@ -174,6 +175,19 @@
         <h3>Saídas por horário</h3>
         <div class="chart-box"><canvas id="chart_saidas_hora"></canvas></div>
         <div class="nota" id="saidas_sem_hora"></div>
+      </div>
+      <div class="graf-card full">
+        <h3>Internações e saídas por CID</h3>
+        <div class="graf-resumo" id="cid_destino_resumo">—</div>
+        <div class="tabela-info">
+          <div class="tabela-rolagem-fixa" id="caixa_cid_destino">
+            <table class="tabela">
+              <thead></thead>
+              <tbody></tbody>
+            </table>
+          </div>
+          <div class="nota">CID da primeira admissão da internação com CID informado. Internações pela data do cadastro e saídas pela data da alta: uma saída pode ser de internação feita antes do período.</div>
+        </div>
       </div>
     </div>
   </div>
@@ -446,6 +460,7 @@ function renderGraficos(d) {
     }
   });
   tabelaSaidasClinica(d);
+  preencherCidDestino(document.getElementById('caixa_cid_destino'), document.getElementById('cid_destino_resumo'), d.por_cid_destino);
 
   novoGrafico('chart_saidas_semana', {
     type: 'bar',

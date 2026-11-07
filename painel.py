@@ -1248,8 +1248,9 @@ def api_custos_dados():
 def api_hcasg_hospitalares_graficos():
     clinica, enfermaria, leito = _hcasg_params_filtro()
     try:
-        dados = hcasg.get_graficos_hospitalar(
-            request.args.get('data_ini'), request.args.get('data_fim'), clinica, enfermaria, leito)
+        data_ini, data_fim = request.args.get('data_ini'), request.args.get('data_fim')
+        dados = hcasg.get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito)
+        dados["por_cid_destino"] = hcasg.get_cid_destino_hospitalar(data_ini, data_fim, clinica, enfermaria, leito)
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500
@@ -1357,6 +1358,7 @@ def api_hcasg_hospitalares_mensal():
     mes_fim = request.args.get('mes_fim') or None
     try:
         dados = get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini, mes_fim)
+        dados["por_cid_destino"] = hcasg.get_cid_destino_mensal(clinica, enfermaria, leito, mes_ini, mes_fim)
         return jsonify({'ok': True, 'dados': dados})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500

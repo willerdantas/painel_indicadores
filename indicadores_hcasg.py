@@ -1602,6 +1602,205 @@ def get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
     }
 
 
+# Óbito separado em Institucional (> 24 h do cadastro) e Hospitalar.
+_ROTULO_DESTINO_SQL = """
+            CASE
+                WHEN isn_destino = 4
+                     AND ts_alta IS NOT NULL AND dat_cadastro IS NOT NULL
+                     AND EXTRACT(EPOCH FROM (ts_alta - dat_cadastro)) > 86400
+                    THEN 'Óbito Institucional'
+                WHEN isn_destino = 4
+                    THEN 'Óbito Hospitalar'
+                ELSE COALESCE(dsc_destino, 'Destino ' || isn_destino::text)
+            END
+"""
+
+# Código e descrição do CID (alias c = t_cid10); sem CID, "Sem CID".
+_ROTULO_CID_SQL = "COALESCE(TRIM(c.cod_cid10) || ' - ' || TRIM(c.dsc_cid10), 'Sem CID')"
+
+
+def _saida_valida_sql(incluir_destino_5):
+    return f"""(
+                isn_destino IN (1, 3, 4)
+                OR (
+                    {incluir_destino_5}
+                    AND isn_destino = 5
+                    AND (isn_clinica <> 22 OR prox_clinica IN (40, 48, 15, 24))
+                )
+              )"""
+
+
+def _saidas_periodo_cte(filt_sql):
+    """CTEs das movimentações com alta no período. Parâmetros, nesta ordem:
+    início, fim, fim, início + os valores de filt_sql."""
+    return f"""
+        WITH internacoes_alvo AS MATERIALIZED (
+            -- internações com alta nas clínicas do TMP no período: o LEAD da
+            -- próxima clínica só precisa do histórico delas
+            SELECT DISTINCT til.isn_internacao
+            FROM t_internacao_leito til
+            WHERE til.isn_clinica IN ({CLINICAS_TMPH_SQL})
+              AND til.dat_alta::date BETWEEN %s AND %s
+        ),
+        movimentos AS (
+            SELECT
+                til.*,
+                LEAD(til.isn_clinica) OVER (
+                    PARTITION BY til.isn_internacao
+                    ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
+                ) AS prox_clinica
+            FROM t_internacao_leito til
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_alvo)
+        ),
+        base AS (
+            SELECT
+                mov.isn_internacao,
+                mov.isn_clinica,
+                tc.dsc_clinica,
+                te.dsc_enfermaria,
+                tl.dsc_leito,
+                mov.isn_destino,
+                td.dsc_destino,
+                mov.prox_clinica,
+                mov.dat_alta::date AS dt_alta,
+                COALESCE(
+                    mov.dat_alta_info + COALESCE(mov.hor_alta_info, '00:00')::time,
+                    mov.dat_alta      + COALESCE(mov.hor_alta, '00:00')::time
+                ) AS ts_alta,
+                -- hora só quando registrada (sem hora não entra no gráfico por horário)
+                EXTRACT(HOUR FROM COALESCE(
+                    mov.dat_alta_info + mov.hor_alta_info::time,
+                    mov.dat_alta      + mov.hor_alta::time
+                ))::int AS hora_alta,
+                ti.dat_cadastro
+            FROM movimentos mov
+            JOIN t_internacao ti ON ti.isn_internacao = mov.isn_internacao
+            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
+            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
+            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
+            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
+            WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
+              AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
+              AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
+              {filt_sql}
+        )
+    """
+
+
+def _cid_internacao_cte(alvo):
+    """CTE cid_internacao: um CID por internação, o da primeira admissão com CID
+    (t_internacao.isn_cid10 não é preenchido). alvo = CTE com isn_internacao."""
+    return f"""
+        , cid_internacao AS (
+            SELECT DISTINCT ON (ta.isn_internacao) ta.isn_internacao, ta.isn_cid10
+            FROM t_admissao ta
+            JOIN {alvo} a ON a.isn_internacao = ta.isn_internacao
+            WHERE ta.isn_cid10 IS NOT NULL
+            ORDER BY ta.isn_internacao, ta.dat_admissao, ta.isn_admissao
+        )
+    """
+
+
+def _montar_cid_destino(rows_internacoes, rows_saidas):
+    """Linhas = CID (mais internações primeiro, depois mais saídas); colunas =
+    internações + destinos da saída (na ordem do gráfico de saídas) + total."""
+    destinos = sorted({(int(r["isn_destino"]), r["destino"]) for r in rows_saidas or []})
+    idx = {rotulo: i for i, (_, rotulo) in enumerate(destinos)}
+    por_cid = {}
+
+    def linha(cid):
+        return por_cid.setdefault(cid, {"cid": cid, "internacoes": 0, "saidas": [0] * len(destinos), "total": 0})
+
+    for r in rows_internacoes or []:
+        linha(r["cid"])["internacoes"] += int(r["qtd"])
+    for r in rows_saidas or []:
+        l = linha(r["cid"])
+        l["saidas"][idx[r["destino"]]] += int(r["qtd"])
+        l["total"] += int(r["qtd"])
+    linhas = sorted(por_cid.values(), key=lambda l: (-l["internacoes"], -l["total"], l["cid"]))
+    return {
+        "destinos": [rotulo for _, rotulo in destinos],
+        "linhas": linhas,
+        "totais": {
+            "internacoes": sum(l["internacoes"] for l in linhas),
+            "saidas": [sum(l["saidas"][i] for l in linhas) for i in range(len(destinos))],
+            "total": sum(l["total"] for l in linhas),
+        },
+    }
+
+
+def get_cid_destino_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
+    """Internações e saídas por CID e destino, com as mesmas regras de
+    get_graficos_hospitalar: internações pela data do cadastro e saídas pela
+    data da alta (a saída pode ser de internação de antes do período)."""
+    dt_ini = date.fromisoformat(data_ini)
+    dt_fim = date.fromisoformat(data_fim)
+    if dt_ini > dt_fim:
+        dt_ini, dt_fim = dt_fim, dt_ini
+    if not tem_colunas("t_admissao", "isn_cid10"):
+        return _montar_cid_destino([], [])
+    filt_sql, filt_vals = _filtros_sql(clinica, enfermaria, leito)
+    _clinica_unica = (isinstance(clinica, str) and clinica) or (isinstance(clinica, list) and len(clinica) == 1)
+    incluir_destino_5 = "TRUE" if _clinica_unica else "FALSE"
+
+    _consultas = ThreadPoolExecutor(max_workers=2, thread_name_prefix="hospitalar_cid")
+    rows_internacoes = _consultas.submit(fetch_all, f"""
+        WITH internacoes_periodo AS MATERIALIZED (
+            SELECT ti.isn_internacao
+            FROM t_internacao ti
+            WHERE ti.isn_tipo_atendimento = 1
+              AND ti.dat_cadastro::date BETWEEN %s AND %s
+        ),
+        primeira_clinica AS (
+            SELECT DISTINCT ON (til.isn_internacao)
+                til.isn_internacao,
+                til.isn_clinica,
+                tc.dsc_clinica,
+                te.dsc_enfermaria,
+                tl.dsc_leito
+            FROM t_internacao_leito til
+            JOIN t_clinica    tc ON tc.isn_clinica    = til.isn_clinica
+            JOIN t_enfermaria te ON te.isn_enfermaria = til.isn_enfermaria
+            JOIN t_leito      tl ON tl.isn_leito      = til.isn_leito
+            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_periodo)
+            ORDER BY til.isn_internacao,
+                     COALESCE(til.dat_internacao_info, til.dat_internacao),
+                     til.isn_internacao_leito
+        )
+        {_cid_internacao_cte("internacoes_periodo")}
+        SELECT {_ROTULO_CID_SQL} AS cid, COUNT(*) AS qtd
+        FROM internacoes_periodo ip
+        JOIN primeira_clinica pc ON pc.isn_internacao = ip.isn_internacao
+        LEFT JOIN cid_internacao ci ON ci.isn_internacao = ip.isn_internacao
+        LEFT JOIN t_cid10 c ON c.isn_cid10 = ci.isn_cid10
+        WHERE pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
+        {filt_sql}
+        GROUP BY 1
+    """, [dt_ini, dt_fim] + filt_vals)
+    rows_saidas = _consultas.submit(fetch_all, _saidas_periodo_cte(filt_sql) + _cid_internacao_cte("internacoes_alvo") + f"""
+        SELECT
+            {_ROTULO_CID_SQL} AS cid,
+            {_ROTULO_DESTINO_SQL} AS destino,
+            MIN(b.isn_destino) AS isn_destino,
+            COUNT(*) AS qtd
+        FROM base b
+        LEFT JOIN cid_internacao ci ON ci.isn_internacao = b.isn_internacao
+        LEFT JOIN t_cid10 c ON c.isn_cid10 = ci.isn_cid10
+        WHERE {_saida_valida_sql(incluir_destino_5)}
+          AND dt_alta BETWEEN %s AND %s
+        GROUP BY 1, 2
+    """, [dt_ini, dt_fim, dt_fim, dt_ini] + filt_vals + [dt_ini, dt_fim])
+    _consultas.shutdown(wait=True)
+    return _montar_cid_destino(rows_internacoes.result(), rows_saidas.result())
+
+
+def get_cid_destino_mensal(clinica, enfermaria, leito, mes_ini=None, mes_fim=None):
+    """get_cid_destino_hospitalar na janela de meses da Tendência Mensal. Fora de
+    get_mensal_hospitalar porque o Comparativo e o LEAN também a chamam."""
+    dt_ini, dt_fim = _resolve_month_window(mes_ini, mes_fim)
+    return get_cid_destino_hospitalar(dt_ini.isoformat(), dt_fim.isoformat(), clinica, enfermaria, leito)
+
+
 def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
     """Séries diárias da página Indicadores Hospitalares, com as mesmas regras
     dos cards de get_indicadores_hospitalar:
@@ -1652,80 +1851,16 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
         GROUP BY ip.dia, pc.dsc_clinica
     """, [dt_ini, dt_fim] + filt_vals)
 
-    rows_saidas = _consultas.submit(fetch_all, f"""
-        WITH internacoes_alvo AS MATERIALIZED (
-            -- internações com alta nas clínicas do TMP no período: o LEAD da
-            -- próxima clínica só precisa do histórico delas
-            SELECT DISTINCT til.isn_internacao
-            FROM t_internacao_leito til
-            WHERE til.isn_clinica IN ({CLINICAS_TMPH_SQL})
-              AND til.dat_alta::date BETWEEN %s AND %s
-        ),
-        movimentos AS (
-            SELECT
-                til.*,
-                LEAD(til.isn_clinica) OVER (
-                    PARTITION BY til.isn_internacao
-                    ORDER BY COALESCE(til.dat_internacao_info, til.dat_internacao), til.isn_internacao_leito
-                ) AS prox_clinica
-            FROM t_internacao_leito til
-            WHERE til.isn_internacao IN (SELECT isn_internacao FROM internacoes_alvo)
-        ),
-        base AS (
-            SELECT
-                mov.isn_clinica,
-                tc.dsc_clinica,
-                te.dsc_enfermaria,
-                tl.dsc_leito,
-                mov.isn_destino,
-                td.dsc_destino,
-                mov.prox_clinica,
-                mov.dat_alta::date AS dt_alta,
-                COALESCE(
-                    mov.dat_alta_info + COALESCE(mov.hor_alta_info, '00:00')::time,
-                    mov.dat_alta      + COALESCE(mov.hor_alta, '00:00')::time
-                ) AS ts_alta,
-                -- hora só quando registrada (sem hora não entra no gráfico por horário)
-                EXTRACT(HOUR FROM COALESCE(
-                    mov.dat_alta_info + mov.hor_alta_info::time,
-                    mov.dat_alta      + mov.hor_alta::time
-                ))::int AS hora_alta,
-                ti.dat_cadastro
-            FROM movimentos mov
-            JOIN t_internacao ti ON ti.isn_internacao = mov.isn_internacao
-            JOIN t_clinica tc ON mov.isn_clinica = tc.isn_clinica
-            JOIN t_enfermaria te ON mov.isn_enfermaria = te.isn_enfermaria
-            JOIN t_leito tl ON mov.isn_leito = tl.isn_leito
-            LEFT JOIN t_destino td ON mov.isn_destino = td.isn_destino
-            WHERE mov.isn_clinica IN ({CLINICAS_TMPH_SQL})
-              AND COALESCE(mov.dat_internacao_info, mov.dat_internacao)::date <= %s
-              AND COALESCE(mov.dat_alta_info, mov.dat_alta, CURRENT_DATE)::date >= %s
-              {filt_sql}
-        )
+    rows_saidas = _consultas.submit(fetch_all, _saidas_periodo_cte(filt_sql) + f"""
         SELECT
             dt_alta AS dia,
             hora_alta AS hora,
             dsc_clinica AS clinica,
-            CASE
-                WHEN isn_destino = 4
-                     AND ts_alta IS NOT NULL AND dat_cadastro IS NOT NULL
-                     AND EXTRACT(EPOCH FROM (ts_alta - dat_cadastro)) > 86400
-                    THEN 'Óbito Institucional'
-                WHEN isn_destino = 4
-                    THEN 'Óbito Hospitalar'
-                ELSE COALESCE(dsc_destino, 'Destino ' || isn_destino::text)
-            END AS destino,
+            {_ROTULO_DESTINO_SQL} AS destino,
             MIN(isn_destino) AS isn_destino,
             COUNT(*) AS qtd
         FROM base
-        WHERE (
-                isn_destino IN (1, 3, 4)
-                OR (
-                    {incluir_destino_5}
-                    AND isn_destino = 5
-                    AND (isn_clinica <> 22 OR prox_clinica IN (40, 48, 15, 24))
-                )
-              )
+        WHERE {_saida_valida_sql(incluir_destino_5)}
           AND dt_alta BETWEEN %s AND %s
         GROUP BY 1, 2, 3, 4
     """, [dt_ini, dt_fim, dt_fim, dt_ini] + filt_vals + [dt_ini, dt_fim])
@@ -2398,7 +2533,7 @@ def _atendimentos_por_cid_risco(atend_cte, atend_vals, riscos):
             WHERE tia.isn_cid10 IS NOT NULL
             ORDER BY tia.isn_internacao, tia.isn_internacao_atendimento DESC
         )
-        SELECT COALESCE(TRIM(c.cod_cid10) || ' - ' || TRIM(c.dsc_cid10), 'Sem CID') AS cid,
+        SELECT {_ROTULO_CID_SQL} AS cid,
                {"rf.isn_risco" if com_risco else "NULL::numeric AS isn_risco"},
                COUNT(*) AS qtd
         FROM atend a

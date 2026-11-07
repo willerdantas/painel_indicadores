@@ -161,6 +161,50 @@ def test_tendencia_cid_e_risco_na_janela_de_meses(monkeypatch):
     assert params == [dt.date(2026, 1, 1), dt.date(2026, 2, 28)]
 
 
+def test_hospitalares_por_cid_e_destino():
+    import indicadores_hcasg
+    m = indicadores_hcasg._montar_cid_destino(
+        [{'cid': 'I219 - INFARTO', 'qtd': 4}, {'cid': 'Sem CID', 'qtd': 1}, {'cid': 'I200 - ANGINA', 'qtd': 4}],
+        [{'cid': 'I219 - INFARTO', 'destino': 'Óbito Institucional', 'isn_destino': 4, 'qtd': 1},
+         {'cid': 'I219 - INFARTO', 'destino': 'Alta', 'isn_destino': 1, 'qtd': 2},
+         {'cid': 'I200 - ANGINA', 'destino': 'Alta', 'isn_destino': 1, 'qtd': 5},
+         {'cid': 'J00 - RESFRIADO', 'destino': 'Óbito Hospitalar', 'isn_destino': 4, 'qtd': 1}])  # sem internação no período
+    assert m['destinos'] == ['Alta', 'Óbito Hospitalar', 'Óbito Institucional']
+    assert m['linhas'] == [
+        {'cid': 'I200 - ANGINA', 'internacoes': 4, 'saidas': [5, 0, 0], 'total': 5},
+        {'cid': 'I219 - INFARTO', 'internacoes': 4, 'saidas': [2, 0, 1], 'total': 3},
+        {'cid': 'Sem CID', 'internacoes': 1, 'saidas': [0, 0, 0], 'total': 0},
+        {'cid': 'J00 - RESFRIADO', 'internacoes': 0, 'saidas': [0, 1, 0], 'total': 1},
+    ]
+    assert m['totais'] == {'internacoes': 9, 'saidas': [7, 1, 1], 'total': 9}
+
+
+def test_hospitalares_cid_consultas_com_os_filtros_e_a_janela(monkeypatch):
+    import datetime as dt
+    import banco_hospitalar
+    import indicadores_hcasg
+    _estrutura_sem(monkeypatch)
+    consultas = []
+    monkeypatch.setattr(indicadores_hcasg, 'fetch_all', lambda sql, params=None: consultas.append((sql, params)) or [])
+    indicadores_hcasg.get_cid_destino_mensal('UTI', None, None, '2026-01', '2026-02')
+    assert len(consultas) == 2
+    for sql, params in consultas:
+        assert sql.count('%s') == len(params) and 'dsc_clinica = %s' in sql and 'FROM t_admissao ta' in sql
+        assert 'UTI' in params and dt.date(2026, 2, 28) in params
+        assert banco_hospitalar._tabelas_ausentes(sql) == []
+    saidas = next(s for s, _ in consultas if 'internacoes_alvo' in s)
+    assert 'Óbito Institucional' in saidas and 'TRUE' in saidas  # uma clínica: inclui o destino 5
+
+
+def test_hospitalares_cid_sem_a_coluna_nao_consulta(monkeypatch):
+    import indicadores_hcasg
+    _estrutura_sem(monkeypatch, colunas_ausentes=[('t_admissao', 'isn_cid10')])
+    consultas = []
+    monkeypatch.setattr(indicadores_hcasg, 'fetch_all', lambda sql, params=None: consultas.append(sql) or [])
+    m = indicadores_hcasg.get_cid_destino_hospitalar('2026-01-01', '2026-01-31', None, None, None)
+    assert consultas == [] and m['linhas'] == [] and m['totais']['total'] == 0
+
+
 def test_ambulatorio_sem_tabelas_de_apoio(monkeypatch):
     """Sem marcação, situação, município, UF e paciente: o SQL não cita essas
     tabelas e os campos ficam "Sem ..." (a consulta dos atendimentos roda)."""

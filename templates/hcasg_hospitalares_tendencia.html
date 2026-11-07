@@ -16,6 +16,7 @@
 </script>
 <script src="/static/js/tendencia.js"></script>
 <script src="/static/js/tabela_rolagem.js"></script>
+<script src="/static/js/cid_destino.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-hospitalares-tendencia">
@@ -264,6 +265,20 @@ function carregarGraficos() {
           if (ind.key === 'internacoes') tabelaInternacoesClinica(card, d.internacoes_clinicas, d.internacoes, d.dias_mes);
         }
       });
+
+      // internações e saídas por CID e destino, no período todo
+      if (d.por_cid_destino && d.por_cid_destino.linhas.length) {
+        const card = document.createElement('div');
+        card.className = 'chart-card largura-total';
+        card.innerHTML = `<h3>Internações e Saídas por CID</h3>
+          <div class="resumo-total"></div>
+          <div class="tabela-info">
+            <div class="tabela-rolagem-fixa"><table class="tabela"><thead></thead><tbody></tbody></table></div>
+            <div class="nota">CID da primeira admissão da internação com CID informado. Internações pela data do cadastro e saídas pela data da alta: uma saída pode ser de internação feita antes do período.</div>
+          </div>`;
+        container.appendChild(card);
+        preencherCidDestino(card.querySelector('.tabela-rolagem-fixa'), card.querySelector('.resumo-total'), d.por_cid_destino);
+      }
     })
     .catch(err => {
       loaderOff();
