@@ -4,6 +4,8 @@
         {{ seletor_mes('mes-importacao', 'mes', valor='', exemplo='06/2026') }}
   Envia o campo `nome` no formato AAAA-MM (como o <input type="month">).
   Aceita digitar MM/AAAA. submeter=True envia o formulário ao escolher o mês.
+  Ao escolher ou digitar um mês válido, dispara o evento `mes-escolhido`.
+  Por código: elemento .seletor-mes.definirMes('AAAA-MM') (não dispara o evento).
 #}
 {% macro seletor_mes(id, nome, valor='', obrigatorio=True, exemplo='06/2026', submeter=False, dica=True) %}
 <div class="seletor-mes" data-submeter="{{ '1' if submeter else '' }}">
@@ -58,8 +60,10 @@
             valor.value = aaaaMm;
             texto.value = aaaaMm ? aaaaMm.slice(5) + '/' + aaaaMm.slice(0, 4) : '';
             texto.setCustomValidity('');
+            if (enviar && aaaaMm) raiz.dispatchEvent(new Event('mes-escolhido', { bubbles: true }));
             if (enviar && raiz.dataset.submeter && aaaaMm) texto.form.submit();
         }
+        raiz.definirMes = aaaaMm => definir(aaaaMm, false);
         function desenhar() {
             anoTexto.textContent = anoVisto;
             grade.innerHTML = '';

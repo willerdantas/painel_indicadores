@@ -368,6 +368,19 @@ def test_painel_sem_banco_configurado_mostra_aviso(cliente, monkeypatch):
     assert r.status_code == 503 and 'ainda não foi configurado' in r.get_data(as_text=True)
 
 
+def test_tendencias_usam_o_calendario_de_mes(cliente, logar, admin_id, monkeypatch):
+    import painel
+    monkeypatch.setattr(painel, 'hcasg_get_filtros', lambda: ([], [], []))
+    monkeypatch.setattr(painel, '_lean_filtros_tela', lambda: ([], [], []))
+    logar(admin_id)
+    for rota in ('/hcasg/hospitalares/tendencia', '/hcasg/emergencia/tendencia', '/lean/tendencias',
+                 '/ambulatorio/tendencia'):
+        r = cliente.get(rota)
+        html = r.get_data(as_text=True)
+        assert r.status_code == 200 and html.count('class="seletor-mes"') == 2
+        assert 'name="mes_ini"' in html and 'name="mes_fim"' in html and 'type="month"' not in html
+
+
 # ---------------------------------------------------------------- administrador inicial sem senha
 
 def test_admin_inicial_entra_sem_senha_so_no_primeiro_acesso(cliente):

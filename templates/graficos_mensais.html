@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
 {%- import '_tempo_exames.html' as tabela_tempo -%}
 <!doctype html>
 <html lang="pt-BR">
@@ -20,12 +21,12 @@
 
         <form class="filters" method="get" action="/graficos_mensais" id="form-filtros">
             <div class="filter-group">
-                <label for="data-inicial">Data Inicial:</label>
-                <input type="date" id="data-inicial" name="data_inicial" value="{{ data_inicial }}">
+                <label for="mes-inicial">Mês Inicial:</label>
+                {{ seletor_mes('mes-inicial', 'mes_inicial', valor=data_inicial[:7], dica=False) }}
             </div>
             <div class="filter-group">
-                <label for="data-final">Data Final:</label>
-                <input type="date" id="data-final" name="data_final" value="{{ data_final }}">
+                <label for="mes-final">Mês Final:</label>
+                {{ seletor_mes('mes-final', 'mes_final', valor=data_final[:7], dica=False) }}
             </div>
             <div class="filter-group">
                 <label for="clinica">Clínica:</label>
@@ -272,8 +273,8 @@
             dadosGraficos = data.graficos || {};
             dadosTempoExames = data.tempo_exames || [];
 
-            document.getElementById('data-inicial').value = data.data_inicial;
-            document.getElementById('data-final').value = data.data_final;
+            definirMes('mes_inicial', data.data_inicial.slice(0, 7));
+            definirMes('mes_final', data.data_final.slice(0, 7));
 
             document.querySelectorAll('[data-kpi]').forEach(el => {
                 el.textContent = formatarNumero(data.kpis[el.dataset.kpi]);
@@ -283,12 +284,21 @@
             atualizarGraficos();
         }
 
+        function campoMes(nome) { return document.querySelector(`input[name="${nome}"]`); }
+        function definirMes(nome, valor) { campoMes(nome).closest('.seletor-mes').definirMes(valor); }
+
+        // Meses escolhidos (AAAA-MM) -> do primeiro dia do mês menor ao último do maior.
+        function periodoDosMeses() {
+            const [ini, fim] = [campoMes('mes_inicial').value, campoMes('mes_final').value].sort();
+            const ultimoDia = new Date(+fim.slice(0, 4), +fim.slice(5, 7), 0).getDate();
+            return { data_inicial: `${ini}-01`, data_final: `${fim}-${String(ultimoDia).padStart(2, '0')}` };
+        }
+
         async function aplicarFiltrosAjax() {
             mostrarCarregamento();
             try {
                 const params = new URLSearchParams({
-                    data_inicial: document.getElementById('data-inicial').value,
-                    data_final: document.getElementById('data-final').value,
+                    ...periodoDosMeses(),
                     clinica: document.getElementById('clinica').value,
                     classificacao: document.getElementById('classificacao').value,
                     exame: document.getElementById('exame').value,
@@ -311,9 +321,9 @@
         function getUltimos12Meses() {
             const hoje = new Date();
             const inicio = new Date(hoje.getFullYear(), hoje.getMonth() - 12, 1);
-            const fim = new Date(hoje.getFullYear(), hoje.getMonth(), 0);  // último dia do mês anterior
-            const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-            return { inicio: iso(inicio), fim: iso(fim) };
+            const fim = new Date(hoje.getFullYear(), hoje.getMonth() - 1, 1);  // mês anterior
+            const aaaaMm = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+            return { inicio: aaaaMm(inicio), fim: aaaaMm(fim) };
         }
 
         document.addEventListener('DOMContentLoaded', () => {
@@ -327,8 +337,8 @@
 
             document.getElementById('reset-filtros-btn').addEventListener('click', () => {
                 const periodo = getUltimos12Meses();
-                document.getElementById('data-inicial').value = periodo.inicio;
-                document.getElementById('data-final').value = periodo.fim;
+                definirMes('mes_inicial', periodo.inicio);
+                definirMes('mes_final', periodo.fim);
                 document.getElementById('clinica').value = 'todos';
                 document.getElementById('classificacao').value = 'todos';
                 document.getElementById('exame').value = 'todos';

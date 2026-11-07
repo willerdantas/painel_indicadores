@@ -931,6 +931,9 @@ def test_graficos_mensais_cada_indicador_pela_sua_data(cliente, monkeypatch):
     pagina = cliente.get('/graficos_mensais?data_inicial=2026-09-01&data_final=2026-10-31').get_data(as_text=True)
     assert 'id="tabela-tempo-todos"' in pagina and pagina.count('class="botao-origem-tempo"') == 3
     assert '"origem": "emergencia"' in pagina  # os dados da tabela chegam ao JavaScript da página
+    # período por mês, com o calendário de mês e ano
+    assert pagina.count('class="seletor-mes"') == 2 and 'type="date"' not in pagina
+    assert 'value="2026-09"' in pagina and 'value="2026-10"' in pagina
 
 
 def test_exames_por_clinica_cada_indicador_pela_sua_data(cliente, monkeypatch):

@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -46,12 +47,12 @@
       <select id="municipio"><option value="">Todos</option></select>
     </div>
     <div>
-      <label for="mes_ini">Mês Inicial</label>
-      <input type="month" id="mes_ini" value="{{ mes_ini }}">
+      <label for="mes-ini">Mês Inicial</label>
+      {{ seletor_mes('mes-ini', 'mes_ini', valor=mes_ini, dica=False) }}
     </div>
     <div>
-      <label for="mes_fim">Mês Final</label>
-      <input type="month" id="mes_fim" value="{{ mes_fim }}">
+      <label for="mes-fim">Mês Final</label>
+      {{ seletor_mes('mes-fim', 'mes_fim', valor=mes_fim, dica=False) }}
     </div>
     <div>
       <label>&nbsp;</label>
@@ -90,6 +91,8 @@ document.getElementById('btn-voltar-inicio').addEventListener('click', function(
 });
 
 function v(id){ return document.getElementById(id).value; }
+// valor AAAA-MM do seletor de mês (campo escondido do calendário)
+function mes(nome) { return document.querySelector(`input[name="${nome}"]`).value; }
 
 // cores iguais às da página do Ambulatório
 const CORES_STATUS = {
@@ -201,7 +204,7 @@ function renderTabelaTipo(pt) {
 function carregarGraficos() {
   const params = new URLSearchParams({
     especialidade: v('especialidade'), sexo: v('sexo'), macrorregiao: v('macrorregiao'), municipio: v('municipio'),
-    mes_ini: v('mes_ini'), mes_fim: v('mes_fim')
+    mes_ini: mes('mes_ini'), mes_fim: mes('mes_fim')
   });
   const errEl = document.getElementById('erro');
   showLoader();
@@ -277,8 +280,9 @@ function carregarGraficos() {
 }
 
 // filtros e meses aplicam na hora
-['especialidade', 'sexo', 'macrorregiao', 'municipio', 'mes_ini', 'mes_fim'].forEach(id =>
+['especialidade', 'sexo', 'macrorregiao', 'municipio'].forEach(id =>
   document.getElementById(id).addEventListener('change', carregarGraficos));
+document.querySelectorAll('.seletor-mes').forEach(s => s.addEventListener('mes-escolhido', carregarGraficos));
 
 carregarGraficos();
 </script>

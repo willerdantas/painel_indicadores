@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -54,12 +55,12 @@
       </select>
     </div>
     <div>
-      <label>Mês Inicial</label>
-      <input type="month" id="mes_ini" value="{{ mes_ini }}">
+      <label for="mes-ini">Mês Inicial</label>
+      {{ seletor_mes('mes-ini', 'mes_ini', valor=mes_ini, dica=False) }}
     </div>
     <div>
-      <label>Mês Final</label>
-      <input type="month" id="mes_fim" value="{{ mes_fim }}">
+      <label for="mes-fim">Mês Final</label>
+      {{ seletor_mes('mes-fim', 'mes_fim', valor=mes_fim, dica=False) }}
     </div>
     <div>
       <label>&nbsp;</label>
@@ -89,6 +90,8 @@ function loaderOn()  { _loaderCount++; showLoader(); }
 function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loaderCount === 0) hideLoader(); }
 
 function v(id){ return document.getElementById(id).value; }
+// valor AAAA-MM do seletor de mês (campo escondido do calendário)
+function mes(nome) { return document.querySelector(`input[name="${nome}"]`).value; }
 
 
 function ajustarLayoutGraficos(qtdMeses) {
@@ -211,7 +214,7 @@ function criarGrafico(container, titulo, meses, valores, cor, comMediaMediana, s
 function carregarGraficos() {
   const params = new URLSearchParams({
     clinica: v('clinica'), enfermaria: v('enfermaria'), leito: v('leito'),
-    mes_ini: v('mes_ini'), mes_fim: v('mes_fim')
+    mes_ini: mes('mes_ini'), mes_fim: mes('mes_fim')
   });
 
   loaderOn();
@@ -347,8 +350,7 @@ function carregarGraficos() {
     });
 }
 
-document.getElementById('mes_ini').addEventListener('change', carregarGraficos);
-document.getElementById('mes_fim').addEventListener('change', carregarGraficos);
+document.querySelectorAll('.seletor-mes').forEach(s => s.addEventListener('mes-escolhido', carregarGraficos));
 
 carregarGraficos();
 </script>

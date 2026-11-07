@@ -1,4 +1,5 @@
 {%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
@@ -50,12 +51,12 @@
       </select>
     </div>
     <div>
-      <label>Mês Inicial</label>
-      <input type="month" id="mes_ini" value="{{ mes_ini }}">
+      <label for="mes-ini">Mês Inicial</label>
+      {{ seletor_mes('mes-ini', 'mes_ini', valor=mes_ini, dica=False) }}
     </div>
     <div>
-      <label>Mês Final</label>
-      <input type="month" id="mes_fim" value="{{ mes_fim }}">
+      <label for="mes-fim">Mês Final</label>
+      {{ seletor_mes('mes-fim', 'mes_fim', valor=mes_fim, dica=False) }}
     </div>
     <div>
       <label>&nbsp;</label>
@@ -92,6 +93,9 @@ document.getElementById('btn-voltar-inicio').addEventListener('click', function(
 });
 
 function v(id){ return document.getElementById(id).value; }
+// valor AAAA-MM do seletor de mês (campo escondido do calendário)
+function mes(nome) { return document.querySelector(`input[name="${nome}"]`).value; }
+function definirMes(nome, valor) { document.querySelector(`input[name="${nome}"]`).closest('.seletor-mes').definirMes(valor); }
 
 function calcularMedia(valores) {
   const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v));
@@ -119,8 +123,8 @@ function resetarTendenciaMensal() {
   const mesFim = new Date(primeiroMesAtual.getFullYear(), primeiroMesAtual.getMonth() - 1, 1);
   const mesIni = new Date(primeiroMesAtual.getFullYear(), primeiroMesAtual.getMonth() - 12, 1);
   const fmt = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
-  document.getElementById('mes_ini').value = fmt(mesIni);
-  document.getElementById('mes_fim').value = fmt(mesFim);
+  definirMes('mes_ini', fmt(mesIni));
+  definirMes('mes_fim', fmt(mesFim));
   carregarGraficos();
 }
 
@@ -281,15 +285,15 @@ function carregarGraficos() {
   const clinica = v('clinica');
   const enfermaria = v('enfermaria');
   const leito = v('leito');
-  let mesIni = v('mes_ini');
-  let mesFim = v('mes_fim');
+  let mesIni = mes('mes_ini');
+  let mesFim = mes('mes_fim');
 
   if (mesIni && mesFim && mesIni > mesFim) {
     const tmp = mesIni;
     mesIni = mesFim;
     mesFim = tmp;
-    document.getElementById('mes_ini').value = mesIni;
-    document.getElementById('mes_fim').value = mesFim;
+    definirMes('mes_ini', mesIni);
+    definirMes('mes_fim', mesFim);
   }
 
   const params = new URLSearchParams({
@@ -372,8 +376,7 @@ function carregarGraficos() {
     });
 }
 
-document.getElementById('mes_ini').addEventListener('change', carregarGraficos);
-document.getElementById('mes_fim').addEventListener('change', carregarGraficos);
+document.querySelectorAll('.seletor-mes').forEach(s => s.addEventListener('mes-escolhido', carregarGraficos));
 
 carregarGraficos();
 </script>

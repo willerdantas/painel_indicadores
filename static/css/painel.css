@@ -1169,8 +1169,8 @@ html { scroll-padding-top: 110px; }
 .pg-graficos-mensais .filter-actions { display: flex; flex-direction: column; gap: 10px; min-width: 160px; justify-content: flex-end; }
 .pg-graficos-mensais .filter-actions button, .pg-graficos-mensais .filter-actions a { display: inline-block; }
 .pg-graficos-mensais .filter-group { display: flex; flex-direction: column; min-width: 180px; flex: 1; }
-.pg-graficos-mensais select, .pg-graficos-mensais input[type="date"] { font-family: Arial, sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
-.pg-graficos-mensais select:focus, .pg-graficos-mensais input[type="date"]:focus { border-color: var(--primaria); }
+.pg-graficos-mensais select { font-family: Arial, sans-serif; padding: 7px 10px; font-size: 14px; border: 1px solid var(--border); border-radius: 6px; width: 100%; background: var(--bg); color: var(--dark); outline: none; }
+.pg-graficos-mensais select:focus { border-color: var(--primaria); }
 .pg-graficos-mensais .kpi-container { display: flex; gap: 16px; flex-wrap: nowrap; overflow-x: auto; }
 .pg-graficos-mensais .kpi-box { flex: 1; min-width: 150px; }
 .pg-graficos-mensais .content { display: flex; flex-wrap: wrap; gap: 40px; max-width: 100%; width: 100%; }
