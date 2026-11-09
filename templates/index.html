@@ -17,7 +17,7 @@
         </div>
     </div>
 
-    {% call cabecalho('Painel de Indicadores', 'Hospital de Messejana', voltar=False) %}
+    {% call cabecalho('Painel de Indicadores', voltar=False) %}
             {% if usuario_atual %}
             <span class="usuario-logado">{{ usuario_atual.nome }}</span>
             <a href="{{ url_for('admin_menu') }}" class="btn-header">Área Restrita</a>
