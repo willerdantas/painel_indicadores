@@ -1,10 +1,11 @@
 from psycopg2.extras import RealDictCursor
-from flask import Flask, render_template, jsonify, request, send_file
+from flask import Flask, render_template, jsonify, request, send_file, copy_current_request_context
 import secrets
 import pandas as pd
 import os
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta
 from indicadores_hcasg import get_filtros as hcasg_get_filtros
 from indicadores_hcasg import get_mensal_hospitalar, get_mensal_emergencia
@@ -1070,6 +1071,25 @@ def _hcasg_montar_comparativo_periodo(dados, campos):
     return {"meses": meses, "meses_iso": dados.get("meses_iso") or [], "linhas": linhas}
 
 
+_MESES_ABREV = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez']
+
+
+def _anos_comparativo():
+    """Anos do comparativo anual: por padrão, o ano anterior (A) contra o corrente (B)."""
+    ano = datetime.now().year
+    return {'ano_a': ano - 1, 'ano_b': ano, 'anos': list(range(ano, ano - 10, -1))}
+
+
+def _janela_do_ano(ano):
+    """Consolidado de um ano no comparativo anual: (mes_ini, mes_fim, rótulo).
+    O ano inteiro ou, no ano corrente, até o último mês fechado (em janeiro,
+    o próprio mês); aí o rótulo diz os meses, ex.: "2026 (jan–out)"."""
+    hoje = datetime.now().date()
+    ultimo = 12 if ano < hoje.year else max(hoje.month - 1, 1)
+    rotulo = str(ano) if ultimo == 12 else f"{ano} (jan{'–' + _MESES_ABREV[ultimo - 1] if ultimo > 1 else ''})"
+    return f"{ano}-01", f"{ano}-{ultimo:02d}", rotulo
+
+
 def _hcasg_params_filtro():
     clinica = request.args.getlist("clinica") or None
     if clinica and len(clinica) == 1:
@@ -1189,10 +1209,10 @@ def ambulatorio_comparativo():
     mes_b = (primeiro_mes_atual - pd.DateOffset(months=1)).date()
     mes_a = (primeiro_mes_atual - pd.DateOffset(months=2)).date()
     return render_template('ambulatorio_comparativo.html',
-                           mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'))
+                           mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'), **_anos_comparativo())
 
 
-def _ambulatorio_mensal(mes_ini, mes_fim):
+def _ambulatorio_mensal(mes_ini, mes_fim, por_ano=False):
     """get_mensal do ambulatório com os filtros da requisição."""
     return ambulatorio.get_mensal(
         mes_ini, mes_fim,
@@ -1200,6 +1220,7 @@ def _ambulatorio_mensal(mes_ini, mes_fim):
         sexo=request.args.get('sexo') or None,
         municipio=request.args.get('municipio') or None,
         macrorregiao=request.args.get('macrorregiao') or None,
+        por_ano=por_ano,
     )
 
 
@@ -1331,7 +1352,7 @@ def hcasg_hospitalares_comparativo():
     return render_template(
         'hcasg_hospitalares_comparativo.html',
         clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
-        mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'),
+        mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'), **_anos_comparativo(),
     )
 
 
@@ -1345,7 +1366,7 @@ def hcasg_emergencia_comparativo():
     return render_template(
         'hcasg_emergencia_comparativo.html',
         clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
-        mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'),
+        mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'), **_anos_comparativo(),
     )
 
 
@@ -1381,12 +1402,12 @@ def api_hcasg_emergencia_mensal():
 
 # ---- APIs: comparativo entre dois meses ----
 
-def _mensal_emergencia_comparativo(clinica, enfermaria, leito, mes_ini, mes_fim):
+def _mensal_emergencia_comparativo(clinica, enfermaria, leito, mes_ini, mes_fim, por_ano=False):
     """Séries do comparativo da Emergência: as da tendência mensal mais o fluxo
     (atendimentos por classificação e saídas por destino, já como séries) e a
-    lista de linhas em "_campos"."""
-    dados = get_mensal_emergencia(clinica, enfermaria, leito, mes_ini, mes_fim)
-    fluxo = hcasg.get_mensal_emergencia_fluxo(mes_ini, mes_fim)
+    lista de linhas em "_campos". por_ano: um valor por ano (comparativo anual)."""
+    dados = get_mensal_emergencia(clinica, enfermaria, leito, mes_ini, mes_fim, por_ano=por_ano)
+    fluxo = hcasg.get_mensal_emergencia_fluxo(mes_ini, mes_fim, por_ano=por_ano)
     campos = list(HCASG_CAMPOS_EMERGENCIA)
     dados["atendimentos_total"] = fluxo["risco_mensal"]["total"]
     campos.append(("atendimentos_total", "Atendimentos de Emergência", "qtd"))
@@ -1410,22 +1431,47 @@ def _mensal_emergencia_comparativo(clinica, enfermaria, leito, mes_ini, mes_fim)
 
 def _hcasg_comparativo_resposta(funcao_mensal, campos):
     """Resposta dos comparativos (Hospitalares, Emergência e Ambulatório) entre
-    o Mês A e o Mês B; funcao_mensal(mes_ini, mes_fim) já leva os filtros da página.
+    o Mês A e o Mês B; funcao_mensal(mes_ini, mes_fim, por_ano=False) já leva os
+    filtros da página.
     modo=individual: só os dois meses (A contra B), sem os meses do meio;
-    modo=periodo (padrão): todos os meses de A até B, mês a mês.
+    modo=periodo (padrão): todos os meses de A até B, mês a mês;
+    modo=anual: o consolidado do Ano A contra o do Ano B (ano_a/ano_b; padrão:
+    o ano anterior contra o corrente, este até o último mês fechado).
     mes_ini/mes_fim continuam aceitos no lugar de mes_a/mes_b."""
-    mes_a = request.args.get('mes_a') or request.args.get('mes_ini')
-    mes_b = request.args.get('mes_b') or request.args.get('mes_fim')
     modo = request.args.get('modo') or 'periodo'
-    if not mes_a or not mes_b:
-        return jsonify({'ok': False, 'erro': 'Informe o Mês A e o Mês B.'}), 400
-    if mes_a == mes_b:
-        return jsonify({'ok': False, 'erro': 'Escolha dois meses diferentes.'}), 400
+    if modo == 'anual':
+        padrao = _anos_comparativo()
+        try:
+            ano_a = int(request.args.get('ano_a') or padrao['ano_a'])
+            ano_b = int(request.args.get('ano_b') or padrao['ano_b'])
+        except ValueError:
+            return jsonify({'ok': False, 'erro': 'Informe o Ano A e o Ano B (AAAA).'}), 400
+        if ano_a == ano_b:
+            return jsonify({'ok': False, 'erro': 'Escolha dois anos diferentes.'}), 400
+        if not all(2000 <= a <= padrao['ano_b'] for a in (ano_a, ano_b)):
+            return jsonify({'ok': False, 'erro': f"Escolha anos de 2000 a {padrao['ano_b']}."}), 400
+    else:
+        mes_a = request.args.get('mes_a') or request.args.get('mes_ini')
+        mes_b = request.args.get('mes_b') or request.args.get('mes_fim')
+        if not mes_a or not mes_b:
+            return jsonify({'ok': False, 'erro': 'Informe o Mês A e o Mês B.'}), 400
+        if mes_a == mes_b:
+            return jsonify({'ok': False, 'erro': 'Escolha dois meses diferentes.'}), 400
     try:
-        if modo == 'individual':
-            # cada mês consultado sozinho: meses distantes não calculam o intervalo todo
-            dados_a = funcao_mensal(mes_a, mes_a)
-            dados_b = funcao_mensal(mes_b, mes_b)
+        if modo in ('individual', 'anual'):
+            if modo == 'anual':
+                # cada ano consultado sozinho, agrupado por ano: um valor por ano
+                (ini_a, fim_a, rotulo_a), (ini_b, fim_b, rotulo_b) = _janela_do_ano(ano_a), _janela_do_ano(ano_b)
+                janelas, extra = [(ini_a, fim_a), (ini_b, fim_b)], {'por_ano': True}
+            else:
+                # cada mês consultado sozinho: meses distantes não calculam o intervalo todo
+                janelas, extra = [(mes_a, mes_a), (mes_b, mes_b)], {}
+            # A e B ao mesmo tempo; cada um com a requisição (os filtros do Ambulatório vêm dela)
+            com_requisicao = [copy_current_request_context(funcao_mensal) for _ in janelas]
+            with ThreadPoolExecutor(max_workers=2) as consultas:
+                dados_a, dados_b = consultas.map(lambda f, j: f(*j, **extra), com_requisicao, janelas)
+            if modo == 'anual':
+                dados_a['meses'], dados_b['meses'] = [rotulo_a], [rotulo_b]
             campos = list(dados_a.get('_campos') or campos)
             # linha que só existe no Mês B (ex.: um status sem atendimento em A):
             # entra logo depois da linha que vem antes dela no Mês B
@@ -1461,14 +1507,16 @@ def _hcasg_comparativo_resposta(funcao_mensal, campos):
 @app.route('/api/hcasg/hospitalares/comparativo')
 def api_hcasg_hospitalares_comparativo():
     filtros = _hcasg_params_filtro()
-    return _hcasg_comparativo_resposta(lambda ini, fim: get_mensal_hospitalar(*filtros, ini, fim),
+    return _hcasg_comparativo_resposta(
+        lambda ini, fim, por_ano=False: get_mensal_hospitalar(*filtros, ini, fim, por_ano=por_ano),
                                        HCASG_CAMPOS_HOSPITALAR)
 
 
 @app.route('/api/hcasg/emergencia/comparativo')
 def api_hcasg_emergencia_comparativo():
     filtros = _hcasg_params_filtro()
-    return _hcasg_comparativo_resposta(lambda ini, fim: _mensal_emergencia_comparativo(*filtros, ini, fim),
+    return _hcasg_comparativo_resposta(
+        lambda ini, fim, por_ano=False: _mensal_emergencia_comparativo(*filtros, ini, fim, por_ano),
                                        HCASG_CAMPOS_EMERGENCIA)
 
 

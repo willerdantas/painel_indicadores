@@ -381,6 +381,21 @@ def test_tendencias_usam_o_calendario_de_mes(cliente, logar, admin_id, monkeypat
         assert 'name="mes_ini"' in html and 'name="mes_fim"' in html and 'type="month"' not in html
 
 
+def test_comparativos_tem_o_modo_anual(cliente, logar, admin_id, monkeypatch):
+    from datetime import datetime
+    import painel
+    monkeypatch.setattr(painel, 'hcasg_get_filtros', lambda: ([], [], []))
+    logar(admin_id)
+    ano = datetime.now().year
+    for rota in ('/hcasg/hospitalares/comparativo', '/hcasg/emergencia/comparativo', '/ambulatorio/comparativo'):
+        r = cliente.get(rota)
+        html = r.get_data(as_text=True)
+        assert r.status_code == 200 and '<option value="anual"' in html
+        # padrão: Ano A = o anterior, Ano B = o corrente (campos escondidos fora do modo anual)
+        assert f'<option selected>{ano - 1}</option>' in html and f'<option selected>{ano}</option>' in html
+        assert html.count('data-campo="anual" hidden') == 2
+
+
 # ---------------------------------------------------------------- administrador inicial sem senha
 
 def test_admin_inicial_entra_sem_senha_so_no_primeiro_acesso(cliente):

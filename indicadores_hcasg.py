@@ -162,14 +162,30 @@ def _meses_iso(meses_dates):
     return [d.strftime("%Y-%m") if d else None for d in meses_dates]
 
 
+def _rotulos(chaves, por_ano):
+    """Rótulos das séries: meses (Jan/26) ou, com por_ano, anos (2026)."""
+    return [str(d.year) for d in chaves] if por_ano else _meses_labels(chaves)
+
+
+def _consulta_por(por_ano):
+    """fetch_all das séries mensais; com por_ano (comparativo anual), as mesmas
+    consultas agrupam por ano: DATE_TRUNC('month') e INTERVAL '1 month' viram
+    'year'. Assim taxas e médias do ano saem do ano inteiro, não da soma dos meses."""
+    if not por_ano:
+        return fetch_all
+    return lambda sql, params=None: fetch_all(
+        sql.replace("'1 month'", "'1 year'").replace("'month'", "'year'"), params)
+
+
 # ---------------------------------------------------------------------------
 # INDICADORES HOSPITALARES (mensal)
 # paciente-dia, saídas, TMP Hospitalar, giro de leito, leito-dia,
 # taxa de ocupação.
 # ---------------------------------------------------------------------------
 
-def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None):
+def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None, por_ano=False):
     dt_ini, dt_fim = _resolve_month_window(mes_ini, mes_fim)
+    consulta = _consulta_por(por_ano)  # por_ano: um valor por ano, não por mês
     filt_sql, filt_vals = _filtros_sql(clinica, enfermaria, leito, prefixo="AND")
     _clinica_unica = (isinstance(clinica, str) and clinica) or (isinstance(clinica, list) and len(clinica) == 1)
     incluir_destino_5 = "TRUE" if _clinica_unica else "FALSE"
@@ -195,7 +211,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 )
     """
 
-    meses = fetch_all("""
+    meses = consulta("""
         SELECT gs::date AS mes
         FROM generate_series(
             DATE_TRUNC('month', %s::date)::date,
@@ -206,7 +222,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     """, [dt_ini, dt_fim])
     meses_keys = [row["mes"] for row in (meses or [])]
 
-    rows_tmph = fetch_all(f"""
+    rows_tmph = consulta(f"""
         WITH limites AS (
             SELECT %s::date AS dt_ini, %s::date AS dt_fim
         ),
@@ -287,7 +303,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     mapa_paciente_dia = {r["mes"]: r["paciente_dia"] for r in (rows_tmph or [])}
     mapa_saidas = {r["mes"]: r["saidas"] for r in (rows_tmph or [])}
 
-    rows_saidas_destino_mes = fetch_all(f"""
+    rows_saidas_destino_mes = consulta(f"""
         WITH limites AS (
             SELECT %s::date AS dt_ini, %s::date AS dt_fim
         ),
@@ -337,7 +353,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
 
     _leitos_filt_sql, _leitos_filt_vals = _filtros_sql(clinica, None, None, prefixo="AND")
 
-    rows_leitos_internacao_mensais = fetch_all(f"""
+    rows_leitos_internacao_mensais = consulta(f"""
         WITH
         limites AS (SELECT %s::date AS dt_ini, %s::date AS dt_fim),
         meses AS (
@@ -402,7 +418,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     # flg_extra='N'), descontando apenas interdições com duração > 5 dias
     # (dat_interdicao / dat_liberacao por data; o dia da liberação já conta
     # como disponível).
-    rows_leito_dia_mensal = fetch_all(f"""
+    rows_leito_dia_mensal = consulta(f"""
         WITH
         limites AS (SELECT %s::date AS dt_ini, %s::date AS dt_fim),
         meses AS (
@@ -467,7 +483,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     #   - Óbito Institucional: alta com destino 4 (óbito) e diferença entre a
     #     alta efetiva e o dat_cadastro da internação MAIOR que 24 horas.
     #   - Óbito Hospitalar: alta com destino 4 e diferença <= 24 horas.
-    rows_obitos_mes = fetch_all(f"""
+    rows_obitos_mes = consulta(f"""
         WITH limites AS (SELECT %s::date AS dt_ini, %s::date AS dt_fim),
         movimentos AS (
             SELECT
@@ -540,7 +556,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
 
     # Internações por mês: mesma regra do painel (internação do tipo 1, contada
     # no mês do cadastro, pela clínica da primeira movimentação).
-    rows_internacoes_mes = fetch_all(_PRIMEIRA_CLINICA_CTE + f"""
+    rows_internacoes_mes = consulta(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT DATE_TRUNC('month', ti.dat_cadastro)::date AS mes,
                pc.dsc_clinica,
                COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
@@ -562,7 +578,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
             internacoes_clinica.setdefault(r["dsc_clinica"].strip(), [0] * len(meses_keys))[idx_mes[r["mes"]]] += r["qtd"]
 
     result = {
-        "meses": _meses_labels(meses_keys),
+        "meses": _rotulos(meses_keys, por_ano),
         "meses_iso": _meses_iso(meses_keys),
         "paciente_dia": [],
         "internacoes": [],
@@ -654,7 +670,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         {"nome": nome, "valores": valores}
         for nome, valores in sorted(internacoes_clinica.items(), key=lambda x: (-sum(x[1]), x[0]))
     ]
-    result["dias_mes"] = [max(0, (min(_add_months(mes, 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
+    result["dias_mes"] = [max(0, (min(_add_months(mes, 12 if por_ano else 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
                           for mes in meses_keys]
 
     return result
@@ -809,8 +825,9 @@ def _los_com_cte():
 # tempo porta-médico, internações PS.
 # ---------------------------------------------------------------------------
 
-def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None):
+def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None, por_ano=False):
     dt_ini, dt_fim = _resolve_month_window(mes_ini, mes_fim)
+    consulta = _consulta_por(por_ano)  # por_ano: um valor por ano, não por mês
     filt_sql, filt_vals = _filtros_sql(clinica, enfermaria, leito, prefixo="AND")
     _clinica_unica = (isinstance(clinica, str) and clinica) or (isinstance(clinica, list) and len(clinica) == 1)
     incluir_destino_5 = "TRUE" if _clinica_unica else "FALSE"
@@ -836,7 +853,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
                 )
     """
 
-    meses = fetch_all("""
+    meses = consulta("""
         SELECT gs::date AS mes
         FROM generate_series(
             DATE_TRUNC('month', %s::date)::date,
@@ -847,7 +864,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     """, [dt_ini, dt_fim])
     meses_keys = [row["mes"] for row in (meses or [])]
 
-    rows_sem = fetch_all("""
+    rows_sem = consulta("""
         SELECT
             DATE_TRUNC('month', ti.dat_cadastro)::date AS mes,
             ROUND(
@@ -873,7 +890,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         """, [dt_ini, dt_fim])
     mapa_los_sem = {r["mes"]: r["los_sem"] for r in (rows_sem or [])}
 
-    rows_com = fetch_all(_los_com_cte() + """
+    rows_com = consulta(_los_com_cte() + """
         SELECT
             DATE_TRUNC('month', dat_cadastro)::date AS mes,
             ROUND(AVG(los_min)::numeric, 2) AS los_com
@@ -883,7 +900,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     """, [dt_ini, dt_fim])
     mapa_los_com = {r["mes"]: r["los_com"] for r in (rows_com or [])}
 
-    rows_porta_medico = fetch_all(f"""
+    rows_porta_medico = consulta(f"""
         WITH limites AS (
             SELECT
                 %s::date AS dt_ini,
@@ -935,7 +952,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     """, [dt_ini, dt_fim] + filt_vals)
     mapa_porta_medico = {r["mes"]: r["porta_medico"] for r in (rows_porta_medico or [])}
 
-    rows_tmp_ps = fetch_all(f"""
+    rows_tmp_ps = consulta(f"""
         WITH limites AS (
             SELECT
                 %s::date AS dt_ini,
@@ -1019,7 +1036,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     mapa_paciente_dia_tmp_ps = {r["mes"]: r["paciente_dia"] for r in (rows_tmp_ps or [])}
     mapa_saidas_tmp_ps = {r["mes"]: r["saidas"] for r in (rows_tmp_ps or [])}
 
-    rows_saidas_tmp_ps_destino_mes = fetch_all(f"""
+    rows_saidas_tmp_ps_destino_mes = consulta(f"""
         WITH limites AS (
             SELECT
                 %s::date AS dt_ini,
@@ -1069,7 +1086,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         ORDER BY mes, isn_destino
     """, [dt_ini, dt_fim] + filt_vals)
 
-    rows_internacoes_ps = fetch_all("""
+    rows_internacoes_ps = consulta("""
         WITH internacoes_ps AS (
             SELECT
                 ti.isn_internacao,
@@ -1092,7 +1109,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
 
     _leitos_ps_filt_sql, _leitos_ps_filt_vals = _filtros_sql(clinica, enfermaria, leito, prefixo="AND")
 
-    rows_leitos_ps_mensais = fetch_all(f"""
+    rows_leitos_ps_mensais = consulta(f"""
         WITH
         limites AS (SELECT %s::date AS dt_ini, %s::date AS dt_fim),
         meses AS (
@@ -1155,7 +1172,7 @@ def get_mensal_emergencia(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     mapa_leitos_ps_mensais = {r["mes"]: r["media_disponiveis"] for r in (rows_leitos_ps_mensais or [])}
 
     result = {
-        "meses": _meses_labels(meses_keys),
+        "meses": _rotulos(meses_keys, por_ano),
         "meses_iso": _meses_iso(meses_keys),
         "los_sem": [],
         "los_com": [],
@@ -2882,21 +2899,23 @@ def get_saidas_emergencia(data_ini, data_fim):
         "internacao_clinica_risco": internacao_clinica_risco,
     }
 
-def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None):
+def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None, por_ano=False):
     """Tendência mensal do fluxo da emergência, com as mesmas regras da página
     da Emergência (get_atendimentos_emergencia / get_saidas_emergencia), por mês:
     atendimentos por classificação de risco (mês do cadastro), saídas por
     destino (mês da saída), taxa de conversão e pacientes acima de 24 h.
-    Não usa os filtros de clínica/enfermaria/leito (como na página)."""
+    Não usa os filtros de clínica/enfermaria/leito (como na página).
+    por_ano: um valor por ano (comparativo anual), sem municípios."""
     dt_ini, dt_fim = _resolve_month_window(mes_ini, mes_fim)
+    consulta = _consulta_por(por_ano)
     meses_keys = []
-    m = date(dt_ini.year, dt_ini.month, 1)
+    m = date(dt_ini.year, 1 if por_ano else dt_ini.month, 1)
     while m <= dt_fim:
         meses_keys.append(m)
-        m = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
+        m = _add_months(m, 12 if por_ano else 1)
     idx_mes = {mes: i for i, mes in enumerate(meses_keys)}
 
-    rows_risco = fetch_all("""
+    rows_risco = consulta("""
         WITH atend AS MATERIALIZED (
             SELECT ti.isn_internacao, DATE_TRUNC('month', ti.dat_cadastro)::date AS mes
             FROM t_internacao ti
@@ -2923,9 +2942,9 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None):
             chave = r["isn_risco"] if r["isn_risco"] in por_risco else None
             por_risco[chave][idx_mes[r["mes"]]] += int(r["qtd"])
 
-    municipio_mensal, macrorregiao_mensal = _municipios_mensal(dt_ini, dt_fim, idx_mes)
+    municipio_mensal, macrorregiao_mensal = ([], []) if por_ano else _municipios_mensal(dt_ini, dt_fim, idx_mes)
 
-    rows_saidas = fetch_all(f"""
+    rows_saidas = consulta(f"""
         WITH candidatas AS MATERIALIZED (
             SELECT DISTINCT til.isn_internacao
             FROM t_internacao_leito til
@@ -2974,12 +2993,12 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None):
     total_saidas = [sum(saidas[dest][i] for dest in DESTINOS_SAIDA_PS) for i in range(len(meses_keys))]
 
     return {
-        "fluxo_meses": _meses_labels(meses_keys),
+        "fluxo_meses": _rotulos(meses_keys, por_ano),
         "risco_mensal": {
             "riscos": [{"dsc_risco": dsc, "valores": por_risco[isn]} for isn, dsc in colunas_risco],
             "total": [sum(por_risco[isn][i] for isn, _ in colunas_risco) for i in range(len(meses_keys))],
             # dias de cada mês na janela (o mês corrente conta só até hoje), para a média por dia
-            "dias": [max(0, (min(_add_months(mes, 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
+            "dias": [max(0, (min(_add_months(mes, 12 if por_ano else 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
                      for mes in meses_keys],
         },
         "municipio_mensal": municipio_mensal,

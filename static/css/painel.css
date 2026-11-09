@@ -210,6 +210,7 @@ html { scroll-padding-top: 110px; }
 }
 /* campo de filtro: .filter-group, ou uma <div> simples direto na barra (as que
    têm classe ou estilo próprio são agrupadores e mantêm o próprio layout) */
+.filters > [hidden] { display: none !important; }  /* campos trocados pelo modo (ex.: comparativo anual) */
 .filters > div:not([class]):not([style]), .filter-group { display: flex; flex-direction: column; min-width: 160px; flex: 1 1 160px; }
 .filters label, .filter-group label {
     display: block;

@@ -43,7 +43,7 @@ from datetime import date, timedelta
 import banco_painel
 import banco_hospitalar
 from banco_hospitalar import fetch_all
-from indicadores_hcasg import _DIAS_SEMANA, _meses_iso, _meses_labels
+from indicadores_hcasg import _DIAS_SEMANA, _meses_iso, _rotulos
 
 _CACHE_TTL = 600  # segundos
 _cache = {}
@@ -726,13 +726,17 @@ def _janela_meses(mes_ini, mes_fim):
     return meses, meses[0], (meses[-1] + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
 
-def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, macrorregiao=None):
+def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, macrorregiao=None,
+               por_ano=False):
     """Indicadores do ambulatório mês a mês (tendência mensal e comparativo),
     com os filtros de especialidade, sexo, município e macrorregião. Os
     atendimentos são datados pelo cadastro e as consultas (horário/tempo) pelo
     início do atendimento médico, como na página do ambulatório; a média
-    diária divide pelos dias em que o ambulatório atendeu (sem filtro)."""
+    diária divide pelos dias em que o ambulatório atendeu (sem filtro).
+    por_ano: um valor por ano (comparativo anual) em vez de um por mês."""
     meses, dt_ini, dt_fim = _janela_meses(mes_ini, mes_fim)
+    if por_ano:
+        meses = sorted({m.replace(month=1) for m in meses})
     macro_do_municipio = banco_painel.macrorregiao_dos_municipios()
     filtro = filtro_paciente(sexo, municipio, macrorregiao, macro_do_municipio)
 
@@ -742,7 +746,7 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
     visitas = _visitas_periodo(dt_ini, dt_fim)
     nomes_tipo = banco_painel.nomes_tipos_consulta()
     c = _contar_mes_a_mes(meses, visitas, _consultas_periodo(dt_ini, dt_fim), passa,
-                          nomes_tipo, macro_do_municipio)
+                          nomes_tipo, macro_do_municipio, por_ano)
     atend = c["atendimentos"]
 
     def do_status(nome):
@@ -756,7 +760,7 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
     status = _series(c["status"])
     tipos = _series(c["tipo"])
     dados = {
-        "meses": _meses_labels(meses),
+        "meses": _rotulos(meses, por_ano),
         "meses_iso": _meses_iso(meses),
         "atendimentos": atend,
         "media_diaria": [round(a / len(d), 1) if d else None for a, d in zip(atend, c["dias_abertos"])],
@@ -795,13 +799,18 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
     return dados
 
 
-def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_municipio):
-    """Contagens de get_mensal, um valor por mês: atendimentos, prontuários e
-    especialidades (conjuntos), por status, sexo, macrorregião, tipo de
-    consulta e especialidade × tipo; consultas e minutos de cada consulta.
-    dias_abertos: dias em que o ambulatório atendeu (sem os filtros de passa)."""
+def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_municipio, por_ano=False):
+    """Contagens de get_mensal, um valor por mês (por ano, com por_ano):
+    atendimentos, prontuários e especialidades (conjuntos), por status, sexo,
+    macrorregião, tipo de consulta e especialidade × tipo; consultas e minutos
+    de cada consulta. dias_abertos: dias em que o ambulatório atendeu (sem os
+    filtros de passa)."""
     n = len(meses)
-    idx = {(m.year, m.month): i for i, m in enumerate(meses)}
+
+    def chave(d):
+        return (d.year, 1 if por_ano else d.month)
+
+    idx = {chave(m): i for i, m in enumerate(meses)}
 
     def serie():
         return [0] * n
@@ -811,7 +820,7 @@ def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_mun
          "pacientes": [set() for _ in meses], "especialidades": [set() for _ in meses],
          "minutos": [[] for _ in meses]}
     for paciente, esp, st, dia, mun, sx, _, _, cod_tipo in visitas:
-        i = idx[(dia.year, dia.month)]
+        i = idx[chave(dia)]
         c["dias_abertos"][i].add(dia)
         if not passa(esp, sx, mun):
             continue
@@ -827,7 +836,7 @@ def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_mun
         c["especialidade_tipo"].setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
 
     for esp, _, _, mins, sx, mun, dia in consultas:
-        i = idx.get((dia.year, dia.month))
+        i = idx.get(chave(dia))
         if i is None or not passa(esp, sx, mun):
             continue
         c["consultas"][i] += 1

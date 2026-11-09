@@ -43,15 +43,24 @@
       <select id="modo">
         <option value="individual" title="Só o Mês A contra o Mês B">Individual</option>
         <option value="periodo" title="Todos os meses de A até B">Período</option>
+        <option value="anual" title="Consolidado do Ano A contra o do Ano B">Anual</option>
       </select>
     </div>
-    <div>
+    <div data-campo="mes">
       <label for="mes-a">Mês A</label>
       {{ seletor_mes('mes-a', 'mes_a', valor=mes_a, dica=False) }}
     </div>
-    <div>
+    <div data-campo="mes">
       <label for="mes-b">Mês B</label>
       {{ seletor_mes('mes-b', 'mes_b', valor=mes_b, dica=False) }}
+    </div>
+    <div data-campo="anual" hidden>
+      <label for="ano-a">Ano A</label>
+      <select id="ano-a">{% for a in anos %}<option{{ ' selected' if a == ano_a }}>{{ a }}</option>{% endfor %}</select>
+    </div>
+    <div data-campo="anual" hidden>
+      <label for="ano-b">Ano B</label>
+      <select id="ano-b">{% for a in anos %}<option{{ ' selected' if a == ano_b }}>{{ a }}</option>{% endfor %}</select>
     </div>
     <div>
       <label>&nbsp;</label>
@@ -134,25 +143,35 @@ function mes(nome) { const el = document.querySelector(`input[name="${nome}"]`);
 const NOTAS = {
   individual: 'Compara só o Mês A com o Mês B (os meses entre eles não entram).',
   periodo: 'Cada mês mostra o valor e, abaixo, a variação em relação ao mês anterior; ' +
-           'a última coluna compara o primeiro com o último mês do período.'
+           'a última coluna compara o primeiro com o último mês do período.',
+  anual: 'Compara o consolidado do Ano A com o do Ano B (taxas e médias calculadas sobre o ano todo). ' +
+         'No ano corrente entram só os meses já fechados, indicados no cabeçalho.'
 };
+
+// no modo anual, os anos no lugar dos meses
+function mostrarCampos() {
+  const anual = v('modo') === 'anual';
+  document.querySelectorAll('[data-campo]').forEach(d => { d.hidden = (d.dataset.campo === 'anual') !== anual; });
+}
 
 function carregarComparativo() {
   const mesA = mes('mes_a');
   const mesB = mes('mes_b');
   const modo = v('modo');
+  const anual = modo === 'anual';
   const erroEl = document.getElementById('erro');
   erroEl.style.display = 'none';
 
-  if (!mesA || !mesB || mesA === mesB) {
-    erroEl.textContent = 'Escolha dois meses diferentes (Mês A e Mês B).';
+  if (anual ? v('ano-a') === v('ano-b') : (!mesA || !mesB || mesA === mesB)) {
+    erroEl.textContent = anual ? 'Escolha dois anos diferentes (Ano A e Ano B).'
+                               : 'Escolha dois meses diferentes (Mês A e Mês B).';
     erroEl.style.display = 'block';
     return;
   }
 
   const params = new URLSearchParams({
     especialidade: v('especialidade'), sexo: v('sexo'), macrorregiao: v('macrorregiao'), municipio: v('municipio'),
-    mes_a: mesA, mes_b: mesB, modo
+    ...(anual ? { ano_a: v('ano-a'), ano_b: v('ano-b') } : { mes_a: mesA, mes_b: mesB }), modo
   });
 
   showLoader();
@@ -173,11 +192,11 @@ function carregarComparativo() {
         preencherSelect('municipio', res.opcoes.municipios, 'Todos');
       }
       const meses = res.meses || [];
-      const individual = res.modo === 'individual';
+      const individual = res.modo !== 'periodo';  // individual e anual: só A contra B
       const primeiro = meses[0], ultimo = meses[meses.length - 1];
-      document.getElementById('nota-comparativo').textContent = NOTAS[individual ? 'individual' : 'periodo'];
+      document.getElementById('nota-comparativo').textContent = NOTAS[res.modo] || NOTAS.periodo;
       document.getElementById('titulo-tabela').textContent = individual
-        ? `Comparativo — ${primeiro} x ${ultimo}`
+        ? `Comparativo${res.modo === 'anual' ? ' anual' : ''} — ${primeiro} x ${ultimo}`
         : `Comparativo mês a mês — ${primeiro} a ${ultimo}`;
       const colunas = meses.map(m => `<th class="num">${m}</th>`).join('') +
         (individual
@@ -271,6 +290,8 @@ document.getElementById('tbody-tipo').addEventListener('keydown', e => {
 ['modo', 'especialidade', 'sexo', 'macrorregiao', 'municipio'].forEach(id =>
   document.getElementById(id).addEventListener('change', carregarComparativo));
 
+document.getElementById('modo').addEventListener('change', mostrarCampos);
+mostrarCampos();  // o navegador pode restaurar o modo ao voltar à página
 carregarComparativo();
 </script>
     {{ rodape() }}

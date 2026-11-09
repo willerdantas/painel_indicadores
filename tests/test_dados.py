@@ -626,6 +626,11 @@ def test_ambulatorio_mensal(monkeypatch):
     assert n['atendimentos'] == [0, 2] and n['consultas'] == [0, 2]
     assert n['media_diaria'] == [0.0, 2.0]  # a média continua pelos dias em que o ambulatório atendeu
     assert ambulatorio.get_mensal('2026-09', '2026-10', especialidade='Pneumologia')['atendimentos'] == [0, 1]
+    # comparativo anual: um valor para o ano, com prontuários únicos, média e tempo do ano inteiro
+    a = ambulatorio.get_mensal('2026-01', '2026-10', por_ano=True)
+    assert a['meses'] == ['2026'] and a['atendimentos'] == [4] and a['prontuarios'] == [3]
+    assert a['media_diaria'] == [1.3] and a['tempo_medio'] == [20.0] and a['taxa_absenteismo'] == [25.0]
+    assert a['atendimentos_status_FALTOU'] == [1] and a['tipoesp_esp_Cardiologia'] == [3]
 
 
 def test_ambulatorio_por_tipo_especialidade():
@@ -662,6 +667,69 @@ def test_comparativo_individual_linha_so_no_mes_b_fica_no_lugar(monkeypatch):
         r = painel._hcasg_comparativo_resposta(mensal, campos_a).get_json()
     assert [l['chave'] for l in r['linhas']] == ['a', 'a_status_Y', 'a_status_X', 'b']
     assert all(l['grupo'] is None for l in r['linhas'])
+
+
+def test_janela_do_ano_corrente_vai_ate_o_ultimo_mes_fechado(monkeypatch):
+    from datetime import datetime
+    import painel
+
+    def hoje(*data):
+        class Fixo(datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return cls(*data)
+        monkeypatch.setattr(painel, 'datetime', Fixo)
+    hoje(2026, 11, 9)
+    assert painel._janela_do_ano(2025) == ('2025-01', '2025-12', '2025')
+    assert painel._janela_do_ano(2026) == ('2026-01', '2026-10', '2026 (jan–out)')
+    hoje(2027, 1, 15)  # em janeiro ainda não há mês fechado: o próprio janeiro
+    assert painel._janela_do_ano(2027) == ('2027-01', '2027-01', '2027 (jan)')
+
+
+def test_comparativo_anual(monkeypatch):
+    from datetime import datetime
+    import painel
+    ano = datetime.now().year
+    chamadas = []
+
+    def mensal(ini, fim, por_ano=False):
+        chamadas.append((ini, fim, por_ano))
+        return {'meses': [ini[:4]], 'meses_iso': [ini], 'a': [10 if ini < str(ano) else 15]}
+    campos = [('a', 'A', 'qtd')]
+    with painel.app.test_request_context('/?modo=anual'):  # padrão: ano anterior x corrente
+        r = painel._hcasg_comparativo_resposta(mensal, campos).get_json()
+    assert chamadas[0] == (f'{ano - 1}-01', f'{ano - 1}-12', True)
+    assert chamadas[1][0] == f'{ano}-01' and chamadas[1][2] is True
+    assert r['modo'] == 'anual' and r['meses'][0] == str(ano - 1) and r['meses'][1].startswith(str(ano))
+    assert r['linhas'][0]['valores'] == [10, 15] and r['linhas'][0]['variacao_periodo'] == 50.0
+    for erro in ('ano_a=2024&ano_b=2024', f'ano_a=2024&ano_b={ano + 1}', 'ano_a=abc&ano_b=2024'):
+        with painel.app.test_request_context('/?modo=anual&' + erro):
+            assert painel._hcasg_comparativo_resposta(mensal, campos)[1] == 400
+
+
+def test_series_por_ano_agrupam_por_ano(monkeypatch):
+    from datetime import date
+    import indicadores_hcasg as h
+    vistos = []
+
+    def fetch_all(sql, params=None):
+        vistos.append(sql)
+        if 'FROM t_risco' in sql:
+            return [{'isn_risco': 1, 'dsc_risco': 'VERMELHO'}]
+        if 't_internacao_risco' in sql:
+            return [{'mes': date(2026, 1, 1), 'isn_risco': 1, 'qtd': 5}]
+        if 'candidatas' in sql:
+            return [{'mes': date(2026, 1, 1), 'isn_destino': 13, 'qtd': 2, 'acima_24h': 1}]
+        return []
+    monkeypatch.setattr(h, 'fetch_all', fetch_all)
+    monkeypatch.setattr(h, '_municipios_mensal', lambda *a: (_ for _ in ()).throw(AssertionError('por município')))
+    assert h._consulta_por(False) is fetch_all
+    h._consulta_por(True)("SELECT DATE_TRUNC('month', x), generate_series(a, b, INTERVAL '1 month')")
+    assert vistos[-1] == "SELECT DATE_TRUNC('year', x), generate_series(a, b, INTERVAL '1 year')"
+    f = h.get_mensal_emergencia_fluxo('2026-01', '2026-10', por_ano=True)
+    assert f['fluxo_meses'] == ['2026'] and f['risco_mensal']['total'] == [5]
+    assert f['saidas_emergencia_total'] == [2] and f['taxa_conversao'] == [100.0] and f['perc_acima_24h'] == [50.0]
+    assert not any("'month'" in sql for sql in vistos)
 
 
 def test_comparativo_detalhe_explicito_no_campo():
