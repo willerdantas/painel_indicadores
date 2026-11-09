@@ -18,6 +18,7 @@
 <script src="/static/js/tendencia.js"></script>
 <script src="/static/js/tabela_rolagem.js"></script>
 <script src="/static/js/cid_destino.js"></script>
+<script src="/static/js/procedencia.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-hospitalares-tendencia">
@@ -268,6 +269,22 @@ function carregarGraficos() {
           if (ind.key === 'internacoes') tabelaInternacoesClinica(card, d.internacoes_clinicas, d.internacoes, d.dias_mes);
         }
       });
+
+      // internações por procedência, mês a mês
+      const proc = d.internacoes_procedencia;
+      if (proc && proc.series.length) {
+        const card = document.createElement('div');
+        card.className = 'chart-card largura-total';
+        card.innerHTML = `<h3>Internações por Procedência</h3>
+          <div class="chart-container"><canvas></canvas></div>
+          <div class="tabela-info">
+            <div class="tabela-rolagem-fixa"><table class="tabela"><thead></thead><tbody></tbody></table></div>
+            <div class="nota">Procedência registrada na internação (t_tipo_referencia). As de menor volume entram em "Outras".</div>
+          </div>`;
+        container.appendChild(card);
+        chartInstances['procedencia'] = new Chart(card.querySelector('canvas'), configProcedencia(d.meses, proc));
+        tabelaProcedencia(card.querySelector('.tabela-rolagem-fixa'), proc, 'Média por mês');
+      }
 
       // internações e saídas por CID e destino, no período todo
       if (d.por_cid_destino && d.por_cid_destino.linhas.length) {

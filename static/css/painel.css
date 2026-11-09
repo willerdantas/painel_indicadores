@@ -472,7 +472,7 @@ html { scroll-padding-top: 110px; }
 .graf-resumo b { font-family: var(--fonte-titulo); font-size: 1rem; color: var(--dark); }
 .graf-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
 .graf-card.full { grid-column: 1 / -1; }
-.graf-card .nota { font-size: .72rem; color: var(--muted); margin-top: .5rem; }
+.graf-card .nota, .tabela-info .nota { font-size: .72rem; color: var(--muted); margin-top: .5rem; }
 .chart-box { position: relative; height: 300px; }
 
 /* 9. Tabelas e mensagens ------------------------------------------------------- */

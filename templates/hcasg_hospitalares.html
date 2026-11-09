@@ -8,6 +8,7 @@
 <script src="/static/chart.umd.min.js"></script>
 <script src="/static/js/tabela_rolagem.js"></script>
 <script src="/static/js/cid_destino.js"></script>
+<script src="/static/js/procedencia.js"></script>
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
   if (typeof Chart === 'undefined') {
@@ -175,6 +176,16 @@
         <h3>Saídas por horário</h3>
         <div class="chart-box"><canvas id="chart_saidas_hora"></canvas></div>
         <div class="nota" id="saidas_sem_hora"></div>
+      </div>
+      <div class="graf-card full">
+        <h3>Internações por dia e procedência</h3>
+        <div class="chart-box"><canvas id="chart_procedencia_dia"></canvas></div>
+        <div class="tabela-info">
+          <div class="tabela-rolagem-fixa" id="caixa_procedencia">
+            <table class="tabela"><thead></thead><tbody></tbody></table>
+          </div>
+          <div class="nota">Procedência registrada na internação (t_tipo_referencia). As de menor volume entram em "Outras".</div>
+        </div>
       </div>
       <div class="graf-card full">
         <h3>Internações e saídas por CID</h3>
@@ -460,6 +471,8 @@ function renderGraficos(d) {
     }
   });
   tabelaSaidasClinica(d);
+  novoGrafico('chart_procedencia_dia', configProcedencia(d.dias, d.internacoes_procedencia));
+  tabelaProcedencia(document.getElementById('caixa_procedencia'), d.internacoes_procedencia, 'Média por dia');
   preencherCidDestino(document.getElementById('caixa_cid_destino'), document.getElementById('cid_destino_resumo'), d.por_cid_destino);
 
   novoGrafico('chart_saidas_semana', {

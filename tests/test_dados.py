@@ -717,7 +717,7 @@ def test_series_por_ano_agrupam_por_ano(monkeypatch):
         if 'FROM t_risco' in sql:
             return [{'isn_risco': 1, 'dsc_risco': 'VERMELHO'}]
         if 't_internacao_risco' in sql:
-            return [{'mes': date(2026, 1, 1), 'isn_risco': 1, 'qtd': 5}]
+            return [{'mes': date(2026, 1, 1), 'isn_risco': 1, 'isn_referencia': None, 'qtd': 5}]
         if 'candidatas' in sql:
             return [{'mes': date(2026, 1, 1), 'isn_destino': 13, 'qtd': 2, 'acima_24h': 1}]
         return []
@@ -728,8 +728,30 @@ def test_series_por_ano_agrupam_por_ano(monkeypatch):
     assert vistos[-1] == "SELECT DATE_TRUNC('year', x), generate_series(a, b, INTERVAL '1 year')"
     f = h.get_mensal_emergencia_fluxo('2026-01', '2026-10', por_ano=True)
     assert f['fluxo_meses'] == ['2026'] and f['risco_mensal']['total'] == [5]
+    assert f['procedencia_mensal']['series'] == [{'nome': 'Não informada', 'valores': [5], 'total': 5}]
     assert f['saidas_emergencia_total'] == [2] and f['taxa_conversao'] == [100.0] and f['perc_acima_24h'] == [50.0]
     assert not any("'month'" in sql for sql in vistos)
+
+
+def test_internacoes_por_procedencia(monkeypatch):
+    from decimal import Decimal
+    import indicadores_hcasg as h
+    nomes = {Decimal(i): f'HOSP {i}' for i in range(1, 10)}
+    nomes[Decimal(10)] = 'HOSP 1 '  # mesmo nome com outro código: soma junto
+    monkeypatch.setattr(h, 'fetch_all', lambda sql, params=None: [
+        {'isn_referencia': k, 'dsc_referencia': v} for k, v in nomes.items()])
+    monkeypatch.setattr(h, 'PROCEDENCIAS_NO_GRAFICO', 3)
+    contagem = {Decimal(1): [5, 5], Decimal(10): [1, 0], Decimal(2): [3, 3], Decimal(3): [2, 2],
+                Decimal(4): [1, 1], Decimal(5): [0, 1], Decimal(99): [1, 0], None: [0, 2]}
+    p = h._por_procedencia(contagem, 2)
+    assert [(s['nome'], s['total']) for s in p['series']] == [
+        ('HOSP 1', 11), ('HOSP 2', 6), ('HOSP 3', 4), ('Outras', 4), ('Não informada', 2)]
+    assert p['outras'] == [{'nome': 'HOSP 4', 'total': 2}, {'nome': 'HOSP 5', 'total': 1},
+                           {'nome': 'Procedência 99', 'total': 1}]
+    assert p['total'] == [13, 14] == [sum(v) for v in zip(*contagem.values())]
+    # só uma sobrando: entra com o próprio nome, sem "Outras"
+    p = h._por_procedencia({Decimal(i): [1] for i in range(1, 5)}, 1)
+    assert [s['nome'] for s in p['series']] == ['HOSP 1', 'HOSP 2', 'HOSP 3', 'HOSP 4'] and p['outras'] == []
 
 
 def test_comparativo_detalhe_explicito_no_campo():

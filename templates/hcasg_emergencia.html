@@ -13,6 +13,8 @@
   }
 </script>
 <script src="/static/js/cid_risco.js"></script>
+<script src="/static/js/tabela_rolagem.js"></script>
+<script src="/static/js/procedencia.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-emergencia">
@@ -187,6 +189,16 @@
               <tbody id="tb_atend_municipio"></tbody>
             </table>
           </div>
+        </div>
+      </div>
+      <div class="card full">
+        <h3>Atendimentos por dia e procedência</h3>
+        <div class="chart-box"><canvas id="chart_atend_procedencia"></canvas></div>
+        <div class="tabela-info">
+          <div class="tabela-rolagem-fixa" id="caixa_procedencia">
+            <table class="tabela"><thead></thead><tbody></tbody></table>
+          </div>
+          <div class="nota">Procedência registrada no atendimento (t_tipo_referencia). As de menor volume entram em "Outras".</div>
         </div>
       </div>
       <div class="card full">
@@ -523,6 +535,12 @@ function renderAtendimentos(d) {
   document.getElementById('box_municipio').style.height = Math.max(200, top.length * 24 + 40) + 'px';
   barrasAtend('municipio', 'chart_atend_municipio', top, '#00A1A2');
   tabelaAtend('tb_atend_municipio', municipios);
+  if (chartsAtend.procedencia) chartsAtend.procedencia.destroy();
+  const cfgProcedencia = configProcedencia(d.dias, d.por_procedencia);
+  // os rótulos desta página ficam no topo de cada barra: na pilha, só o do total
+  cfgProcedencia.data.datasets.forEach(ds => { if (ds.type !== 'line') ds.rotulo = false; });
+  chartsAtend.procedencia = new Chart(document.getElementById('chart_atend_procedencia'), cfgProcedencia);
+  tabelaProcedencia(document.getElementById('caixa_procedencia'), d.por_procedencia, 'Média por dia');
   preencherCidRisco(document.getElementById('tabela_cid_risco'), document.getElementById('cid_risco_resumo'), d.por_cid_risco);
 }
 

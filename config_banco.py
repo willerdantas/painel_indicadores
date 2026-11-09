@@ -80,9 +80,10 @@ _TABELAS_INTERNACAO = (
 # as que faltam (banco_hospitalar.faltando_na_pagina).
 TABELAS_POR_PAGINA = {
     'lean': _TABELAS_INTERNACAO,                    # indicadores_hcasg.py
-    'hospitalares': _TABELAS_INTERNACAO + ('t_cid10',),  # CID: get_cid_destino_hospitalar
+    # CID: get_cid_destino_hospitalar; procedência: indicadores_hcasg._por_procedencia
+    'hospitalares': _TABELAS_INTERNACAO + ('t_cid10', 't_tipo_referencia'),
     # município: ambulatorio._municipio_sexo; CID: _atendimentos_por_cid_risco
-    'emergencia': _TABELAS_INTERNACAO + ('t_cid10', 't_municipio', 't_uf'),
+    'emergencia': _TABELAS_INTERNACAO + ('t_cid10', 't_municipio', 't_tipo_referencia', 't_uf'),
     'exames': ('t_clinica', 't_exame', 't_exame_solic'),  # painel.py (classificação: schema do painel)
     'ambulatorio': ('t_especialidade', 't_internacao', 't_internacao_atendimento', 't_internacao_leito',
                     't_leito', 't_marcacao', 't_marcacao_situacao', 't_municipio', 't_paciente',

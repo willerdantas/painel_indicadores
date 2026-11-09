@@ -154,6 +154,47 @@ _PRIMEIRA_CLINICA_CTE = """
 """
 
 
+# Procedência da internação (t_internacao.isn_referencia -> t_tipo_referencia):
+# o gráfico mostra as maiores e junta as demais em "Outras".
+PROCEDENCIAS_NO_GRAFICO = 6
+
+
+def _referencia_sql():
+    """Procedência da internação (alias ti); NULL se t_internacao não tem a coluna."""
+    return "ti.isn_referencia" if tem_colunas("t_internacao", "isn_referencia") else "NULL::numeric"
+
+
+def _por_procedencia(contagem, n):
+    """Internações por procedência para o gráfico de barras empilhadas.
+    contagem: {isn_referencia: [qtd por dia/mês]} (n posições). Procedências de
+    mesmo nome somam juntas; as PROCEDENCIAS_NO_GRAFICO maiores viram séries,
+    as demais "Outras" (listadas em "outras") e sem procedência "Não informada"."""
+    nomes = {r["isn_referencia"]: (r["dsc_referencia"] or "").strip()
+             for r in fetch_all("SELECT isn_referencia, dsc_referencia FROM t_tipo_referencia") or []}
+    por_nome = {}
+    for isn, valores in contagem.items():
+        nome = "Não informada" if isn is None else (nomes.get(isn) or f"Procedência {int(isn)}")
+        soma = por_nome.setdefault(nome, [0] * n)
+        for i, v in enumerate(valores):
+            soma[i] += v
+    ordem = sorted((x for x in por_nome if x != "Não informada"), key=lambda x: (-sum(por_nome[x]), x))
+    # uma só sobrando entra com o próprio nome, no lugar de "Outras"
+    corte = len(ordem) if len(ordem) <= PROCEDENCIAS_NO_GRAFICO + 1 else PROCEDENCIAS_NO_GRAFICO
+    series = [{"nome": x, "valores": por_nome[x]} for x in ordem[:corte]]
+    resto = ordem[corte:]
+    if resto:
+        series.append({"nome": "Outras", "valores": [sum(por_nome[x][i] for x in resto) for i in range(n)]})
+    if "Não informada" in por_nome:
+        series.append({"nome": "Não informada", "valores": por_nome["Não informada"]})
+    for s in series:
+        s["total"] = sum(s["valores"])
+    return {
+        "series": series,
+        "total": [sum(s["valores"][i] for s in series) for i in range(n)],
+        "outras": [{"nome": x, "total": sum(por_nome[x])} for x in resto],
+    }
+
+
 def _meses_labels(meses_dates):
     return [d.strftime("%b/%y") if d else None for d in meses_dates]
 
@@ -559,6 +600,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
     rows_internacoes_mes = consulta(_PRIMEIRA_CLINICA_CTE + f"""
         SELECT DATE_TRUNC('month', ti.dat_cadastro)::date AS mes,
                pc.dsc_clinica,
+               {_referencia_sql()} AS isn_referencia,
                COUNT(DISTINCT ti.isn_internacao)::integer AS qtd
         FROM t_internacao ti
         JOIN primeira_clinica pc ON pc.isn_internacao = ti.isn_internacao
@@ -566,16 +608,18 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
           AND ti.dat_cadastro::date BETWEEN %s AND %s
           AND pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
         {filt_sql}
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
     """, [dt_ini, dt_fim] + filt_vals)
     # cada internação tem uma só primeira clínica: o total do mês é a soma das clínicas
     mapa_internacoes = {}
     internacoes_clinica = {}
+    internacoes_referencia = {}
     idx_mes = {mes: i for i, mes in enumerate(meses_keys)}
     for r in rows_internacoes_mes or []:
         mapa_internacoes[r["mes"]] = mapa_internacoes.get(r["mes"], 0) + r["qtd"]
         if r["mes"] in idx_mes:
             internacoes_clinica.setdefault(r["dsc_clinica"].strip(), [0] * len(meses_keys))[idx_mes[r["mes"]]] += r["qtd"]
+            internacoes_referencia.setdefault(r["isn_referencia"], [0] * len(meses_keys))[idx_mes[r["mes"]]] += r["qtd"]
 
     result = {
         "meses": _rotulos(meses_keys, por_ano),
@@ -670,6 +714,7 @@ def get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini=None, mes_fim=None
         {"nome": nome, "valores": valores}
         for nome, valores in sorted(internacoes_clinica.items(), key=lambda x: (-sum(x[1]), x[0]))
     ]
+    result["internacoes_procedencia"] = _por_procedencia(internacoes_referencia, len(meses_keys))
     result["dias_mes"] = [max(0, (min(_add_months(mes, 12 if por_ano else 1) - date.resolution, dt_fim, date.today()) - mes).days + 1)
                           for mes in meses_keys]
 
@@ -1839,7 +1884,7 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
 
     rows_internacoes = _consultas.submit(fetch_all, f"""
         WITH internacoes_periodo AS MATERIALIZED (
-            SELECT ti.isn_internacao, ti.dat_cadastro::date AS dia
+            SELECT ti.isn_internacao, ti.dat_cadastro::date AS dia, {_referencia_sql()} AS isn_referencia
             FROM t_internacao ti
             WHERE ti.isn_tipo_atendimento = 1
               AND ti.dat_cadastro::date BETWEEN %s AND %s
@@ -1860,12 +1905,12 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
                      COALESCE(til.dat_internacao_info, til.dat_internacao),
                      til.isn_internacao_leito
         )
-        SELECT ip.dia, pc.dsc_clinica, COUNT(DISTINCT ip.isn_internacao) AS qtd
+        SELECT ip.dia, pc.dsc_clinica, ip.isn_referencia, COUNT(DISTINCT ip.isn_internacao) AS qtd
         FROM internacoes_periodo ip
         JOIN primeira_clinica pc ON pc.isn_internacao = ip.isn_internacao
         WHERE pc.isn_clinica IN ({CLINICAS_INTERNACOES_SQL})
         {filt_sql}
-        GROUP BY ip.dia, pc.dsc_clinica
+        GROUP BY ip.dia, pc.dsc_clinica, ip.isn_referencia
     """, [dt_ini, dt_fim] + filt_vals)
 
     rows_saidas = _consultas.submit(fetch_all, _saidas_periodo_cte(filt_sql) + f"""
@@ -1892,10 +1937,12 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
     # cada internação tem uma só primeira clínica: o total do dia é a soma das clínicas
     internacoes = [0] * len(dias)
     internacoes_clinica = {}
+    internacoes_referencia = {}
     for r in rows_internacoes or []:
         i = idx_dia[r["dia"]]
         internacoes[i] += int(r["qtd"])
         internacoes_clinica.setdefault(r["dsc_clinica"].strip(), [0] * len(dias))[i] += int(r["qtd"])
+        internacoes_referencia.setdefault(r["isn_referencia"], [0] * len(dias))[i] += int(r["qtd"])
 
     por_destino = {}            # rótulo -> (isn_destino, valores por dia)
     saidas_dia = [0] * len(dias)
@@ -1935,6 +1982,7 @@ def get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito):
             {"nome": nome, "total": sum(valores), "valores": valores}
             for nome, valores in sorted(internacoes_clinica.items(), key=lambda x: (-sum(x[1]), x[0]))
         ],
+        "internacoes_procedencia": _por_procedencia(internacoes_referencia, len(dias)),
         "saidas_total": total_saidas,
         "saidas_destinos": [
             {"destino": rotulo, "isn_destino": isn, "valores": valores, "total": sum(valores)}
@@ -2445,24 +2493,28 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
     # Contagem por dia e hora do período inteiro, SEM os filtros de dia da
     # semana/horário: daqui saem as séries filtradas dos gráficos e também a
     # média/mediana, que são sempre do período todo (referência fixa).
-    rows_dia_hora = fetch_all("""
+    rows_dia_hora = fetch_all(f"""
         SELECT ti.dat_cadastro::date AS dia,
                EXTRACT(HOUR FROM ti.dat_cadastro)::int AS hora,
+               {_referencia_sql()} AS isn_referencia,
                COUNT(*) AS qtd
         FROM t_internacao ti
         WHERE ti.isn_tipo_atendimento = 2
           AND ti.dat_cadastro::date BETWEEN %s AND %s
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
     """, [dt_ini, dt_fim])
     horas_set = set(horas)
     qtd_por_dia, qtd_por_hora = {}, {}
     base_por_dia = {}
+    referencia_por_dia = {}  # procedência -> {dia: qtd}, com os filtros de dia da semana/horário
     for r in rows_dia_hora or []:
         dia, hora, qtd = r["dia"], r["hora"], int(r["qtd"])
         base_por_dia[dia] = base_por_dia.get(dia, 0) + qtd
         if dia.weekday() in dias_semana and hora in horas_set:
             qtd_por_dia[dia] = qtd_por_dia.get(dia, 0) + qtd
             qtd_por_hora[hora] = qtd_por_hora.get(hora, 0) + qtd
+            por_ref = referencia_por_dia.setdefault(r["isn_referencia"], {})
+            por_ref[dia] = por_ref.get(dia, 0) + qtd
 
     todos_dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
     base_dia = [base_por_dia.get(d, 0) for d in todos_dias]
@@ -2470,6 +2522,8 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
     # Só os dias do período que caem nos dias da semana escolhidos.
     dias = [d for d in todos_dias if d.weekday() in dias_semana]
     por_dia = [qtd_por_dia.get(d, 0) for d in dias]
+    por_procedencia = _por_procedencia(
+        {isn: [qtd.get(d, 0) for d in dias] for isn, qtd in referencia_por_dia.items()}, len(dias))
 
     # Dia da semana: total e média (o período pode ter quantidades
     # diferentes de cada dia da semana, então a média é por ocorrência do dia).
@@ -2531,6 +2585,7 @@ def get_atendimentos_emergencia(data_ini, data_fim, dias_semana=None, hora_ini=0
         "por_municipio": por_municipio,
         "por_macrorregiao": por_macrorregiao,
         "por_cid_risco": por_cid_risco,
+        "por_procedencia": por_procedencia,
     }
 
 
@@ -2915,9 +2970,10 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None, por_ano=False):
         m = _add_months(m, 12 if por_ano else 1)
     idx_mes = {mes: i for i, mes in enumerate(meses_keys)}
 
-    rows_risco = consulta("""
+    rows_risco = consulta(f"""
         WITH atend AS MATERIALIZED (
-            SELECT ti.isn_internacao, DATE_TRUNC('month', ti.dat_cadastro)::date AS mes
+            SELECT ti.isn_internacao, DATE_TRUNC('month', ti.dat_cadastro)::date AS mes,
+                   {_referencia_sql()} AS isn_referencia
             FROM t_internacao ti
             WHERE ti.isn_tipo_atendimento = 2
               AND ti.dat_cadastro::date BETWEEN %s AND %s
@@ -2929,18 +2985,20 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None, por_ano=False):
             WHERE tir.isn_risco IS NOT NULL
             ORDER BY tir.isn_internacao, COALESCE(tir.flg_ultimo, 0) DESC, tir.isn_internacao_risco DESC
         )
-        SELECT a.mes, rf.isn_risco, COUNT(*) AS qtd
+        SELECT a.mes, rf.isn_risco, a.isn_referencia, COUNT(*) AS qtd
         FROM atend a
         LEFT JOIN risco_final rf ON rf.isn_internacao = a.isn_internacao
-        GROUP BY 1, 2
+        GROUP BY 1, 2, 3
     """, [dt_ini, dt_fim])
     riscos = fetch_all("SELECT isn_risco, dsc_risco FROM t_risco ORDER BY isn_risco") or []
     colunas_risco = [(r["isn_risco"], r["dsc_risco"].strip()) for r in riscos] + [(None, "Sem classificação")]
     por_risco = {isn: [0] * len(meses_keys) for isn, _ in colunas_risco}
+    por_referencia = {}
     for r in rows_risco or []:
         if r["mes"] in idx_mes:
             chave = r["isn_risco"] if r["isn_risco"] in por_risco else None
             por_risco[chave][idx_mes[r["mes"]]] += int(r["qtd"])
+            por_referencia.setdefault(r["isn_referencia"], [0] * len(meses_keys))[idx_mes[r["mes"]]] += int(r["qtd"])
 
     municipio_mensal, macrorregiao_mensal = ([], []) if por_ano else _municipios_mensal(dt_ini, dt_fim, idx_mes)
 
@@ -3003,6 +3061,7 @@ def get_mensal_emergencia_fluxo(mes_ini=None, mes_fim=None, por_ano=False):
         },
         "municipio_mensal": municipio_mensal,
         "macrorregiao_mensal": macrorregiao_mensal,
+        "procedencia_mensal": _por_procedencia(por_referencia, len(meses_keys)),
         "saidas_emergencia_destinos": [
             {"isn_destino": dest, "dsc_destino": nomes.get(dest) or f"Destino {dest}", "valores": saidas[dest]}
             for dest in DESTINOS_SAIDA_PS

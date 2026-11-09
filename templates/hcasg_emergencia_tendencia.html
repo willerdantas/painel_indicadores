@@ -17,6 +17,8 @@
 </script>
 <script src="/static/js/tendencia.js"></script>
 <script src="/static/js/cid_risco.js"></script>
+<script src="/static/js/tabela_rolagem.js"></script>
+<script src="/static/js/procedencia.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-hcasg-emergencia-tendencia">
@@ -285,6 +287,22 @@ function carregarGraficos() {
         const titulo = 'Atendimentos por Município';
         criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, comCor(top), somaSeries(municipios),
           { mediaMediana: true, tabela: 'Município', dias: d.risco_mensal && d.risco_mensal.dias });
+      }
+
+      // atendimentos por procedência, mês a mês
+      const proc = d.procedencia_mensal;
+      if (proc && proc.series.length) {
+        const card = document.createElement('div');
+        card.className = 'chart-card largura-total';
+        card.innerHTML = `<h3>Atendimentos por Procedência</h3>
+          <div class="chart-container"><canvas></canvas></div>
+          <div class="tabela-info">
+            <div class="tabela-rolagem-fixa"><table class="tabela"><thead></thead><tbody></tbody></table></div>
+            <div class="nota">Procedência registrada no atendimento (t_tipo_referencia). As de menor volume entram em "Outras".</div>
+          </div>`;
+        container.appendChild(card);
+        chartInstances['procedencia'] = new Chart(card.querySelector('canvas'), configProcedencia(d.meses, proc));
+        tabelaProcedencia(card.querySelector('.tabela-rolagem-fixa'), proc, 'Média por mês');
       }
 
       // atendimentos por CID x classificação de risco, no período todo
