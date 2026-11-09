@@ -754,6 +754,56 @@ def test_internacoes_por_procedencia(monkeypatch):
     assert [s['nome'] for s in p['series']] == ['HOSP 1', 'HOSP 2', 'HOSP 3', 'HOSP 4'] and p['outras'] == []
 
 
+def test_interconsultas(monkeypatch):
+    from decimal import Decimal
+    import interconsultas
+    linhas = [  # especialidade, tipo de atendimento (2 emergência, 1 internação), clínica, solicitadas, pareceres
+        (Decimal(1), 'CARDIOLOGIA', Decimal(2), 'EMERGÊNCIA', 5, 3),
+        (Decimal(1), 'CARDIOLOGIA', Decimal(1), 'UTI', 2, 2),
+        (Decimal(2), 'NEFROLOGIA ', Decimal(1), 'UTI', 4, 0),
+        (Decimal(2), 'NEFROLOGIA ', Decimal(1), None, 1, 1),
+        (None, None, Decimal(3), 'UTI', 1, 0),       # outro tipo: só no total
+        (Decimal(9), None, Decimal(1), 'UTI', 0, 0),  # nada no período: fica de fora
+    ]
+    vistos = {}
+
+    def contagens(*args):
+        vistos['args'] = args
+        return [dict(zip(('isn_especialidade', 'dsc_especialidade', 'isn_tipo_atendimento', 'dsc_clinica',
+                          'solicitadas', 'pareceres'), l)) for l in linhas]
+    monkeypatch.setattr(interconsultas, '_contagens', contagens)
+    monkeypatch.setattr(interconsultas, '_tempos', lambda *a: [  # GROUPING SETS: por especialidade e o total
+        {'especialidade': 'NEFROLOGIA', 'total': False, 'pareceres': 1, 'invalidos': 0,
+         'media': Decimal('30.04'), 'mediana': 30.04},
+        {'especialidade': 'CARDIOLOGIA', 'total': False, 'pareceres': 5, 'invalidos': 1,
+         'media': Decimal('2.5'), 'mediana': 1.25},
+        {'especialidade': None, 'total': True, 'pareceres': 6, 'invalidos': 1,
+         'media': Decimal('7.0833'), 'mediana': 1.5},
+    ])
+    monkeypatch.setattr(interconsultas, 'colunas_faltando', lambda: [])
+    d = interconsultas.get_interconsultas('2026-10-01', '2026-10-31', 'UTI')
+    assert vistos['args'] == ('2026-10-01', '2026-10-31', 'UTI', None, None)
+    assert d['cards'] == {'solicitadas_total': 13, 'solicitadas_emergencia': 5, 'solicitadas_internacao': 7,
+                          'pareceres_total': 6, 'pareceres_emergencia': 3, 'pareceres_internacao': 3}
+    assert d['por_especialidade'] == [
+        {'nome': 'CARDIOLOGIA', 'solicitadas': 7, 'pareceres': 5},
+        {'nome': 'NEFROLOGIA', 'solicitadas': 5, 'pareceres': 1},
+        {'nome': 'Sem especialidade', 'solicitadas': 1, 'pareceres': 0}]
+    cardio, nefro, _ = d['por_especialidade_clinica']
+    assert [(c['nome'], c['solicitadas'], c['pareceres']) for c in cardio['clinicas']] == [
+        ('EMERGÊNCIA', 5, 3), ('UTI', 2, 2)]
+    assert [c['nome'] for c in nefro['clinicas']] == ['UTI', 'Sem clínica']
+    # tempo até o parecer: da especialidade com mais pareceres para a com menos, e o total à parte
+    tp = d['tempo_parecer']
+    assert [(l['nome'], l['pareceres'], l['media'], l['mediana']) for l in tp['linhas']] == [
+        ('CARDIOLOGIA', 5, 2.5, 1.2), ('NEFROLOGIA', 1, 30.0, 30.0)]
+    assert tp['total'] == {'nome': None, 'pareceres': 6, 'invalidos': 1, 'media': 7.1, 'mediana': 1.5}
+    # coluna assumida que falta no servidor: avisa qual, sem consultar
+    monkeypatch.setattr(interconsultas, 'colunas_faltando', lambda: ['dat_parecer'])
+    with pytest.raises(ValueError, match='dat_parecer'):
+        interconsultas.get_interconsultas('2026-10-01', '2026-10-31')
+
+
 def test_comparativo_detalhe_explicito_no_campo():
     import painel
     dados = {'meses': ['Out/26'], 'a_status_X': [1], 'esp_A_status_B': [2], 'esp_A_status_B_x': [3]}

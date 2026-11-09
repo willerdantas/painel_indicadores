@@ -1,0 +1,321 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interconsultas</title>
+<script src="/static/js/tabela_rolagem.js"></script>
+    {{ recursos() }}
+</head>
+<body class="pg-interconsultas">
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="{{ logo('carregando') }}" alt="Carregando...">
+  </div>
+</div>
+
+{{ cabecalho('Interconsultas', 'Painel de Gestão') }}
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label>Data Inicial</label>
+      <input type="date" id="data_ini" value="{{ data_ini }}">
+    </div>
+    <div>
+      <label>Data Final</label>
+      <input type="date" id="data_fim" value="{{ data_fim }}">
+    </div>
+    <div class="clinica-dropdown">
+      <label>Clínica</label>
+      <button type="button" class="clinica-btn" id="clinica-btn" onclick="toggleClinicaPanel()">
+        <span id="clinica-btn-label">Todas</span>
+        <span class="arrow">▼</span>
+      </button>
+      <div class="clinica-panel" id="clinica-panel">
+        <button type="button" class="clinica-toggle-all" onclick="toggleTodasClinicas()">Marcar / desmarcar todas</button>
+        <div class="clinica-list" id="clinica-list">
+          {% for c in clinicas %}
+          <label><input type="checkbox" class="cb-clinica" value="{{ c }}" checked> {{ c }}</label>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+    <div>
+      <label>Enfermaria</label>
+      <select id="enfermaria">
+        <option value="">Todas</option>
+        {% for e in enfermarias %}<option>{{ e }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Leito</label>
+      <select id="leito">
+        <option value="">Todos</option>
+        {% for l in leitos %}<option>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="carregar()">Atualizar</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <div id="conteudo">
+    <h2 class="section-title">Interconsultas Solicitadas</h2>
+    <div class="kpis">
+      <div class="kpi c1">
+        <div class="label">Total de Interconsultas Solicitadas</div>
+        <div class="value" id="solicitadas_total">—</div>
+        <div class="unit">pela data da solicitação</div>
+      </div>
+      <div class="kpi c2">
+        <div class="label">Solicitadas na Emergência</div>
+        <div class="value" id="solicitadas_emergencia">—</div>
+        <div class="unit">atendimentos de emergência</div>
+      </div>
+      <div class="kpi c5">
+        <div class="label">Solicitadas na Internação</div>
+        <div class="value" id="solicitadas_internacao">—</div>
+        <div class="unit">internações</div>
+      </div>
+    </div>
+
+    <h2 class="section-title">Pareceres</h2>
+    <div class="kpis">
+      <div class="kpi c6">
+        <div class="label">Total de Pareceres</div>
+        <div class="value" id="pareceres_total">—</div>
+        <div class="unit">pela data do parecer</div>
+      </div>
+      <div class="kpi c2">
+        <div class="label">Pareceres na Emergência</div>
+        <div class="value" id="pareceres_emergencia">—</div>
+        <div class="unit">atendimentos de emergência</div>
+      </div>
+      <div class="kpi c5">
+        <div class="label">Pareceres na Internação</div>
+        <div class="value" id="pareceres_internacao">—</div>
+        <div class="unit">internações</div>
+      </div>
+    </div>
+
+    <div class="graf-card">
+      <h3>Interconsultas solicitadas e pareceres por especialidade</h3>
+      <div class="tabela-info">
+        <div class="tabela-rolagem-fixa" id="caixa_especialidade">
+          <table class="tabela">
+            <thead><tr>
+              <th>Especialidade</th><th class="num">Solicitadas</th><th class="num">%</th>
+              <th class="num">Pareceres</th><th class="num">%</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="nota">Especialidade solicitada na interconsulta; as canceladas não entram na página. Solicitadas pela data da solicitação e pareceres pela data do parecer: um parecer do período pode ser de interconsulta solicitada antes dele.</div>
+      </div>
+    </div>
+
+    <div class="graf-card">
+      <h3>Interconsultas solicitadas e pareceres por especialidade e clínica</h3>
+      <div class="tabela-info">
+        <div class="tabela-rolagem-fixa" id="caixa_especialidade_clinica">
+          <table class="tabela">
+            <thead><tr>
+              <th>Especialidade / clínica solicitante</th><th class="num">Solicitadas</th><th class="num">Pareceres</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="nota">Clínica em que o paciente estava na data da solicitação. Clique numa especialidade para ver as clínicas
+          (<a href="#" id="abrir-todas">abrir todas</a> · <a href="#" id="fechar-todas">fechar todas</a>).</div>
+      </div>
+    </div>
+
+    <div class="graf-card">
+      <h3>Tempo entre a solicitação e o parecer por especialidade</h3>
+      <div class="tabela-info">
+        <div class="tabela-rolagem-fixa" id="caixa_tempo_parecer">
+          <table class="tabela">
+            <thead><tr>
+              <th>Especialidade</th><th class="num">Pareceres</th>
+              <th class="num">Tempo médio</th><th class="num">Tempo mediano</th>
+            </tr></thead>
+            <tbody></tbody>
+          </table>
+        </div>
+        <div class="nota" id="nota_tempo_parecer">Pareceres do período (pela data do parecer), do registro da solicitação ao do parecer.</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 300);
+});
+
+function v(id) { return document.getElementById(id).value; }
+const fmt = n => Number(n).toLocaleString('pt-BR');
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---- filtro de clínica (o mesmo da Emergência) ----
+function toggleClinicaPanel() {
+  document.getElementById('clinica-btn').classList.toggle('open');
+  document.getElementById('clinica-panel').classList.toggle('open');
+}
+document.addEventListener('click', function(e) {
+  const btn = document.getElementById('clinica-btn');
+  const panel = document.getElementById('clinica-panel');
+  if (!btn.contains(e.target) && !panel.contains(e.target)) {
+    btn.classList.remove('open');
+    panel.classList.remove('open');
+  }
+});
+function atualizarLabelClinica() {
+  const cbs = Array.from(document.querySelectorAll('.cb-clinica'));
+  const sel = cbs.filter(cb => cb.checked);
+  const lbl = document.getElementById('clinica-btn-label');
+  if (sel.length === 0 || sel.length === cbs.length) lbl.textContent = 'Todas';
+  else if (sel.length === 1) lbl.textContent = sel[0].value;
+  else lbl.textContent = sel.length + ' selecionadas';
+}
+document.addEventListener('change', function(e) {
+  if (e.target.classList.contains('cb-clinica')) atualizarLabelClinica();
+});
+function toggleTodasClinicas() {
+  const cbs = document.querySelectorAll('.cb-clinica');
+  const todas = Array.from(cbs).every(cb => cb.checked);
+  cbs.forEach(cb => cb.checked = !todas);
+  atualizarLabelClinica();
+}
+
+// ---- cards e tabelas ----
+function pct(qtd, total) {
+  return total ? (qtd / total * 100).toLocaleString('pt-BR', { maximumFractionDigits: 1 }) + '%' : '—';
+}
+
+function render(d) {
+  Object.entries(d.cards).forEach(([id, qtd]) => { document.getElementById(id).textContent = fmt(qtd); });
+  const totSol = d.cards.solicitadas_total, totPar = d.cards.pareceres_total;
+  const qtd = n => n ? fmt(n) : '—';
+
+  const caixaEsp = document.getElementById('caixa_especialidade');
+  const linhaEsp = (nome, sol, par, classe) => `<tr class="${classe || ''}"><td>${esc(nome)}</td>
+      <td class="num">${qtd(sol)}</td><td class="num">${pct(sol, totSol)}</td>
+      <td class="num">${qtd(par)}</td><td class="num">${pct(par, totPar)}</td></tr>`;
+  caixaEsp.querySelector('tbody').innerHTML = d.por_especialidade.length
+    ? d.por_especialidade.map(e => linhaEsp(e.nome, e.solicitadas, e.pareceres)).join('') +
+      linhaEsp('Total', totSol, totPar, 'total')
+    : '<tr><td colspan="5">Nenhuma interconsulta no período.</td></tr>';
+  limitarLinhasVisiveis(caixaEsp, 10);
+
+  // cada especialidade (em negrito, com o total dela) e, recolhidas até o clique,
+  // as clínicas que solicitaram
+  const caixaCli = document.getElementById('caixa_especialidade_clinica');
+  const linhaCli = (nome, sol, par, classe, atributos) => `<tr class="${classe || ''}" ${atributos || ''}><td>${esc(nome)}</td>
+      <td class="num">${qtd(sol)}</td><td class="num">${qtd(par)}</td></tr>`;
+  caixaCli.querySelector('tbody').innerHTML = d.por_especialidade_clinica.length
+    ? d.por_especialidade_clinica.map((e, i) =>
+        linhaCli(e.nome, e.solicitadas, e.pareceres, 'grupo-especialidade',
+                 `data-grupo="${i}" tabindex="0" role="button" aria-expanded="false" title="Clique (ou Enter) para ver as clínicas"`) +
+        e.clinicas.map(c => linhaCli('↳ ' + c.nome, c.solicitadas, c.pareceres, 'sub oculto', `data-pai="${i}"`)).join('')).join('') +
+      linhaCli('Total', totSol, totPar, 'total')
+    : '<tr><td colspan="3">Nenhuma interconsulta no período.</td></tr>';
+  limitarLinhasVisiveis(caixaCli, 10);
+
+  // tempo entre a solicitação e o parecer: em horas e, a partir de 1 dia, também em dias
+  const dec = n => n.toLocaleString('pt-BR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const tempo = h => h === null || h === undefined ? '—'
+    : h < 24 ? `${dec(h)} h` : `${dec(h)} h <small>(${dec(h / 24)} dias)</small>`;
+  const tp = d.tempo_parecer;
+  const caixaTempo = document.getElementById('caixa_tempo_parecer');
+  const linhaTempo = (l, classe) => `<tr class="${classe || ''}"><td>${esc(l.nome)}</td>
+      <td class="num">${qtd(l.pareceres)}</td><td class="num">${tempo(l.media)}</td><td class="num">${tempo(l.mediana)}</td></tr>`;
+  caixaTempo.querySelector('tbody').innerHTML = tp.linhas.length
+    ? tp.linhas.map(l => linhaTempo(l)).join('') + linhaTempo({ ...tp.total, nome: 'Total' }, 'total')
+    : '<tr><td colspan="4">Nenhum parecer no período.</td></tr>';
+  limitarLinhasVisiveis(caixaTempo, 10);
+  document.getElementById('nota_tempo_parecer').textContent =
+    'Pareceres do período (pela data do parecer), do registro da solicitação ao do parecer.' +
+    (tp.total.invalidos ? ` ${fmt(tp.total.invalidos)} parecer(es) com data anterior à da solicitação ficaram de fora.` : '');
+}
+
+// abre/fecha as clínicas de uma especialidade (ou de todas)
+const caixaClinicas = document.getElementById('caixa_especialidade_clinica');
+function abrirGrupo(tr, abrir) {
+  tr.classList.toggle('aberto', abrir);
+  tr.setAttribute('aria-expanded', String(abrir));
+  caixaClinicas.querySelectorAll(`tr[data-pai="${tr.dataset.grupo}"]`).forEach(sub => sub.classList.toggle('oculto', !abrir));
+}
+caixaClinicas.addEventListener('click', e => {
+  const tr = e.target.closest('tr.grupo-especialidade');
+  if (!tr) return;
+  abrirGrupo(tr, !tr.classList.contains('aberto'));
+  limitarLinhasVisiveis(caixaClinicas, 10);
+});
+// teclado: Enter ou espaço na especialidade (linha com tabindex)
+caixaClinicas.addEventListener('keydown', e => {
+  const tr = e.target.closest('tr.grupo-especialidade');
+  if (tr && (e.key === 'Enter' || e.key === ' ')) {
+    e.preventDefault();
+    abrirGrupo(tr, !tr.classList.contains('aberto'));
+    limitarLinhasVisiveis(caixaClinicas, 10);
+  }
+});
+[['abrir-todas', true], ['fechar-todas', false]].forEach(([id, abrir]) =>
+  document.getElementById(id).addEventListener('click', e => {
+    e.preventDefault();
+    caixaClinicas.querySelectorAll('tr.grupo-especialidade').forEach(tr => abrirGrupo(tr, abrir));
+    limitarLinhasVisiveis(caixaClinicas, 10);
+  }));
+
+function carregar() {
+  const params = new URLSearchParams({
+    data_ini: v('data_ini'), data_fim: v('data_fim'),
+    enfermaria: v('enfermaria'), leito: v('leito'),
+  });
+  const cbs = Array.from(document.querySelectorAll('.cb-clinica'));
+  const marcadas = cbs.filter(cb => cb.checked).map(cb => cb.value);
+  if (marcadas.length > 0 && marcadas.length < cbs.length) marcadas.forEach(c => params.append('clinica', c));
+
+  const erro = document.getElementById('erro');
+  erro.style.display = 'none';
+  document.getElementById('conteudo').classList.add('loading');
+  showLoader();
+  fetch('/api/interconsultas/dados?' + params)
+    .then(r => r.json())
+    .then(res => {
+      hideLoader();
+      document.getElementById('conteudo').classList.remove('loading');
+      if (!res.ok) {
+        erro.textContent = 'Erro: ' + res.erro;
+        erro.style.display = 'block';
+        return;
+      }
+      render(res.dados);
+    })
+    .catch(err => {
+      hideLoader();
+      document.getElementById('conteudo').classList.remove('loading');
+      erro.textContent = 'Falha na requisição: ' + err;
+      erro.style.display = 'block';
+    });
+}
+
+carregar();
+</script>
+    {{ rodape() }}
+</body>
+</html>

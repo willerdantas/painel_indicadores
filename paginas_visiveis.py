@@ -29,6 +29,7 @@ PAGINAS = [
     ('emergencia', 'Indicadores da Emergência', 'hcasg_emergencia',
      ['/hcasg/emergencia', '/api/hcasg/emergencia']),
     ('ambulatorio', 'Ambulatório', 'ambulatorio_pagina', ['/ambulatorio', '/api/ambulatorio']),
+    ('interconsultas', 'Interconsultas', 'interconsultas_pagina', ['/interconsultas', '/api/interconsultas']),
     ('custos', 'Custos', 'custos_pagina', ['/custos', '/api/custos']),
     ('financeiro', 'Financeiro', 'financeiro_pagina', ['/financeiro', '/api/financeiro']),
 ]

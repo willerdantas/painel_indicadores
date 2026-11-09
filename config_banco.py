@@ -88,10 +88,13 @@ TABELAS_POR_PAGINA = {
     'ambulatorio': ('t_especialidade', 't_internacao', 't_internacao_atendimento', 't_internacao_leito',
                     't_leito', 't_marcacao', 't_marcacao_situacao', 't_municipio', 't_paciente',
                     't_uf'),  # ambulatorio.py
+    'interconsultas': ('t_clinica', 't_enfermaria', 't_especialidade', 't_interconsulta', 't_internacao',
+                       't_internacao_leito', 't_leito'),  # interconsultas.py
 }
 MODULOS_HOSPITALAR = tuple((nome, TABELAS_POR_PAGINA[chave]) for chave, nome in (
     ('lean', 'Indicadores LEAN'), ('hospitalares', 'Indicadores Hospitalares'),
-    ('emergencia', 'Indicadores da Emergência'), ('exames', 'Exames'), ('ambulatorio', 'Ambulatório')))
+    ('emergencia', 'Indicadores da Emergência'), ('exames', 'Exames'), ('ambulatorio', 'Ambulatório'),
+    ('interconsultas', 'Interconsultas')))
 TABELAS_USADAS = tuple(sorted({t for tabelas in TABELAS_POR_PAGINA.values() for t in tabelas}))
 
 _SCHEMA_VALIDO = re.compile(r'^[A-Za-z_][A-Za-z0-9_]*$')

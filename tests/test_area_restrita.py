@@ -352,7 +352,8 @@ def test_banco_pendente_nao_desvia_quem_nao_e_admin(cliente, logar, monkeypatch)
 def test_teste_de_conexao_cobre_todos_os_paineis():
     import config_banco
     nomes = [n for n, _t in config_banco.MODULOS_HOSPITALAR]
-    assert nomes == ['Indicadores LEAN', 'Indicadores Hospitalares', 'Indicadores da Emergência', 'Exames', 'Ambulatório']
+    assert nomes == ['Indicadores LEAN', 'Indicadores Hospitalares', 'Indicadores da Emergência', 'Exames', 'Ambulatório',
+                     'Interconsultas']
     for t in ('t_marcacao', 't_especialidade', 't_marcacao_situacao', 't_exame_solic', 't_internacao_leito'):
         assert t in config_banco.TABELAS_USADAS
 
@@ -379,6 +380,21 @@ def test_tendencias_usam_o_calendario_de_mes(cliente, logar, admin_id, monkeypat
         html = r.get_data(as_text=True)
         assert r.status_code == 200 and html.count('class="seletor-mes"') == 2
         assert 'name="mes_ini"' in html and 'name="mes_fim"' in html and 'type="month"' not in html
+
+
+def test_pagina_interconsultas_antes_de_custos(cliente, monkeypatch):
+    import painel
+    monkeypatch.setattr(painel, 'hcasg_get_filtros', lambda: (['UTI'], ['01'], ['L1']))
+    chaves = [c for c, *_ in paginas_visiveis.PAGINAS]
+    assert chaves.index('interconsultas') == chaves.index('custos') - 1
+    html = cliente.get('/interconsultas').get_data(as_text=True)
+    for id_card in ('solicitadas_total', 'solicitadas_emergencia', 'solicitadas_internacao',
+                    'pareceres_total', 'pareceres_emergencia', 'pareceres_internacao'):
+        assert f'id="{id_card}"' in html
+    # filtros da Emergência
+    assert 'id="data_ini"' in html and 'class="cb-clinica" value="UTI"' in html
+    assert '<option>01</option>' in html and '<option>L1</option>' in html
+    assert cliente.get('/api/interconsultas/dados?data_ini=x&data_fim=y').status_code == 400
 
 
 def test_comparativos_tem_o_modo_anual(cliente, logar, admin_id, monkeypatch):

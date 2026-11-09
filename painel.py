@@ -13,6 +13,7 @@ from indicadores_hcasg import get_indicadores_hospitalar, get_indicadores_emerge
 import indicadores_hcasg as hcasg
 import banco_hospitalar
 import ambulatorio
+import interconsultas
 import banco_painel
 import custos
 import financeiro
@@ -1241,6 +1242,83 @@ def api_ambulatorio_mensal():
 @app.route('/api/ambulatorio/comparativo')
 def api_ambulatorio_comparativo():
     return _hcasg_comparativo_resposta(_ambulatorio_mensal, ambulatorio.CAMPOS_MENSAL)
+
+
+# ---- interconsultas (página pública) ----
+
+@app.route('/interconsultas')
+def interconsultas_pagina():
+    clinicas, enfermarias, leitos = hcasg_get_filtros()
+    hoje = datetime.now().date()
+    return render_template(
+        'interconsultas.html',
+        clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
+        data_ini=hoje.replace(day=1).strftime('%Y-%m-%d'), data_fim=hoje.strftime('%Y-%m-%d'),
+    )
+
+
+@app.route('/api/interconsultas/dados')
+def api_interconsultas_dados():
+    data_ini, data_fim = request.args.get('data_ini'), request.args.get('data_fim')
+    try:
+        datetime.strptime(data_ini or '', '%Y-%m-%d')
+        datetime.strptime(data_fim or '', '%Y-%m-%d')
+    except ValueError:
+        return jsonify({'ok': False, 'erro': 'Informe data_ini e data_fim no formato AAAA-MM-DD.'}), 400
+    try:
+        dados = interconsultas.get_interconsultas(min(data_ini, data_fim), max(data_ini, data_fim),
+                                                  *_hcasg_params_filtro())
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:  # inclui coluna de t_interconsulta faltando no servidor
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/interconsultas/tendencia')
+def interconsultas_tendencia():
+    # padrão: os últimos 12 meses fechados, como nas outras tendências
+    clinicas, enfermarias, leitos = hcasg_get_filtros()
+    primeiro_mes_atual = datetime.now().date().replace(day=1)
+    mes_fim = (primeiro_mes_atual - pd.DateOffset(months=1)).date()
+    mes_ini = (primeiro_mes_atual - pd.DateOffset(months=12)).date()
+    return render_template('interconsultas_tendencia.html',
+                           clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
+                           mes_ini=mes_ini.strftime('%Y-%m'), mes_fim=mes_fim.strftime('%Y-%m'))
+
+
+@app.route('/interconsultas/comparativo')
+def interconsultas_comparativo():
+    # padrão: os dois últimos meses fechados (Mês A = penúltimo, Mês B = último)
+    clinicas, enfermarias, leitos = hcasg_get_filtros()
+    primeiro_mes_atual = datetime.now().date().replace(day=1)
+    mes_b = (primeiro_mes_atual - pd.DateOffset(months=1)).date()
+    mes_a = (primeiro_mes_atual - pd.DateOffset(months=2)).date()
+    return render_template('interconsultas_comparativo.html',
+                           clinicas=clinicas, enfermarias=enfermarias, leitos=leitos,
+                           mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'), **_anos_comparativo())
+
+
+@app.route('/api/interconsultas/mensal')
+def api_interconsultas_mensal():
+    mes_ini, mes_fim = request.args.get('mes_ini'), request.args.get('mes_fim')
+    try:
+        datetime.strptime(mes_ini or '', '%Y-%m')
+        datetime.strptime(mes_fim or '', '%Y-%m')
+    except ValueError:
+        return jsonify({'ok': False, 'erro': 'Informe mes_ini e mes_fim no formato AAAA-MM.'}), 400
+    try:
+        dados = interconsultas.get_mensal(mes_ini, mes_fim, *_hcasg_params_filtro())
+        dados.pop('_campos', None)  # linhas do comparativo: não servem à tendência
+        return jsonify({'ok': True, 'dados': dados})
+    except Exception as e:
+        return jsonify({'ok': False, 'erro': str(e)}), 500
+
+
+@app.route('/api/interconsultas/comparativo')
+def api_interconsultas_comparativo():
+    filtros = _hcasg_params_filtro()
+    return _hcasg_comparativo_resposta(
+        lambda ini, fim, por_ano=False: interconsultas.get_mensal(ini, fim, *filtros, por_ano=por_ano),
+        interconsultas.CAMPOS_MENSAL)
 
 
 # ---- custos (página pública) ----
