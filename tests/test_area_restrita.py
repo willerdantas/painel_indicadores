@@ -395,6 +395,15 @@ def test_pagina_interconsultas_antes_de_custos(cliente, monkeypatch):
     assert 'id="data_ini"' in html and 'class="cb-clinica" value="UTI"' in html
     assert '<option>01</option>' in html and '<option>L1</option>' in html
     assert cliente.get('/api/interconsultas/dados?data_ini=x&data_fim=y').status_code == 400
+    assert 'href="/interconsultas/tendencia"' in html and 'href="/interconsultas/comparativo"' in html
+    # tendência e comparativo: os filtros e o calendário de mês da Emergência
+    for rota in ('/interconsultas/tendencia', '/interconsultas/comparativo'):
+        r = cliente.get(rota)
+        pagina = r.get_data(as_text=True)
+        assert r.status_code == 200 and 'id="clinica"' in pagina and '<option>01</option>' in pagina
+        assert pagina.count('class="seletor-mes"') == 2
+    assert '<option value="anual"' in cliente.get('/interconsultas/comparativo').get_data(as_text=True)
+    assert cliente.get('/api/interconsultas/mensal?mes_ini=x&mes_fim=y').status_code == 400
 
 
 def test_comparativos_tem_o_modo_anual(cliente, logar, admin_id, monkeypatch):

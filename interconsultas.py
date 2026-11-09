@@ -206,13 +206,13 @@ def get_interconsultas(data_ini, data_fim, clinica=None, enfermaria=None, leito=
 
 
 # ---------------------------------------------------------------------------
-# Tendência mensal e comparativo (mesmo formato de get_mensal_hospitalar:
-# "meses", "meses_iso" e uma série por indicador, um valor por mês; com
-# por_ano, um valor por ano, para o comparativo anual)
+# Tendência mensal e comparativo
+# (mesmo formato de get_mensal_hospitalar: "meses", "meses_iso" e uma série
+# por indicador, um valor por mês; com por_ano, um valor por ano, para o
+# comparativo anual)
 # ---------------------------------------------------------------------------
 
-# linhas do comparativo (chave, rótulo, unidade[, grupo, detalhe]); as de cada
-# especialidade entram no grupo GRUPO_ESPECIALIDADE (_campos de get_mensal)
+# linhas do comparativo (chave, rótulo, unidade[, grupo, detalhe])
 CAMPOS_MENSAL = [
     ('solicitadas_total', 'Interconsultas Solicitadas', 'qtd'),
     ('solicitadas_emergencia', 'Na emergência', 'qtd', None, True),
@@ -223,8 +223,7 @@ CAMPOS_MENSAL = [
     ('tempo_medio', 'Tempo Médio até o Parecer', 'h'),
     ('tempo_mediano', 'Tempo Mediano até o Parecer', 'h'),
 ]
-GRUPO_ESPECIALIDADE = 'especialidade'
-# gráfico de solicitadas por especialidade: as maiores e, juntas, as demais
+# gráficos por especialidade: as maiores e, juntas, as demais
 ESPECIALIDADES_NO_GRAFICO = 8
 
 
@@ -245,23 +244,34 @@ def _mensal_contagens(dt_ini, dt_fim, unidade, clinica, enfermaria, leito):
 
 
 def _mensal_tempos(dt_ini, dt_fim, unidade, clinica, enfermaria, leito):
-    """Horas até o parecer (média e mediana) por mês/ano do parecer, no total
-    (total = True) e por especialidade; parecer antes da solicitação fica de fora."""
+    """Horas até o parecer (média e mediana) por mês/ano do parecer; parecer
+    registrado antes da solicitação fica de fora."""
     filt_sql, filt_vals = _filtros_sql(clinica, enfermaria, leito, prefixo="WHERE")
     return fetch_all(_filtrado_sql(filt_sql) + f"""
-        SELECT mes, especialidade, GROUPING(especialidade) = 1 AS total,
+        SELECT DATE_TRUNC('{unidade}', dia_parecer)::date AS mes,
                AVG(horas) AS media, percentile_cont(0.5) WITHIN GROUP (ORDER BY horas) AS mediana
-        FROM (SELECT DATE_TRUNC('{unidade}', dia_parecer)::date AS mes, especialidade, horas
-              FROM filtrado WHERE dia_parecer BETWEEN %s AND %s AND horas >= 0) t
-        GROUP BY GROUPING SETS ((mes, especialidade), (mes))
+        FROM filtrado WHERE dia_parecer BETWEEN %s AND %s AND horas >= 0
+        GROUP BY 1
     """, [dt_ini, dt_fim] * 2 + filt_vals + [dt_ini, dt_fim])
+
+
+def _series_especialidade(por_esp, n):
+    """[{nome, valores}] das ESPECIALIDADES_NO_GRAFICO maiores (do maior total
+    para o menor) e, numa série só, as demais."""
+    ordem = sorted((e for e in por_esp.items() if sum(e[1])), key=lambda e: (-sum(e[1]), e[0]))
+    series = [{'nome': nome, 'valores': valores} for nome, valores in ordem[:ESPECIALIDADES_NO_GRAFICO]]
+    demais = ordem[ESPECIALIDADES_NO_GRAFICO:]
+    if demais:
+        series.append({'nome': f'Demais especialidades ({len(demais)})',
+                       'valores': [sum(v[i] for _, v in demais) for i in range(n)]})
+    return series
 
 
 def get_mensal(mes_ini, mes_fim, clinica=None, enfermaria=None, leito=None, por_ano=False):
     """Indicadores das interconsultas mês a mês (tendência mensal e
     comparativo): solicitadas e pareceres (total, emergência e internação),
-    tempo médio e mediano até o parecer e, por especialidade, as mesmas
-    contagens; _campos traz as linhas do comparativo."""
+    tempo médio e mediano até o parecer e as solicitadas e os pareceres por
+    especialidade (gráficos da tendência)."""
     faltam = colunas_faltando()
     if faltam:
         raise ValueError('A tabela t_interconsulta não tem a(s) coluna(s): ' + ', '.join(faltam) + '.')
@@ -277,11 +287,7 @@ def get_mensal(mes_ini, mes_fim, clinica=None, enfermaria=None, leito=None, por_
 
     dados = {f'{medida}_{tipo}': [0] * n for medida in ('solicitadas', 'pareceres')
              for tipo in ('total', 'emergencia', 'internacao')}
-    por_esp = {}
-
-    def especialidade(nome):
-        return por_esp.setdefault(nome, {'nome': nome, 'solicitadas': [0] * n, 'pareceres': [0] * n,
-                                         'tempo_medio': [None] * n})
+    por_esp = {'solicitadas': {}, 'pareceres': {}}
     for r in _mensal_contagens(dt_ini, dt_fim, unidade, clinica, enfermaria, leito) or []:
         i = idx.get(r['mes'])
         if i is None:
@@ -292,41 +298,19 @@ def get_mensal(mes_ini, mes_fim, clinica=None, enfermaria=None, leito=None, por_
         dados[f'{medida}_total'][i] += qtd
         if tipo:
             dados[f'{medida}_{tipo}'][i] += qtd
-        especialidade(r['especialidade'])[medida][i] += qtd
+        por_esp[medida].setdefault(r['especialidade'], [0] * n)[i] += qtd
 
     dados['tempo_medio'], dados['tempo_mediano'] = [None] * n, [None] * n
     for r in _mensal_tempos(dt_ini, dt_fim, unidade, clinica, enfermaria, leito) or []:
         i = idx.get(r['mes'])
-        if i is None:
-            continue
-        if r['total']:
+        if i is not None:
             dados['tempo_medio'][i] = round(float(r['media']), 1)
             dados['tempo_mediano'][i] = round(float(r['mediana']), 1)
-        else:
-            especialidade(r['especialidade'])['tempo_medio'][i] = round(float(r['media']), 1)
 
-    especialidades = sorted(por_esp.values(), key=lambda e: (-sum(e['solicitadas']), -sum(e['pareceres']), e['nome']))
     dados.update({
         'meses': _rotulos(chaves, por_ano),
         'meses_iso': _meses_iso(chaves),
-        'por_especialidade': especialidades,
+        'solicitadas_especialidade': _series_especialidade(por_esp['solicitadas'], n),
+        'pareceres_especialidade': _series_especialidade(por_esp['pareceres'], n),
     })
-    # gráfico de solicitadas por especialidade: as maiores e, juntas, as demais
-    principais = [e for e in especialidades if sum(e['solicitadas'])][:ESPECIALIDADES_NO_GRAFICO]
-    demais = [e for e in especialidades if sum(e['solicitadas']) and e not in principais]
-    dados['solicitadas_especialidade'] = [{'nome': e['nome'], 'valores': e['solicitadas']} for e in principais] + (
-        [{'nome': f'Demais especialidades ({len(demais)})',
-          'valores': [sum(e['solicitadas'][i] for e in demais) for i in range(n)]}] if demais else [])
-
-    # comparativo: cada especialidade (solicitadas) com pareceres e tempo médio como detalhe
-    campos = list(CAMPOS_MENSAL)
-    g = GRUPO_ESPECIALIDADE
-    for e in especialidades:
-        chave = 'esp_' + e['nome']
-        dados[chave], dados[chave + '_pareceres'], dados[chave + '_tempo'] = (
-            e['solicitadas'], e['pareceres'], e['tempo_medio'])
-        campos += [(chave, e['nome'], 'solicitadas', g, False),
-                   (chave + '_pareceres', 'Pareceres', 'qtd', g, True),
-                   (chave + '_tempo', 'Tempo médio até o parecer', 'h', g, True)]
-    dados['_campos'] = campos
     return dados

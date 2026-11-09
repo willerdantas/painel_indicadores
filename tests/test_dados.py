@@ -804,6 +804,36 @@ def test_interconsultas(monkeypatch):
         interconsultas.get_interconsultas('2026-10-01', '2026-10-31')
 
 
+def test_interconsultas_mensal(monkeypatch):
+    from datetime import date
+    import interconsultas
+    vistos = []
+
+    def contagens(dt_ini, dt_fim, unidade, *filtros):
+        vistos.append((dt_ini, dt_fim, unidade, filtros))
+        um = date(2026, 1, 1) if unidade == 'year' else None
+        return [{'medida': m, 'mes': um or date(2026, mes, 1), 'isn_tipo_atendimento': tipo, 'especialidade': esp, 'qtd': q}
+                for m, mes, tipo, esp, q in [
+                    ('solicitadas', 9, 2, 'CARDIOLOGIA', 4), ('solicitadas', 9, 1, 'NEFROLOGIA', 2),
+                    ('solicitadas', 10, 3, 'CARDIOLOGIA', 1), ('pareceres', 10, 2, 'CARDIOLOGIA', 3)]]
+    monkeypatch.setattr(interconsultas, '_mensal_contagens', contagens)
+    monkeypatch.setattr(interconsultas, '_mensal_tempos', lambda dt_ini, dt_fim, unidade, *f: [
+        {'mes': date(2026, 1, 1) if unidade == 'year' else date(2026, 10, 1), 'media': 10.04, 'mediana': 8}])
+    monkeypatch.setattr(interconsultas, 'colunas_faltando', lambda: [])
+    monkeypatch.setattr(interconsultas, 'ESPECIALIDADES_NO_GRAFICO', 1)
+    d = interconsultas.get_mensal('2026-09', '2026-10', 'UTI')
+    assert vistos[0] == (date(2026, 9, 1), date(2026, 10, 31), 'month', ('UTI', None, None))
+    assert d['meses_iso'] == ['2026-09', '2026-10']
+    assert d['solicitadas_total'] == [6, 1] and d['solicitadas_emergencia'] == [4, 0] and d['solicitadas_internacao'] == [2, 0]
+    assert d['pareceres_total'] == [0, 3] and d['pareceres_emergencia'] == [0, 3]
+    assert d['tempo_medio'] == [None, 10.0] and d['tempo_mediano'] == [None, 8.0]
+    assert d['solicitadas_especialidade'] == [{'nome': 'CARDIOLOGIA', 'valores': [4, 1]},
+                                              {'nome': 'Demais especialidades (1)', 'valores': [2, 0]}]
+    # comparativo anual: um valor para o ano
+    a = interconsultas.get_mensal('2026-01', '2026-10', por_ano=True)
+    assert a['meses'] == ['2026'] and a['solicitadas_total'] == [7] and a['tempo_medio'] == [10.0]
+
+
 def test_comparativo_detalhe_explicito_no_campo():
     import painel
     dados = {'meses': ['Out/26'], 'a_status_X': [1], 'esp_A_status_B': [2], 'esp_A_status_B_x': [3]}

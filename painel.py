@@ -1306,9 +1306,7 @@ def api_interconsultas_mensal():
     except ValueError:
         return jsonify({'ok': False, 'erro': 'Informe mes_ini e mes_fim no formato AAAA-MM.'}), 400
     try:
-        dados = interconsultas.get_mensal(mes_ini, mes_fim, *_hcasg_params_filtro())
-        dados.pop('_campos', None)  # linhas do comparativo: não servem à tendência
-        return jsonify({'ok': True, 'dados': dados})
+        return jsonify({'ok': True, 'dados': interconsultas.get_mensal(mes_ini, mes_fim, *_hcasg_params_filtro())})
     except Exception as e:
         return jsonify({'ok': False, 'erro': str(e)}), 500
 

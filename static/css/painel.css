@@ -1671,3 +1671,62 @@ html { scroll-padding-top: 110px; }
 .area-restrita .main-content .section-title,
 .pg-config-banco .main-content .section-title { text-align: left; margin-bottom: 24px; }
 .pg-error .container { max-width: 640px; margin: 48px auto; }
+
+/* ---------- página: interconsultas_comparativo (como a da Emergência) ---------- */
+.pg-interconsultas-comparativo .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }
+.pg-interconsultas-comparativo .filters label { display: block; }
+.pg-interconsultas-comparativo .filters input, .pg-interconsultas-comparativo .filters select { width: 100%; }
+.pg-interconsultas-comparativo .error-bar { display: none; }
+.pg-interconsultas-comparativo .tabela-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); overflow-x: auto; }
+.pg-interconsultas-comparativo table.comparativo { width: 100%; border-collapse: collapse; font-size: .88rem; }
+.pg-interconsultas-comparativo table.comparativo th, .pg-interconsultas-comparativo table.comparativo td { padding: .7rem .9rem; text-align: left; border-bottom: 1px solid var(--border); }
+.pg-interconsultas-comparativo table.comparativo th { font-family: Arial, sans-serif; font-size: .68rem; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); background: var(--bg); }
+.pg-interconsultas-comparativo table.comparativo th.num, .pg-interconsultas-comparativo table.comparativo td.num { text-align: right; }
+.pg-interconsultas-comparativo table.comparativo tr:last-child td { border-bottom: none; }
+.pg-interconsultas-comparativo table.comparativo tr:hover td { background: rgba(59,181,163,.06); }
+.pg-interconsultas-comparativo .indicador-nome { font-weight: 600; color: var(--dark); }
+.pg-interconsultas-comparativo .unidade { color: var(--muted); font-size: .76rem; }
+.pg-interconsultas-comparativo .variacao { font-weight: 700; display: inline-flex; align-items: center; gap: .3rem; }
+.pg-interconsultas-comparativo .variacao.up { color: var(--up); }
+.pg-interconsultas-comparativo .variacao.down { color: var(--down); }
+.pg-interconsultas-comparativo .variacao.flat { color: var(--muted); }
+.pg-interconsultas-comparativo .sem-dado { color: var(--muted); font-style: italic; }
+/* comparativo mês a mês: uma coluna por mês (valor e, abaixo, a variação sobre o mês anterior) */
+.pg-interconsultas-comparativo .nota-comparativo { font-size: .78rem; color: var(--muted); margin-bottom: .9rem; }
+.pg-interconsultas-comparativo table.comparativo td.celula-mes { white-space: nowrap; }
+.pg-interconsultas-comparativo .valor-mes { font-weight: 600; color: var(--dark); font-variant-numeric: tabular-nums; }
+.pg-interconsultas-comparativo .var-mes { margin-top: .2rem; font-size: .74rem; }
+.pg-interconsultas-comparativo table.comparativo .periodo { background: var(--claro); white-space: nowrap; }
+.pg-interconsultas-comparativo table.comparativo th.periodo small { font-weight: 500; text-transform: none; letter-spacing: 0; }
+.pg-interconsultas-comparativo table.comparativo th:first-child,
+.pg-interconsultas-comparativo table.comparativo td:first-child { position: sticky; left: 0; z-index: 1; min-width: 200px; background: var(--card); }
+.pg-interconsultas-comparativo table.comparativo th:first-child { background: var(--bg); }
+/* linhas de detalhe (classificação de risco, destino) recuadas abaixo do total */
+.pg-interconsultas-comparativo table.comparativo tr.sub td { padding-top: .45rem; padding-bottom: .45rem; }
+.pg-interconsultas-comparativo table.comparativo tr.sub .indicador-nome { padding-left: 1.1rem; font-weight: 500; color: var(--muted); }
+.pg-interconsultas-comparativo table.comparativo tr.sub .indicador-nome::before { content: '↳ '; color: var(--border); }
+.pg-interconsultas-comparativo table.comparativo tr.sub .unidade { padding-left: 1.1rem; }
+
+/* ---------- página: interconsultas_tendencia (como a da Emergência) ---------- */
+.pg-interconsultas-tendencia .filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; align-items: end; }
+.pg-interconsultas-tendencia .filters label { display: block; }
+.pg-interconsultas-tendencia .filters input, .pg-interconsultas-tendencia .filters select { width: 100%; }
+.pg-interconsultas-tendencia .charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(450px, 1fr)); gap: 1.5rem; margin-bottom: 2rem; }
+.pg-interconsultas-tendencia .charts-grid.stacked { grid-template-columns: 1fr; }
+.pg-interconsultas-tendencia .chart-card { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 1.5rem; box-shadow: 0 2px 4px rgba(0,0,0,.05); }
+.pg-interconsultas-tendencia .chart-card h3 { font-size: .9rem; font-weight: 600; color: var(--dark); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: .05em; }
+.pg-interconsultas-tendencia .chart-container { height: 300px; }
+.pg-interconsultas-tendencia .cid-resumo { font-size: .85rem; color: var(--muted); }
+.pg-interconsultas-tendencia .cid-resumo b { color: var(--dark); font-size: 1rem; }
+.pg-interconsultas-tendencia .tabela-cid { max-height: 420px; overflow: auto; margin-top: .75rem; }
+.pg-interconsultas-tendencia .tabela-cid .tabela { border-collapse: separate; border-spacing: 0; }  /* a borda acompanha a célula fixa */
+.pg-interconsultas-tendencia .tabela-cid .tabela th, .pg-interconsultas-tendencia .tabela-cid .tabela td { padding: 6px 8px; font-size: .8rem; }
+.pg-interconsultas-tendencia .tabela-cid thead th { position: sticky; top: 0; background: var(--card); z-index: 1; }
+.pg-interconsultas-tendencia .tabela-cid tr.total td { position: sticky; bottom: 0; background: var(--card); }
+.pg-interconsultas-tendencia .error-bar { display: none; }
+@media(max-width:900px) {
+  .pg-interconsultas-tendencia .charts-grid { grid-template-columns: 1fr; }
+}
+@media(max-width:600px) {
+  .pg-interconsultas-tendencia .chart-container { height: 250px; }
+}

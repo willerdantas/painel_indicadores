@@ -1,0 +1,253 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
+{%- from '_seletor_mes.html' import seletor_mes -%}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Interconsultas — Tendência Mensal</title>
+<script src="/static/chart.umd.min.js"></script>
+<script>
+  // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
+  if (typeof Chart === 'undefined') {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+  }
+</script>
+<script src="/static/js/tendencia.js"></script>
+    {{ recursos() }}
+</head>
+<body class="pg-interconsultas-tendencia">
+
+<div id="loader-overlay">
+  <div class="loader-ring">
+    <svg viewBox="0 0 90 90"><circle cx="45" cy="45" r="40"/></svg>
+    <img src="{{ logo('carregando') }}" alt="Carregando...">
+  </div>
+</div>
+
+{{ cabecalho('Interconsultas', 'Painel de Gestão', links=[('/interconsultas', 'Indicadores'), ('/interconsultas/comparativo', 'Comparativo')]) }}
+
+<div class="wrapper">
+
+  <div class="filters">
+    <div>
+      <label>Clínica</label>
+      <select id="clinica">
+        <option value="">Todas</option>
+        {% for c in clinicas %}<option>{{ c }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Enfermaria</label>
+      <select id="enfermaria">
+        <option value="">Todas</option>
+        {% for e in enfermarias %}<option>{{ e }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label>Leito</label>
+      <select id="leito">
+        <option value="">Todos</option>
+        {% for l in leitos %}<option>{{ l }}</option>{% endfor %}
+      </select>
+    </div>
+    <div>
+      <label for="mes-ini">Mês Inicial</label>
+      {{ seletor_mes('mes-ini', 'mes_ini', valor=mes_ini, dica=False) }}
+    </div>
+    <div>
+      <label for="mes-fim">Mês Final</label>
+      {{ seletor_mes('mes-fim', 'mes_fim', valor=mes_fim, dica=False) }}
+    </div>
+    <div>
+      <label>&nbsp;</label>
+      <button class="btn-apply" onclick="carregarGraficos()">Atualizar</button>
+    </div>
+  </div>
+
+  <div class="error-bar" id="erro"></div>
+
+  <h2 class="section-title">Interconsultas</h2>
+  <div class="charts-grid" id="charts_interconsultas"></div>
+
+</div>
+
+<script>
+const chartInstances = {};
+
+function showLoader() { document.getElementById('loader-overlay').classList.add('active'); }
+function hideLoader() { document.getElementById('loader-overlay').classList.remove('active'); }
+
+document.getElementById('btn-voltar-inicio').addEventListener('click', function() {
+  showLoader();
+  setTimeout(function() { window.location.href = '/'; }, 300);
+});
+let _loaderCount = 0;
+function loaderOn()  { _loaderCount++; showLoader(); }
+function loaderOff() { _loaderCount = Math.max(0, _loaderCount - 1); if (_loaderCount === 0) hideLoader(); }
+
+function v(id){ return document.getElementById(id).value; }
+// valor AAAA-MM do seletor de mês (campo escondido do calendário)
+function mes(nome) { return document.querySelector(`input[name="${nome}"]`).value; }
+// nomes vêm do banco (especialidades): escapados
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+function ajustarLayoutGraficos(qtdMeses) {
+  document.getElementById('charts_interconsultas').classList.toggle('stacked', Number(qtdMeses) > 12);
+}
+
+// barras empilhadas por categoria + linha do total, média e mediana do total e,
+// abaixo, a tabela com total, %, média e mediana mensais de cada categoria
+function criarGraficoEmpilhado(container, titulo, meses, series, totais, rotuloTabela) {
+  const ctx = container.querySelector('canvas');
+  if (chartInstances[titulo]) chartInstances[titulo].destroy();
+  const totaisNum = numeros(totais);
+  const datasets = series.map(s => ({
+    label: s.nome, type: 'bar', data: numeros(s.valores).map(v => v || 0),
+    backgroundColor: s.cor + 'cc', borderColor: s.cor, borderWidth: 1, borderRadius: 3, stack: 'barras', order: 2
+  }));
+  datasets.push({
+    label: 'Total', type: 'line', data: totaisNum, stack: 'total',
+    borderColor: '#38464D', backgroundColor: 'transparent', borderWidth: 2.5, pointRadius: 3,
+    pointHoverRadius: 4, tension: 0.2, fill: false, order: 0
+  });
+  linhasMediaMediana(meses.length, calcularMedia(totaisNum), calcularMediana(totaisNum))
+    .forEach((l, i) => datasets.push({ ...l, stack: 'linha' + i }));
+  chartInstances[titulo] = new Chart(ctx, {
+    type: 'bar', data: { labels: meses, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtNum(c.parsed.y ?? 0)}` } }
+      },
+      scales: { x: { stacked: true }, y: { beginAtZero: true, stacked: true } }
+    }
+  });
+
+  const totalGeral = totaisNum.reduce((a, b) => a + (b || 0), 0);
+  const linha = (nome, vals, cor, classe) => {
+    const nums = numeros(vals);
+    const total = nums.reduce((a, b) => a + (b || 0), 0);
+    return `<tr class="${classe || ''}">
+      <td>${cor ? `<span class="marca-cor" style="background:${cor}"></span>` : ''}${esc(nome)}</td>
+      <td class="num">${fmtNum(total)}</td>
+      <td class="num">${totalGeral ? fmtNum(Math.round(total / totalGeral * 1000) / 10) + '%' : '—'}</td>
+      <td class="num">${fmtNum(calcularMedia(nums))}</td>
+      <td class="num">${fmtNum(calcularMediana(nums))}</td></tr>`;
+  };
+  const info = document.createElement('div');
+  info.className = 'tabela-info';
+  info.innerHTML = `<table class="tabela">
+      <thead><tr><th>${rotuloTabela}</th><th class="num">Total no período</th><th class="num">%</th>
+        <th class="num">Média mensal</th><th class="num">Mediana mensal</th></tr></thead>
+      <tbody>${series.map(s => linha(s.nome, s.valores, s.cor)).join('')}
+        ${linha('Total', totais, '#38464D', 'total')}</tbody></table>`;
+  container.appendChild(info);
+}
+
+function criarGrafico(container, titulo, meses, valores, cor, sufixo) {
+  const valoresNum = numeros(valores);
+  const ctx = container.querySelector('canvas');
+  if (chartInstances[titulo]) chartInstances[titulo].destroy();
+  const datasets = [
+    { label: 'Mensal', data: valoresNum, backgroundColor: cor + 'cc', borderColor: cor, borderWidth: 1, borderRadius: 4, order: 2, sufixo: sufixo || '' },
+    ...linhasMediaMediana(meses.length, calcularMedia(valoresNum), calcularMediana(valoresNum), sufixo)
+  ];
+  chartInstances[titulo] = new Chart(ctx, {
+    type: 'bar',
+    data: { labels: meses, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { intersect: false, mode: 'index' },
+      plugins: {
+        legend: { display: true, position: 'bottom', labels: { usePointStyle: true, padding: 15, font: { size: 12 } } },
+        tooltip: { callbacks: { label: c => ` ${c.dataset.label}: ${fmtNum(c.parsed.y)}${c.dataset.sufixo || ''}` } }
+      },
+      scales: { y: { beginAtZero: true }, x: { ticks: { font: { size: 11 } } } }
+    }
+  });
+}
+
+const PALETA = ['#2E758C', '#00B2C9', '#3BB5A3', '#F3A133', '#EB600A', '#0F9688', '#C9577F', '#7A6FB0', '#9aa7ab'];
+
+function carregarGraficos() {
+  const params = new URLSearchParams({
+    clinica: v('clinica'), enfermaria: v('enfermaria'), leito: v('leito'),
+    mes_ini: mes('mes_ini'), mes_fim: mes('mes_fim')
+  });
+
+  loaderOn();
+  fetch('/api/interconsultas/mensal?' + params)
+    .then(r => r.json())
+    .then(res => {
+      loaderOff();
+      const errEl = document.getElementById('erro');
+      if (!res.ok) {
+        errEl.textContent = 'Erro ao carregar gráficos: ' + res.erro;
+        errEl.style.display = 'block';
+        return;
+      }
+      errEl.style.display = 'none';
+      const d = res.dados;
+      ajustarLayoutGraficos((d.meses || []).length);
+      const container = document.getElementById('charts_interconsultas');
+      Object.keys(chartInstances).forEach(k => { try { chartInstances[k].destroy(); } catch(e) {} delete chartInstances[k]; });
+      container.innerHTML = '';
+
+      const linhaCard = (titulo, larga) => {
+        const card = document.createElement('div');
+        card.className = 'chart-card' + (larga ? ' largura-total' : '');
+        card.innerHTML = `<h3>${titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
+        container.appendChild(card);
+        return card;
+      };
+      const temDados = vals => (vals || []).some(v => v !== null && v !== undefined && Number(v) !== 0);
+
+      // solicitadas e pareceres por tipo de atendimento (os demais tipos, se houver, em "Outros")
+      [['solicitadas', 'Interconsultas Solicitadas por Tipo de Atendimento'],
+       ['pareceres', 'Pareceres por Tipo de Atendimento']].forEach(([medida, titulo]) => {
+        const total = d[`${medida}_total`];
+        if (!temDados(total)) return;
+        const emerg = d[`${medida}_emergencia`], intern = d[`${medida}_internacao`];
+        const series = [
+          { nome: 'Emergência', valores: emerg, cor: '#00B2C9' },
+          { nome: 'Internação', valores: intern, cor: '#0F9688' },
+          { nome: 'Outros atendimentos', valores: total.map((t, i) => t - emerg[i] - intern[i]), cor: '#9aa7ab' },
+        ].filter(s => temDados(s.valores));
+        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, series, total, 'Tipo de atendimento');
+      });
+
+      // tempo entre a solicitação e o parecer (pareceres do mês)
+      [{ key: 'tempo_medio', titulo: 'Tempo Médio até o Parecer (horas)', cor: '#F3A133' },
+       { key: 'tempo_mediano', titulo: 'Tempo Mediano até o Parecer (horas)', cor: '#2E758C' }].forEach(ind => {
+        if (temDados(d[ind.key])) criarGrafico(linhaCard(ind.titulo), ind.titulo, d.meses, d[ind.key], ind.cor, ' h');
+      });
+
+      // por especialidade: as maiores e, juntas, as demais
+      [['solicitadas', 'Interconsultas Solicitadas por Especialidade'],
+       ['pareceres', 'Pareceres por Especialidade']].forEach(([medida, titulo]) => {
+        const series = (d[`${medida}_especialidade`] || []).map((s, i) => ({ ...s, cor: PALETA[i % PALETA.length] }));
+        if (series.length) criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, series, d[`${medida}_total`], 'Especialidade');
+      });
+
+      if (!container.children.length) {
+        container.innerHTML = '<p class="sem-dado">Nenhuma interconsulta nos meses escolhidos.</p>';
+      }
+    })
+    .catch(err => {
+      loaderOff();
+      const errEl = document.getElementById('erro');
+      errEl.textContent = 'Erro ao carregar gráficos: ' + err;
+      errEl.style.display = 'block';
+    });
+}
+
+document.querySelectorAll('.seletor-mes').forEach(s => s.addEventListener('mes-escolhido', carregarGraficos));
+
+carregarGraficos();
+</script>
+    {{ rodape() }}
+</body>
+</html>
