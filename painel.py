@@ -18,6 +18,7 @@ import banco_painel
 import custos
 import financeiro
 import area_restrita
+import seguranca
 import paginas_visiveis
 import classificacao_exames
 
@@ -176,6 +177,7 @@ def index():
 
 
 # Login e área restrita (/admin): area_restrita.py
+seguranca.registrar(app)  # antes do controle de acesso
 area_restrita.registrar(app)
 
 
@@ -310,8 +312,8 @@ def indicadores():
             'media_periodo': df['Quantidade'].mean()
         }
         return render_template('indicadores.html', **context)
-    except Exception as e:
-        return render_template('error.html', message=f"Erro ao carregar dados: {e}")
+    except Exception:
+        return seguranca.erro_interno_pagina(status=200)  # página sem dados: status de antes
 
 def _sem_planilha(nome):
     """Financeiro e faturamento leem só planilhas (dados/, fora do git)."""
@@ -329,8 +331,8 @@ def financeiro_pagina():
 def api_financeiro_dados():
     try:
         return jsonify({'ok': True, 'dados': financeiro.get_financeiro()})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/financeiro/relatorio-empenhos.xlsx')
@@ -342,8 +344,8 @@ def financeiro_relatorio_empenhos():
             busca=(request.args.get('busca') or '')[:200],
             situacao=situacao if situacao in financeiro.SITUACOES else '',
             fonte=request.args.get('fonte') or '')
-    except Exception as e:
-        return render_template('error.html', message=f'Erro ao gerar o relatório de empenhos em aberto: {e}'), 500
+    except Exception:
+        return seguranca.erro_interno_pagina('Não foi possível gerar o relatório de empenhos em aberto.')
     return send_file(arquivo, as_attachment=True, download_name=nome,
                      mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
@@ -515,8 +517,8 @@ def faturamento():
             'valores_por_mes': valores_por_mes
         }
         return render_template('faturamento.html', **context)
-    except Exception as e:
-        return f"Erro ao carregar dados de faturamento: {e}", 500
+    except Exception:
+        return seguranca.erro_interno_pagina()
 
 @app.route('/teste')
 def teste():
@@ -792,8 +794,8 @@ def exames_por_clinica():
                     and (clinica_filtro not in clinicas or clinica == clinica_filtro)
                     and (classificacao_filtro not in classificacoes or classificacao == classificacao_filtro))
         eventos = list(_eventos_com_nomes(data_inicial, data_final, nome_clinica, nome_exame, aceita))
-    except Exception as e:
-        return render_template('error.html', message=f"Erro ao carregar dados de exames por clínica: {e}")
+    except Exception:
+        return seguranca.erro_interno_pagina(status=200)  # página sem dados: status de antes
 
     # por clínica × exame: solicitados, realizados e cancelados, cada um pela sua data
     detalhe = {}
@@ -920,8 +922,8 @@ def graficos_mensais():
                     and (classificacao_filtro == 'todos' or classificacao == classificacao_filtro)
                     and (exame_filtro == 'todos' or exame == exame_filtro))
         eventos = list(_eventos_com_nomes(data_inicial, data_final, nome_clinica, nome_exame, aceita))
-    except Exception as e:
-        return render_template('error.html', message=f"Erro ao carregar dados dos gráficos mensais: {e}")
+    except Exception:
+        return seguranca.erro_interno_pagina(status=200)  # página sem dados: status de antes
 
     # Todos os meses do período (inclusive os sem nenhum exame), em ordem.
     meses = []
@@ -1135,8 +1137,8 @@ def api_hcasg_hospitalares_indicadores():
     try:
         dados = get_indicadores_hospitalar(data_ini, data_fim, clinica, enfermaria, leito)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/ambulatorio')
@@ -1166,8 +1168,8 @@ def api_ambulatorio_dados():
             macrorregiao=request.args.get('macrorregiao') or None,
         )
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/ambulatorio/salas')
@@ -1189,8 +1191,8 @@ def api_ambulatorio_salas():
             macrorregiao=request.args.get('macrorregiao') or None,
         )
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/ambulatorio/tendencia')
@@ -1235,8 +1237,8 @@ def api_ambulatorio_mensal():
         return jsonify({'ok': False, 'erro': 'Informe mes_ini e mes_fim no formato AAAA-MM.'}), 400
     try:
         return jsonify({'ok': True, 'dados': _ambulatorio_mensal(mes_ini, mes_fim)})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/ambulatorio/comparativo')
@@ -1269,8 +1271,10 @@ def api_interconsultas_dados():
         dados = interconsultas.get_interconsultas(min(data_ini, data_fim), max(data_ini, data_fim),
                                                   *_hcasg_params_filtro())
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:  # inclui coluna de t_interconsulta faltando no servidor
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except ValueError as e:  # coluna de t_interconsulta faltando no servidor (mensagem do próprio painel)
+        return jsonify({'ok': False, 'erro': str(e)}), 503
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/interconsultas/tendencia')
@@ -1307,8 +1311,8 @@ def api_interconsultas_mensal():
         return jsonify({'ok': False, 'erro': 'Informe mes_ini e mes_fim no formato AAAA-MM.'}), 400
     try:
         return jsonify({'ok': True, 'dados': interconsultas.get_mensal(mes_ini, mes_fim, *_hcasg_params_filtro())})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/interconsultas/comparativo')
@@ -1337,8 +1341,8 @@ def api_custos_dados():
         return jsonify({'ok': True, 'dados': dados})
     except ValueError as e:  # filtro malformado
         return jsonify({'ok': False, 'erro': str(e)}), 400
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/hcasg/hospitalares/graficos')
@@ -1349,8 +1353,8 @@ def api_hcasg_hospitalares_graficos():
         dados = hcasg.get_graficos_hospitalar(data_ini, data_fim, clinica, enfermaria, leito)
         dados["por_cid_destino"] = hcasg.get_cid_destino_hospitalar(data_ini, data_fim, clinica, enfermaria, leito)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/hcasg/emergencia/indicadores')
@@ -1361,8 +1365,8 @@ def api_hcasg_emergencia_indicadores():
     try:
         dados = get_indicadores_emergencia(data_ini, data_fim, clinica, enfermaria, leito)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/hcasg/emergencia/atendimentos')
@@ -1376,8 +1380,8 @@ def api_hcasg_emergencia_atendimentos():
         hora_fim = min(max(int(request.args.get('hora_fim') or 23), 0), 23)
         dados = hcasg.get_atendimentos_emergencia(data_ini, data_fim, dias_semana, hora_ini, hora_fim)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/hcasg/emergencia/saidas')
@@ -1385,8 +1389,8 @@ def api_hcasg_emergencia_saidas():
     try:
         dados = hcasg.get_saidas_emergencia(request.args.get('data_ini'), request.args.get('data_fim'))
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/hcasg/hospitalares/tendencia')
@@ -1457,8 +1461,8 @@ def api_hcasg_hospitalares_mensal():
         dados = get_mensal_hospitalar(clinica, enfermaria, leito, mes_ini, mes_fim)
         dados["por_cid_destino"] = hcasg.get_cid_destino_mensal(clinica, enfermaria, leito, mes_ini, mes_fim)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/hcasg/emergencia/mensal')
@@ -1472,8 +1476,8 @@ def api_hcasg_emergencia_mensal():
         dados.update(hcasg.get_mensal_emergencia_fluxo(mes_ini, mes_fim))
         dados["por_cid_risco"] = hcasg.get_cid_risco_mensal(mes_ini, mes_fim)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 # ---- APIs: comparativo entre dois meses ----
@@ -1576,8 +1580,8 @@ def _hcasg_comparativo_resposta(funcao_mensal, campos):
         if opcoes:  # opções dos filtros (Ambulatório): as dos meses consultados
             resposta['opcoes'] = {k: sorted({x for o in opcoes for x in o[k]}) for k in opcoes[0]}
         return jsonify({'ok': True, 'modo': modo, **resposta})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/api/hcasg/hospitalares/comparativo')
@@ -1650,8 +1654,8 @@ def api_lean_indicadores():
     try:
         dados = hcasg.get_indicadores(data_ini, data_fim, clinica, enfermaria, leito)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 @app.route('/lean/api/indicadores_mensais')
@@ -1662,8 +1666,8 @@ def api_lean_indicadores_mensais():
     try:
         dados = hcasg.get_indicadores_mensais(clinica, enfermaria, leito, mes_ini, mes_fim)
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 LEAN_AUDITORIAS = {
@@ -1684,8 +1688,8 @@ def api_lean_auditoria(indicador):
     try:
         dados = consulta(request.args.get('data_ini'), request.args.get('data_fim'))
         return jsonify({'ok': True, 'dados': dados})
-    except Exception as e:
-        return jsonify({'ok': False, 'erro': str(e)}), 500
+    except Exception:
+        return seguranca.erro_interno()
 
 
 # os testes desligam (sem PostgreSQL): PAINEL_AQUECER_CACHE=0

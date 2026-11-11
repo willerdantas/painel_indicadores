@@ -8,7 +8,7 @@
     <title>Produção Hospitalar Consolidada</title>
     <base href="./">
     <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
-    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+    <script src="https://cdn.plot.ly/plotly-1.58.5.min.js" integrity="sha384-W7FXNbEY44RgDK8MunBe4gETSKi3Qo2bJAXX3PH8v5l3hdabFb9dbCIn3X69OFjX" crossorigin="anonymous"></script>
     {{ recursos() }}
 </head>
 <body class="pg-producao-hospitalar">
@@ -221,7 +221,7 @@
         const PALETA = ['#00A1A2', '#EB600A', '#00B2C9', '#007C6B', '#F3A133',
                         '#3BB5A3', '#2E758C', '#F7975B', '#0F9688', '#53B7D9'];
 
-        const dadosMensais = JSON.parse('{{ dados_json|tojson|safe }}') || [];
+        const dadosMensais = {{ dados_json|tojson }} || [];
 
         // Funções utilitárias
         function formatarDataBR(date) {
@@ -491,7 +491,7 @@
             legenda.innerHTML = itens.map(it => `
                 <button type="button" class="legenda-item${it.linha ? ' total' : ''}" data-idx="${it.idx}" title="Clique para mostrar/ocultar">
                     <span class="legenda-cor${it.linha ? ' linha' : ''}" style="background:${it.cor}"></span>
-                    <span class="legenda-nome">${it.nome}</span>
+                    <span class="legenda-nome">${escHtml(it.nome)}</span>
                     <span class="legenda-valor">${fmt(it.valor)}</span>
                 </button>`).join('');
             legenda.onclick = e => {
@@ -532,7 +532,7 @@
                 return;
             }
             tbody.innerHTML = m.linhas.map(l => `<tr class="${classeLinha}">` + l.map((v, k) => {
-                if (k === 0) return `<td class="col-rotulo"><b>${v}</b></td>`;
+                if (k === 0) return `<td class="col-rotulo"><b>${escHtml(v)}</b></td>`;
                 const tipo = m.colunas[k - 1].tipo;
                 if (tipo === 'media_ano' || tipo === 'media') return `<td class="td-media">${fmtMedia(v)}</td>`;
                 return `<td>${tipo === 'mes' ? fmt(v) : `<b>${fmt(v)}</b>`}</td>`;  // totais em negrito
@@ -695,8 +695,8 @@
                 examesList.innerHTML += `
                     <li>
                         <label>
-                            <input type="checkbox" class="exame-checkbox" value="${exame}" ${checked}>
-                            ${exame}
+                            <input type="checkbox" class="exame-checkbox" value="${escHtml(exame)}" ${checked}>
+                            ${escHtml(exame)}
                         </label>
                     </li>
                 `;
@@ -743,8 +743,8 @@
                 servicosList.innerHTML += `
                     <li>
                         <label>
-                            <input type="checkbox" class="servico-checkbox" value="${servico}" ${checked}>
-                            ${servico}
+                            <input type="checkbox" class="servico-checkbox" value="${escHtml(servico)}" ${checked}>
+                            ${escHtml(servico)}
                         </label>
                     </li>
                 `;
@@ -799,23 +799,29 @@
         // ===================== RELATÓRIOS (PDF e XLSX) =====================
         // Gerados no navegador, a partir dos dados já carregados e com os
         // filtros aplicados na tela. As bibliotecas só são baixadas no clique.
+        // integridade (SRI): o navegador recusa o arquivo do CDN se ele tiver sido alterado
         const LIBS_RELATORIO = {
-            xlsx: ['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js'],
-            pdf: ['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
-                  'https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js'],
+            xlsx: [['https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js',
+                    'sha384-vtjasyidUo0kW94K5MXDXntzOJpQgBKXmE7e2Ga4LG0skTTLeBi97eFAXsqewJjw']],
+            pdf: [['https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js',
+                   'sha384-JcnsjUPPylna1s1fvi1u12X5qjY5OL56iySh75FdtrwhO/SWXgMjoVqcKyIIWOLk'],
+                  ['https://cdnjs.cloudflare.com/ajax/libs/jspdf-autotable/3.8.2/jspdf.plugin.autotable.min.js',
+                   'sha384-fCAW/rDWORTbQXSiB7mOg0QtQ5c+r0f544y6XoKjuVva0nMBlCpNUjiFeG5iMdS3']],
         };
         const _scriptsCarregados = {};
-        function carregarScript(url) {
+        function carregarScript(url, integridade) {
             return _scriptsCarregados[url] ||= new Promise((resolve, reject) => {
                 const s = document.createElement('script');
                 s.src = url;
+                s.integrity = integridade;
+                s.crossOrigin = 'anonymous';
                 s.onload = resolve;
                 s.onerror = () => { delete _scriptsCarregados[url]; reject(new Error('Falha ao carregar ' + url)); };
                 document.head.appendChild(s);
             });
         }
         async function carregarLibs(tipo) {
-            for (const url of LIBS_RELATORIO[tipo]) await carregarScript(url);  // em ordem (autotable depende do jsPDF)
+            for (const [url, integridade] of LIBS_RELATORIO[tipo]) await carregarScript(url, integridade);  // em ordem (autotable depende do jsPDF)
         }
 
         const campoExame = item => item['Exame/Procedimento'] ?? item['Exame'] ?? '';

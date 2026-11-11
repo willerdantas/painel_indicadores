@@ -1584,6 +1584,7 @@ html { scroll-padding-top: 110px; }
 
 /* ---------- página: login ---------- */
 .pg-login .login-card { position: relative; background: #fff; border-radius: 14px; box-shadow: 0 6px 24px rgba(0,0,0,0.15); padding: 32px 32px 28px; width: 100%; max-width: 380px; }
+.pg-login .campo-armadilha { position: absolute; left: -10000px; width: 1px; height: 1px; overflow: hidden; }
 .pg-login .aviso-banco { margin-bottom: 18px; padding: 12px 14px; border-radius: 10px; background: var(--aviso-fundo); border: 1px solid var(--amber); font-size: 13px; line-height: 1.5; color: var(--dark); }
 .pg-login .aviso-banco strong { display: block; color: var(--orange); margin-bottom: 2px; }
 .pg-login .aviso-banco code { font-family: Consolas, monospace; font-weight: 700; }

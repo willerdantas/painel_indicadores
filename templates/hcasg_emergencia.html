@@ -9,7 +9,7 @@
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
   if (typeof Chart === 'undefined') {
-    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"><\/script>');
   }
 </script>
 <script src="/static/js/cid_risco.js"></script>
@@ -302,7 +302,7 @@ function setLosSub(id, minutos) {
 function setLeitosAtivosPsDetalhe(items) {
   const el = document.getElementById('leitos_ativos_ps_detalhe');
   if (!items || items.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${escHtml(i.dsc_clinica)}: ${i.qtd}`).join('<br>');
 }
 
 function toggleClinicaPanel(){

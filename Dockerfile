@@ -30,7 +30,7 @@ USER painel
 EXPOSE 5500
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5500/login', timeout=4)"
+    CMD python -c "import urllib.request; urllib.request.urlopen('http://127.0.0.1:5500/saude', timeout=4)"
 
 # 1 processo com várias threads: o bloqueio de tentativas de login e o estado
 # da conexão com o banco ficam em memória e precisam ser únicos.

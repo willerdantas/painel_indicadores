@@ -10,7 +10,7 @@
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
   if (typeof Chart === 'undefined') {
-    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"><\/script>');
   }
 </script>
 <script src="/static/js/tendencia.js"></script>
@@ -65,7 +65,7 @@
   <h2 class="section-title">Atendimentos do Ambulatório</h2>
   <div class="charts-grid" id="charts_ambulatorio"></div>
 
-  <h2 class="section-title">Consultas por Tipo de Consulta e por Especialidade</h2>
+  <h2 class="section-title">Consultas Realizadas por Tipo de Consulta e por Especialidade</h2>
   <div class="chart-card">
     <div class="saidas-info tabela-tipo">
       <table class="tabela">
@@ -184,7 +184,7 @@ function criarGraficoEmpilhado(container, titulo, meses, series, cores, rotuloSe
   info.className = 'saidas-info';
   info.innerHTML = `<table class="tabela">
       <thead><tr><th>${rotuloSerie}</th><th class="num">Total no período</th><th class="num">Média mensal</th><th class="num">Mediana mensal</th></tr></thead>
-      <tbody>${series.map((s, i) => linha(s.nome, s.valores, cor(s, i))).join('')}${linha('Total de atendimentos', totais, '#38464D', 'total')}</tbody></table>`;
+      <tbody>${series.map((s, i) => linha(s.nome, s.valores, cor(s, i))).join('')}${linha('Total', totais, '#38464D', 'total')}</tbody></table>`;
   container.appendChild(info);
 }
 
@@ -234,15 +234,15 @@ function carregarGraficos() {
         { key: 'atendimentos', titulo: 'Atendimentos', cor: '#2E758C' },
         { key: 'media_diaria', titulo: 'Média Diária de Atendimentos (por dia com atendimento)', cor: '#00A1A2' },
         { key: 'status', titulo: 'Atendimentos por Status', empilhado: CORES_STATUS, rotulo: 'Status' },
-        { key: 'tipo_consulta', titulo: 'Atendimentos por Tipo de Consulta', empilhado: {}, rotulo: 'Tipo de consulta' },
-        { key: 'prontuarios', titulo: 'Prontuários Únicos', cor: '#0F9688' },
-        { key: 'por_prontuario', titulo: 'Atendimentos por Prontuário', cor: '#53B7D9' },
+        { key: 'tipo_consulta', titulo: 'Consultas Realizadas por Tipo de Consulta', empilhado: {}, rotulo: 'Tipo de consulta' },
+        { key: 'prontuarios', titulo: 'Prontuários Únicos (consultas realizadas)', cor: '#0F9688' },
+        { key: 'por_prontuario', titulo: 'Consultas Realizadas por Prontuário', cor: '#53B7D9' },
         { key: 'taxa_alta', titulo: 'Taxa de Alta Ambulatorial (%)', cor: '#007C6B', sufixo: '%' },
         { key: 'taxa_absenteismo', titulo: 'Taxa de Absenteísmo (%)', cor: '#EB600A', sufixo: '%' },
-        { key: 'sexo', titulo: 'Atendimentos por Sexo', empilhado: CORES_SEXO, rotulo: 'Sexo' },
-        { key: 'consultas', titulo: 'Consultas Realizadas (atendimento médico)', cor: '#3BB5A3' },
+        { key: 'sexo', titulo: 'Consultas Realizadas por Sexo', empilhado: CORES_SEXO, rotulo: 'Sexo' },
+        { key: 'consultas', titulo: 'Consultas Realizadas (concluído + alta)', cor: '#3BB5A3' },
         { key: 'tempo_medio', titulo: 'Tempo Médio por Consulta (min)', cor: '#F3A133', sufixo: ' min' },
-        { key: 'macrorregiao', titulo: 'Atendimentos por Macrorregião de Saúde', empilhado: {}, rotulo: 'Macrorregião' },
+        { key: 'macrorregiao', titulo: 'Consultas Realizadas por Macrorregião de Saúde', empilhado: {}, rotulo: 'Macrorregião' },
         { key: 'especialidades', titulo: 'Especialidades com Atendimento', cor: '#F7975B' },
       ];
       // primeiro todos os cartões, depois os gráficos: cada gráfico já nasce

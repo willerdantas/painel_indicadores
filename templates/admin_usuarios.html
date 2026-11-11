@@ -16,9 +16,9 @@
         <input type="text" id="login" name="login" value="{{ editando.login if editando else '' }}" autocomplete="off" required>
 
         <label class="campo" for="senha">Senha</label>
-        <input type="password" id="senha" name="senha" autocomplete="new-password" minlength="6"
+        <input type="password" id="senha" name="senha" autocomplete="new-password" minlength="8"
                {% if not editando %}required{% endif %}>
-        <div class="dica">{{ 'Em branco mantém a senha atual.' if editando else 'Mínimo de 6 caracteres.' }}</div>
+        <div class="dica">{{ 'Em branco mantém a senha atual.' if editando else 'Mínimo de 8 caracteres.' }}</div>
 
         <label class="campo" for="perfil_id">Perfil de acesso</label>
         <select id="perfil_id" name="perfil_id" required>

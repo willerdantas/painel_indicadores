@@ -279,7 +279,7 @@ const SCHEMAS = {
               <td>${fmt(r.ts_clinica_1)}</td>
               <td>${fmt(r.ts_referencia)}</td>
               <td>${badgeTipo(r.tipo_referencia)}</td>
-              <td>${r.dsc_clinica_destino||'—'}</td>
+              <td>${escHtml(r.dsc_clinica_destino||'—')}</td>
               <td>${numBar(r.los_horas, extras.maxHoras)}</td>`;
     },
     extras(sorted){ return { maxHoras: Math.max(...sorted.map(r=>Number(r.los_horas)||0), 1) }; },
@@ -305,13 +305,13 @@ const SCHEMAS = {
     },
     rowHtml(r, extras){
       return `<td>${r.isn_internacao}</td>
-              <td>${r.num_prontuario||'—'}</td>
+              <td>${escHtml(r.num_prontuario||'—')}</td>
               <td>${fmtDate(r.dat_cadastro)}</td>
               <td>${fmt(r.ts_entrada)}</td>
               <td>${fmt(r.ts_saida)}</td>
               <td>${numBar(r.los_min, extras.maxMin, 240, 600)}</td>
               <td>${numFmt(r.los_horas, 2)}</td>
-              <td>${r.dsc_destino||'—'}</td>`;
+              <td>${escHtml(r.dsc_destino||'—')}</td>`;
     },
     extras(sorted){ return { maxMin: Math.max(...sorted.map(r=>Number(r.los_min)||0), 1) }; },
   },
@@ -336,13 +336,13 @@ const SCHEMAS = {
     },
     rowHtml(r, extras){
       return `<td>${r.isn_internacao}</td>
-              <td>${r.num_prontuario||'—'}</td>
+              <td>${escHtml(r.num_prontuario||'—')}</td>
               <td>${fmt(r.dat_cadastro)}</td>
               <td>${fmt(r.ts_consulta_med)}</td>
               <td>${numBar(r.tempo_min, extras.maxMin, 60, 240)}</td>
               <td>${numFmt(r.tempo_horas, 2)}</td>
-              <td>${r.dsc_clinica||'—'}</td>
-              <td>${r.dsc_enfermaria||'—'}</td>`;
+              <td>${escHtml(r.dsc_clinica||'—')}</td>
+              <td>${escHtml(r.dsc_enfermaria||'—')}</td>`;
     },
     extras(sorted){ return { maxMin: Math.max(...sorted.map(r=>Number(r.tempo_min)||0), 1) }; },
   },
@@ -363,13 +363,13 @@ const SCHEMAS = {
     summary(rows){ return {}; },
     rowHtml(r, extras){
       return `<td>${r.isn_internacao}</td>
-              <td>${r.num_prontuario||'—'}</td>
+              <td>${escHtml(r.num_prontuario||'—')}</td>
               <td>${fmt(r.dat_cadastro)}</td>
               <td>${fmt(r.ts_entrada)}</td>
               <td>${fmt(r.ts_alta)||'—'}</td>
-              <td>${r.clinica_entrada||'—'}</td>
-              <td>${r.clinica_alta||'—'}</td>
-              <td>${r.dsc_destino||'—'}</td>`;
+              <td>${escHtml(r.clinica_entrada||'—')}</td>
+              <td>${escHtml(r.clinica_alta||'—')}</td>
+              <td>${escHtml(r.dsc_destino||'—')}</td>`;
     },
     extras(){ return {}; },
   },
@@ -402,14 +402,14 @@ const SCHEMAS = {
         ? `<span class="badge badge-dest">Sim</span>`
         : `<span class="badge badge-fall">Não</span>`;
       return `<td>${r.isn_internacao}</td>
-              <td>${r.num_prontuario||'—'}</td>
-              <td>${r.dsc_clinica||'—'}</td>
-              <td>${r.dsc_enfermaria||'—'}</td>
-              <td>${r.dsc_leito||'—'}</td>
+              <td>${escHtml(r.num_prontuario||'—')}</td>
+              <td>${escHtml(r.dsc_clinica||'—')}</td>
+              <td>${escHtml(r.dsc_enfermaria||'—')}</td>
+              <td>${escHtml(r.dsc_leito||'—')}</td>
               <td>${fmtDate(r.dt_entrada)}</td>
               <td>${fmtDate(r.dt_saida)}</td>
               <td>${fmtDate(r.dt_alta)||'—'}</td>
-              <td>${r.dsc_destino||'—'}</td>
+              <td>${escHtml(r.dsc_destino||'—')}</td>
               <td>${r.paciente_dia??'—'}</td>
               <td>${sv}</td>`;
     },
@@ -444,14 +444,14 @@ const SCHEMAS = {
         ? `<span class="badge badge-dest">Sim</span>`
         : `<span class="badge badge-fall">Não</span>`;
       return `<td>${r.isn_internacao}</td>
-              <td>${r.num_prontuario||'—'}</td>
-              <td>${r.dsc_clinica||'—'}</td>
-              <td>${r.dsc_enfermaria||'—'}</td>
-              <td>${r.dsc_leito||'—'}</td>
+              <td>${escHtml(r.num_prontuario||'—')}</td>
+              <td>${escHtml(r.dsc_clinica||'—')}</td>
+              <td>${escHtml(r.dsc_enfermaria||'—')}</td>
+              <td>${escHtml(r.dsc_leito||'—')}</td>
               <td>${fmtDate(r.dt_entrada)}</td>
               <td>${fmtDate(r.dt_saida)}</td>
               <td>${fmtDate(r.dt_alta)||'—'}</td>
-              <td>${r.dsc_destino||'—'}</td>
+              <td>${escHtml(r.dsc_destino||'—')}</td>
               <td>${r.paciente_dia??'—'}</td>
               <td>${sv}</td>`;
     },
@@ -477,8 +477,9 @@ function atualizarDescricao(){
 function renderHeader(schema){
   const tr = document.createElement('tr');
   tr.innerHTML = schema.cols.map(c =>
-    `<th onclick="sortBy('${c.col}')" data-col="${c.col}">${c.label} <span class="sort-icon"></span></th>`
+    `<th data-col="${escHtml(c.col)}">${escHtml(c.label)} <span class="sort-icon"></span></th>`
   ).join('');
+  tr.querySelectorAll('th').forEach(th => th.addEventListener('click', () => sortBy(th.dataset.col)));
   const thead = document.getElementById('thead_row');
   thead.innerHTML = '';
   thead.appendChild(tr);

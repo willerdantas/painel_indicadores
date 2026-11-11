@@ -244,8 +244,8 @@ def salvar_usuario(usuario_id, login, nome, senha, perfil_id, ativo, trocar_senh
         return 'Informe login e nome.'
     if usuario_id is None and not senha:
         return 'Informe a senha do novo usuário.'
-    if senha and len(senha) < 6:
-        return 'A senha deve ter pelo menos 6 caracteres.'
+    if senha and len(senha) < 8:
+        return 'A senha deve ter pelo menos 8 caracteres.'
     with _lock, _conectar() as conn:
         perfil = conn.execute('SELECT * FROM perfis WHERE id = ?', [perfil_id]).fetchone()
         if perfil is None:

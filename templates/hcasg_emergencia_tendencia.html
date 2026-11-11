@@ -12,7 +12,7 @@
   // document.write aqui é síncrono e garante que Chart exista antes
   // do script no final da página rodar.
   if (typeof Chart === 'undefined') {
-    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"><\/script>');
   }
 </script>
 <script src="/static/js/tendencia.js"></script>
@@ -164,7 +164,7 @@ function criarGraficoEmpilhado(container, titulo, meses, series, totais, opts) {
       const nums = numeros(vals);
       const total = nums.reduce((a, b) => a + (b || 0), 0);
       return `<tr class="${classe || ''}">
-        <td>${cor ? `<span class="marca-cor" style="background:${cor}"></span>` : ''}${nome}</td>
+        <td>${cor ? `<span class="marca-cor" style="background:${cor}"></span>` : ''}${escHtml(nome)}</td>
         <td class="num">${fmtNum(total)}</td>
         <td class="num">${totalGeral ? fmtNum(Math.round(total / totalGeral * 1000) / 10) + '%' : '—'}</td>
         <td class="num">${fmtNum(calcularMedia(nums))}</td>

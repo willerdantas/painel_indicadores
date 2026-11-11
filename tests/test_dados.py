@@ -595,6 +595,7 @@ def test_ambulatorio_mensal(monkeypatch):
         ('Cardiologia', 'CONCLUÍDO', 8, 10.0, 'Feminino', 'FORTALEZA/CE', s),
         ('Pneumologia', 'ALTA AMBULATORIAL', 9, 20.0, 'Masculino', 'SOBRAL/CE', o),
         ('Cardiologia', 'CONCLUÍDO', 9, 30.0, 'Feminino', 'SOBRAL/CE', o),
+        ('Cardiologia', 'FALTOU', 10, 100.0, 'Feminino', 'FORTALEZA/CE', s),  # não é consulta realizada
     ]
     monkeypatch.setattr(ambulatorio, '_visitas_periodo', lambda ini, fim: visitas)
     monkeypatch.setattr(ambulatorio, '_consultas_periodo', lambda ini, fim: consultas)
@@ -602,23 +603,28 @@ def test_ambulatorio_mensal(monkeypatch):
                         lambda: {'FORTALEZA': 'Fortaleza', 'SOBRAL': 'Norte'})
     monkeypatch.setattr(ambulatorio.banco_painel, 'nomes_tipos_consulta', lambda: {34: 'RETORNO'})
     d = ambulatorio.get_mensal('2026-10', '2026-09')  # meses em qualquer ordem
-    # por tipo de consulta: mês a mês, a tabela do período e as linhas do comparativo
-    assert d['tipo_consulta'] == [{'nome': 'RETORNO', 'valores': [1, 2]}, {'nome': 'Código 31', 'valores': [1, 0]}]
+    # por tipo de consulta (só consultas realizadas: a falta de set fica de fora):
+    # mês a mês, a tabela do período e as linhas do comparativo
+    assert d['tipo_consulta'] == [{'nome': 'RETORNO', 'valores': [0, 2]}, {'nome': 'Código 31', 'valores': [1, 0]}]
     assert d['tipo_especialidade']['tipos'] == ['RETORNO', 'Código 31']
-    assert d['tipo_especialidade']['linhas'][0] == {'nome': 'Cardiologia', 'valores': [2, 1], 'total': 3}
+    assert d['tipo_especialidade']['linhas'][0] == {'nome': 'Cardiologia', 'valores': [1, 1], 'total': 2}
     grupo = [c for c in d['_campos'] if len(c) == 5]
     assert [c[4] for c in grupo] == [False, True, True, False, True, True, False, True]  # tipo: detalhe
     assert [c[0] for c in grupo] == [
         'tipoesp_total', 'tipoesp_total_tipo_RETORNO', 'tipoesp_total_tipo_Código 31',
         'tipoesp_esp_Cardiologia', 'tipoesp_esp_Cardiologia_tipo_RETORNO', 'tipoesp_esp_Cardiologia_tipo_Código 31',
         'tipoesp_esp_Pneumologia', 'tipoesp_esp_Pneumologia_tipo_RETORNO']
-    assert d['tipoesp_esp_Cardiologia'] == [2, 1] and d['tipoesp_esp_Pneumologia_tipo_RETORNO'] == [0, 1]
+    assert d['tipoesp_esp_Cardiologia'] == [1, 1] and d['tipoesp_esp_Pneumologia_tipo_RETORNO'] == [0, 1]
+    assert d['tipoesp_total'] == d['consultas']
     assert d['meses_iso'] == ['2026-09', '2026-10']
     assert d['atendimentos'] == [2, 2] and d['prontuarios'] == [1, 2]
     assert d['media_diaria'] == [1.0, 2.0]  # 2 dias com atendimento em set, 1 em out
     assert d['concluidos'] == [1, 2] and d['taxa_absenteismo'] == [50.0, 0.0] and d['taxa_alta'] == [0.0, 50.0]
     assert d['consultas'] == [1, 2] and d['tempo_medio'] == [10.0, 25.0]
-    assert d['sexo'] == [{'nome': 'Feminino', 'valores': [2, 1]}, {'nome': 'Masculino', 'valores': [0, 1]}]
+    # sexo, prontuários e macrorregião: só consultas realizadas (a falta de set fica de fora)
+    assert d['sexo'] == [{'nome': 'Feminino', 'valores': [1, 1]}, {'nome': 'Masculino', 'valores': [0, 1]}]
+    assert d['por_prontuario'] == [1.0, 1.0]
+    assert d['macrorregiao'] == [{'nome': 'Norte', 'valores': [0, 2]}, {'nome': 'Fortaleza', 'valores': [1, 0]}]
     assert d['atendimentos_status_FALTOU'] == [1, 0]
     assert d['_campos'][0][0] == 'atendimentos' and d['_campos'][1][0].startswith('atendimentos_status_')
     # filtro de macrorregião: só Sobral (Norte), em outubro
@@ -630,7 +636,17 @@ def test_ambulatorio_mensal(monkeypatch):
     a = ambulatorio.get_mensal('2026-01', '2026-10', por_ano=True)
     assert a['meses'] == ['2026'] and a['atendimentos'] == [4] and a['prontuarios'] == [3]
     assert a['media_diaria'] == [1.3] and a['tempo_medio'] == [20.0] and a['taxa_absenteismo'] == [25.0]
-    assert a['atendimentos_status_FALTOU'] == [1] and a['tipoesp_esp_Cardiologia'] == [3]
+    assert a['atendimentos_status_FALTOU'] == [1] and a['tipoesp_esp_Cardiologia'] == [2]
+    assert 'concluidos' not in [c[0] for c in d['_campos']]  # repetiria as consultas realizadas
+    # página: os gráficos contam só as consultas realizadas; os cards, todos os atendimentos
+    p = ambulatorio.get_ambulatorio('2026-09-01', '2026-10-31')
+    assert p['kpis']['total'] == 4 and p['kpis']['faltas'] == 1 and p['kpis']['media_diaria'] == 1.3
+    assert sum(p['por_dia']) == 3 and p['media_diaria'] == 1.0
+    assert p['por_especialidade'] == [{'nome': 'Cardiologia', 'qtd': 2}, {'nome': 'Pneumologia', 'qtd': 1}]
+    assert sum(x['qtd'] for x in p['por_status']) == 4
+    assert p['por_sexo']['total'][0] == {'nome': 'Feminino', 'qtd': 2, 'prontuarios': 2}
+    assert p['por_prontuario_total']['atendimentos'] == 3
+    assert sum(p['por_dia_semana']) == 3 and sum(x['qtd'] for x in p['por_municipio']) == 3
 
 
 def test_ambulatorio_por_tipo_especialidade():
@@ -652,6 +668,9 @@ def test_ambulatorio_por_tipo_especialidade():
     assert t['total'] == {'nome': 'Total', 'valores': [3, 1, 1], 'total': 5}
     assert ambulatorio.por_tipo_especialidade(visitas, nomes, status='FALTOU')['tipos'] == ['1ª consulta']
     assert ambulatorio.nome_tipo_consulta(99, nomes) == 'Código 99'
+    # consulta realizada: só concluído e alta ambulatorial
+    assert ambulatorio.realizada('CONCLUÍDO') and ambulatorio.realizada(' alta ambulatorial')
+    assert not any(map(ambulatorio.realizada, ('FALTOU', 'CANCELADA', 'MARCADO', 'Sem marcação', None)))
 
 
 def test_comparativo_individual_linha_so_no_mes_b_fica_no_lugar(monkeypatch):

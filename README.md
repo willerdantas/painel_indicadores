@@ -43,7 +43,14 @@ Segurança:
 - proteção CSRF em todos os formulários;
 - bloqueio após várias tentativas de login erradas;
 - troca de senha obrigatória no primeiro acesso;
-- logout automático após **15 minutos sem uso**.
+- logout automático após **15 minutos sem uso**;
+- senhas guardadas só como hash; configuração do banco criptografada;
+- cabeçalhos de segurança (CSP, nosniff etc.); área restrita e login não abrem dentro de outro site;
+- HTTPS opcional atrás de proxy reverso (`PAINEL_HTTPS=1`);
+- parâmetros de período validados e erros internos sem detalhes técnicos na tela (o detalhe vai para o log);
+- planilhas e logos conferidas pelo conteúdo, não só pela extensão (limite de 32 MB por envio);
+- textos vindos do banco escapados nas páginas (`static/js/seguranca.js`);
+- `sql/usuario_painel.sql` cria um usuário do PostgreSQL só com o acesso necessário (leitura no sistema hospitalar, dono só do schema do painel), para não conectar como `postgres`.
 
 ## Estrutura
 
@@ -129,6 +136,7 @@ Todas são opcionais.
 | `DB_HOST`, `DB_PORT`, `DB_NAME`, `DB_USER`, `DB_PASS`, `DB_SCHEMA`, `DB_SCHEMA_PAINEL` | Conexão com o PostgreSQL. |
 | `PAINEL_PASTA_LOCAL` | Pasta dos arquivos locais. Padrão: a pasta do projeto; no Docker: o volume `/app/local`. |
 | `PAINEL_DEBUG=1` | Modo debug, só em desenvolvimento (escuta só em 127.0.0.1). |
+| `PAINEL_HTTPS=1` | Só atrás de um proxy reverso com HTTPS (nginx, IIS...): redireciona http para https, envia HSTS, marca o cookie de sessão como Secure e lê o IP e o protocolo reais do `X-Forwarded-For` / `X-Forwarded-Proto`. Sem proxy, deixe desligado. |
 
 **Arquivos locais.** Ficam fora do git e devem entrar no backup:
 
@@ -214,3 +222,9 @@ python -m pytest tests
 ```
 
 Os testes não precisam de PostgreSQL: usam um SQLite de usuários temporário.
+
+Vulnerabilidades conhecidas nas dependências (com `requirements-dev.txt` instalado):
+
+```bash
+python -m pip_audit -r requirements.txt
+```

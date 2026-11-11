@@ -25,6 +25,11 @@
             </div>
             {% endif %}
             <input type="hidden" name="proximo" value="{{ proximo }}">
+            {# armadilha para robôs: invisível para pessoas; preenchido, o login é recusado #}
+            <div class="campo-armadilha" aria-hidden="true">
+                <label for="site">Site</label>
+                <input type="text" id="site" name="site" tabindex="-1" autocomplete="off">
+            </div>
             <label for="usuario">Usuário</label>
             <input type="text" id="usuario" name="usuario" autocomplete="username" required autofocus
                    {% if banco_pendente %}value="{{ login_admin }}"{% endif %}>

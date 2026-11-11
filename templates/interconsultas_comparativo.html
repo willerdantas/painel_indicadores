@@ -194,8 +194,8 @@ function carregarComparativo() {
         // linha de detalhe (emergência / internação): recuada, abaixo do total
         return `<tr class="${l.sub ? 'sub' : ''}">
           <td>
-            <div class="indicador-nome">${l.indicador}</div>
-            ${l.unidade ? `<div class="unidade">${l.unidade}</div>` : ''}
+            <div class="indicador-nome">${escHtml(l.indicador)}</div>
+            ${l.unidade ? `<div class="unidade">${escHtml(l.unidade)}</div>` : ''}
           </td>
           ${celulas}
           <td class="num periodo">${formatarVariacao(l.variacao_periodo)}</td>

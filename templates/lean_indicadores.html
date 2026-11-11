@@ -198,7 +198,7 @@ function setSaidasDetalhe(items) {
     return;
   }
   el.innerHTML = items
-    .map(i => `${i.dsc_destino}: ${i.qtd}`)
+    .map(i => `${escHtml(i.dsc_destino)}: ${i.qtd}`)
     .join('<br>');
 }
 
@@ -208,7 +208,7 @@ function setInternacoesDetalhe(items) {
     el.innerHTML = '';
     return;
   }
-  el.innerHTML = '<b>Por clínica:</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+  el.innerHTML = '<b>Por clínica:</b><br>' + items.map(i => `${escHtml(i.dsc_clinica)}: ${i.qtd}`).join('<br>');
 }
 
 function setInternacoesDetalhePs(items) {
@@ -217,19 +217,19 @@ function setInternacoesDetalhePs(items) {
     el.innerHTML = '';
     return;
   }
-  el.innerHTML = '<b>Por clínica:</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+  el.innerHTML = '<b>Por clínica:</b><br>' + items.map(i => `${escHtml(i.dsc_clinica)}: ${i.qtd}`).join('<br>');
 }
 
 function setLeitosAtivosDetalhe(items) {
   const el = document.getElementById('leitos_ativos_detalhe');
   if (!items || items.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${escHtml(i.dsc_clinica)}: ${i.qtd}`).join('<br>');
 }
 
 function setLeitosAtivosPsDetalhe(items) {
   const el = document.getElementById('leitos_ativos_ps_detalhe');
   if (!items || items.length === 0) { el.innerHTML = ''; return; }
-  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${i.dsc_clinica}: ${i.qtd}`).join('<br>');
+  el.innerHTML = '<b>Por clínica (média diária):</b><br>' + items.map(i => `${escHtml(i.dsc_clinica)}: ${i.qtd}`).join('<br>');
 }
 
 function setSaidasTmpPsDetalhe(items) {
@@ -239,7 +239,7 @@ function setSaidasTmpPsDetalhe(items) {
     return;
   }
   el.innerHTML = items
-    .map(i => `${i.dsc_destino}: ${i.qtd}`)
+    .map(i => `${escHtml(i.dsc_destino)}: ${i.qtd}`)
     .join('<br>');
 }
 

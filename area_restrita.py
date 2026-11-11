@@ -244,6 +244,7 @@ def _destino_seguro(proximo):
 _LOGIN_JANELA = 15 * 60
 _LOGIN_MAX_POR_USUARIO = 5
 _LOGIN_MAX_POR_IP = 20
+_LOGIN_MAX_CHAVES = 10000  # acima disso, limpa as janelas vencidas (logins inventados não acumulam)
 _login_falhas = {}
 _login_lock = threading.Lock()
 
@@ -268,8 +269,12 @@ def _login_registrar(login_digitado, ok):
         if ok:
             _login_falhas.pop(usuario, None)
             return
+        agora = time.monotonic()
+        if len(_login_falhas) > _LOGIN_MAX_CHAVES:
+            for chave in [c for c, ts in _login_falhas.items() if not ts or agora - ts[-1] >= _LOGIN_JANELA]:
+                del _login_falhas[chave]
         for chave in (ip, usuario):
-            _login_falhas.setdefault(chave, []).append(time.monotonic())
+            _login_falhas.setdefault(chave, []).append(agora)
 
 
 @_rota('/login', methods=['GET', 'POST'])
@@ -281,8 +286,9 @@ def login():
         if _login_bloqueado(login_digitado):
             erro = 'Muitas tentativas erradas. Aguarde alguns minutos e tente de novo.'
             return render_template('login.html', erro=erro, proximo=proximo or ''), 429
-        u = usuarios.autenticar(login_digitado, request.form.get('senha'))
-        if u is None and not request.form.get('senha') and _banco_pendente():
+        # campo-armadilha preenchido: robô; recusa como senha errada
+        u = None if request.form.get('site') else usuarios.autenticar(login_digitado, request.form.get('senha'))
+        if u is None and not request.form.get('senha') and not request.form.get('site') and _banco_pendente():
             # sem banco configurado: administrador entra sem senha para configurá-lo
             u = usuarios.liberar_admin_sem_senha(login_digitado)
         _login_registrar(login_digitado, bool(u))
@@ -555,6 +561,21 @@ LANCAMENTOS = {
 }
 
 
+# assinatura do início do arquivo: a extensão sozinha não garante que é planilha
+_ASSINATURAS_PLANILHA = {'.xlsx': b'PK\x03\x04', '.xls': b'\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1'}
+
+
+def _planilha_ok(arquivo, extensoes=('.xlsx',)):
+    """Arquivo enviado com uma das extensões e conteúdo no formato dela."""
+    nome = (arquivo.filename or '').lower() if arquivo else ''
+    extensao = next((e for e in extensoes if nome.endswith(e)), None)
+    if extensao is None:
+        return False
+    inicio = arquivo.stream.read(8)
+    arquivo.stream.seek(0)
+    return inicio.startswith(_ASSINATURAS_PLANILHA[extensao])
+
+
 @_gancho('template_filter', 'num_br')
 def num_br(valor, formato='decimal'):
     """Número no formato brasileiro para os campos de lançamento.
@@ -707,7 +728,7 @@ def admin_lancamento_importar(chave):
     t = LANCAMENTOS[chave]['tabela']
     arquivo = request.files.get('planilha')
     mes = request.form.get('mes') or ''
-    if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
+    if not _planilha_ok(arquivo):
         flash('Escolha uma planilha .xlsx.', 'erro')
         return redirect(url_for(f'admin_{chave}'))
     # SIMAQ e Produção: o mês é opcional (sem ele, vale a coluna Mês de cada linha da planilha)
@@ -735,7 +756,7 @@ def admin_lancamento_importar(chave):
 def admin_simaq_importar_coleta():
     arquivo = request.files.get('planilha')
     mes = request.form.get('mes') or ''
-    if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
+    if not _planilha_ok(arquivo):
         flash('Escolha a planilha de coleta do SIMAQ (.xlsx).', 'erro')
         return redirect(url_for('admin_simaq'))
     if mes and not _mes_valido(mes):  # sem mês: vale a competência da planilha
@@ -793,7 +814,7 @@ def admin_financeiro_importar(tipo):
         abort(404)
     arquivo = request.files.get('planilha')
     nome = arquivo.filename if arquivo else ''
-    if not nome or not nome.lower().endswith(financeiro.EXTENSOES):
+    if not _planilha_ok(arquivo, financeiro.EXTENSOES):
         flash('Escolha a planilha exportada do SIAFE (.xls ou .xlsx).', 'erro')
         return redirect(url_for('admin_financeiro'))
     if not banco_painel.pronto():
@@ -920,7 +941,7 @@ def admin_custos_importar_geral():
     arquivo = request.files.get('planilha')
     mes = request.form.get('mes') or ''
     erro = None
-    if not arquivo or not arquivo.filename.lower().endswith('.xlsx'):
+    if not _planilha_ok(arquivo):
         erro = 'Escolha a planilha do setor de custos (.xlsx).'
     elif not _mes_valido(mes):
         erro = 'Informe o mês de referência da planilha.'

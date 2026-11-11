@@ -9,7 +9,7 @@
         <title>Indicadores SIMAQ</title>
         <base href="./">
         <link rel="shortcut icon" href="favicon.ico" type="image/x-icon">
-        <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+        <script src="https://cdn.plot.ly/plotly-1.58.5.min.js" integrity="sha384-W7FXNbEY44RgDK8MunBe4gETSKi3Qo2bJAXX3PH8v5l3hdabFb9dbCIn3X69OFjX" crossorigin="anonymous"></script>
         {{ recursos() }}
 </head>
         <body class="pg-indicadores">
@@ -92,8 +92,8 @@
             });
 
             // Dados carregados do Flask
-            const dadosIndicadores = JSON.parse('{{ dados_json|tojson|safe }}') || [];
-            const metasMensais = JSON.parse('{{ metas_json|tojson|safe }}') || [];
+            const dadosIndicadores = {{ dados_json|tojson }} || [];
+            const metasMensais = {{ metas_json|tojson }} || [];
             // % ou ‰ de cada indicador: percentuais vêm em fração (0,0855) e aparecem ×100 (8,55%);
             // a densidade de infecção (fator 1000) já vem por mil
             const unidades = {{ unidades|tojson }};

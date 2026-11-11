@@ -214,7 +214,7 @@
             Object.keys(grupos).sort().forEach((clinica, grupo) => {
                 const g = grupos[clinica];
                 html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
-                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${clinica}</td>
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${escHtml(clinica)}</td>
                     <td style="text-align:left;color:#007C6B;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
                 </tr>`;
                 Object.entries(g.exames)
@@ -222,7 +222,7 @@
                     .forEach(([exame, v]) => {
                         html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
                             <td></td>
-                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                            <td style="text-align:left;">${escHtml(exame)}</td>${celulas(v)}
                         </tr>`;
                     });
             });
@@ -265,8 +265,8 @@
                 }
                 const max = Math.max(...itens.map(x => x.sem));
                 el.innerHTML = itens.map(x => `
-                    <div class="barra-linha" title="${x.nome}: ${formatarNumero(x.sem)} de ${formatarNumero(x.solicitados)} solicitados não cancelados">
-                        <span class="barra-nome">${x.nome}</span>
+                    <div class="barra-linha" title="${escHtml(x.nome)}: ${formatarNumero(x.sem)} de ${formatarNumero(x.solicitados)} solicitados não cancelados">
+                        <span class="barra-nome">${escHtml(x.nome)}</span>
                         <span class="barra-trilho"><span class="barra-valor" style="width:${(x.sem / max * 100).toFixed(1)}%"></span></span>
                         <span class="barra-num">${formatarNumero(x.sem)} <small>(${pct(x.sem, x.solicitados)})</small></span>
                     </div>`).join('');
@@ -313,7 +313,7 @@
             Object.keys(grupos).sort().forEach((classificacao, grupo) => {
                 const g = grupos[classificacao];
                 html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
-                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${escHtml(classificacao)}</td>
                     <td style="text-align:left;color:#007C6B;">${Object.keys(g.exames).length} exames</td>${celulas(g.total)}
                 </tr>`;
                 // exames do grupo, do mais solicitado para o menos
@@ -322,7 +322,7 @@
                     .forEach(([exame, v]) => {
                         html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
                             <td></td>
-                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                            <td style="text-align:left;">${escHtml(exame)}</td>${celulas(v)}
                         </tr>`;
                     });
             });

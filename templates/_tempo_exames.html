@@ -91,7 +91,7 @@
                 const exames = Object.entries(g.exames).filter(([, v]) => v.realizados > 0);
                 if (exames.length === 0) return;  // classificação sem realização nem baixa
                 html += `<tr class="clinica-toggle-row" data-grupo="${grupo}" style="background:#E0F3F3;font-weight:bold;">
-                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${classificacao}</td>
+                    <td style="text-align:left;color:#007C6B;"><span class="toggle-icon">▶</span> ${escHtml(classificacao)}</td>
                     <td style="text-align:left;color:#007C6B;">${exames.length} exames</td>${celulas(g.total)}
                 </tr>`;
                 exames
@@ -99,7 +99,7 @@
                     .forEach(([exame, v]) => {
                         html += `<tr class="clinica-exame-row" data-grupo="${grupo}" style="display:none;">
                             <td></td>
-                            <td style="text-align:left;">${exame}</td>${celulas(v)}
+                            <td style="text-align:left;">${escHtml(exame)}</td>${celulas(v)}
                         </tr>`;
                     });
             });

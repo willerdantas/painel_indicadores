@@ -28,7 +28,14 @@ um aviso no log ("[ambulatorio] consulta ... levou").
 Horário e tempo das consultas: vêm do registro do atendimento médico
 (t_internacao_atendimento), com a data (dat_ini/dat_fim) e a hora em texto
 "HH:MM" (dsc_hor_ini/dsc_hor_fim) de início e de fim. Só a consulta realizada
-tem esse registro (falta e cancelamento não). A tabela não tem índice em
+tem esse registro (falta e cancelamento não).
+
+Consulta realizada = atendimento com status CONCLUÍDO ou ALTA AMBULATORIAL
+(realizada()). Os gráficos e tabelas (por dia, especialidade, sexo, idade,
+prontuário, macrorregião, município, dia da semana, tipo de consulta,
+horário e tempo) contam só essas; os cards de atendimento (total, média
+diária, concluídos, faltas, absenteísmo, especialidades) e o gráfico por
+status contam todos. A tabela não tem índice em
 dat_ini nem em isn_internacao (leitura inteira, ~1 s). A especialidade de
 cada consulta vem dos atendimentos já lidos; não buscar a marcação consulta
 a consulta no banco: sem o índice em t_marcacao.isn_internacao, isso lia a
@@ -222,6 +229,13 @@ _HORA_VALIDA = "'^([01]?[0-9]|2[0-3]):[0-5][0-9]$'"
 _MINUTOS_MAXIMO = 12 * 60  # consulta mais longa que isso é erro de digitação da hora
 _SEM_PERFIL = ('Sem especialidade', 'Sem marcação', 'Não informado', 'Sem município')
 
+# status (t_marcacao_situacao) da consulta realizada
+STATUS_REALIZADA = ('CONCLUÍDO', 'ALTA AMBULATORIAL')
+
+
+def realizada(status):
+    return (status or '').strip().upper() in STATUS_REALIZADA
+
 
 def _perfil_atendimentos(internacoes):
     """{isn_internacao: (especialidade, status, sexo, município)} de
@@ -391,8 +405,9 @@ def nome_tipo_consulta(codigo, nomes):
 
 
 def por_tipo_especialidade(visitas, nomes, especialidade=None, status=None):
-    """Atendimentos por especialidade × tipo de consulta. "tipos": colunas,
-    do tipo com mais atendimentos para o com menos; "linhas": uma por
+    """Atendimentos por especialidade × tipo de consulta (as páginas passam só
+    as consultas realizadas). "tipos": colunas, do tipo com mais atendimentos
+    para o com menos; "linhas": uma por
     especialidade (da maior para a menor), com um valor por tipo e o total;
     "total": a soma de cada coluna."""
     contagem = {}
@@ -612,14 +627,21 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         and (filtro is None or filtro(r["sexo"], r["municipio"]))
     ]
 
+    # gráficos (por dia, especialidade, dia da semana...): só as consultas
+    # realizadas; os cards e o gráfico por status contam todos os atendimentos
+    realizadas = [r for r in linhas if realizada(r["status"])]
+
     dias = [dt_ini + timedelta(days=i) for i in range((dt_fim - dt_ini).days + 1)]
     idx_dia = {d: i for i, d in enumerate(dias)}
-    por_dia = [0] * len(dias)
+    atend_dia = [0] * len(dias)
     for r in linhas:
+        atend_dia[idx_dia[r["dia"]]] += r["qtd"]
+    por_dia = [0] * len(dias)
+    for r in realizadas:
         por_dia[idx_dia[r["dia"]]] += r["qtd"]
 
     # horário: início da consulta registrado no atendimento médico
-    consultas = _consultas_periodo(dt_ini, dt_fim)
+    consultas = [c for c in _consultas_periodo(dt_ini, dt_fim) if realizada(c[1])]
     if filtro is not None:
         consultas = [c for c in consultas if filtro(c[4], c[5])]
     por_hora = [0] * 24
@@ -635,6 +657,7 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
     for r in resumo:
         if r["qtd"]:
             atendeu[idx_dia[r["dia"]]] = True
+    atend_dia_util = [qtd for qtd, aberto in zip(atend_dia, atendeu) if aberto]
     por_dia_util = [qtd for qtd, aberto in zip(por_dia, atendeu) if aberto]
 
     totais_semana = [0] * 7
@@ -645,11 +668,11 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
             ocorrencias_semana[d.weekday()] += 1
 
     por_status = _contar(linhas, "status")
-    visitas = _visitas_periodo(dt_ini, dt_fim)
+    visitas = [v for v in _visitas_periodo(dt_ini, dt_fim) if realizada(v[2])]
     if filtro is not None:
         visitas = [v for v in visitas if filtro(v[5], v[4])]
     prontuario_linhas, prontuario_total = por_prontuario(visitas, especialidade, status)
-    total = sum(por_dia)
+    total = sum(atend_dia)
     qtd_status = {x["nome"].upper(): x["qtd"] for x in por_status}
     altas = qtd_status.get("ALTA AMBULATORIAL", 0)
     concluidos = qtd_status.get("CONCLUÍDO", 0) + altas
@@ -659,9 +682,9 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         "opcoes": opcoes,
         "kpis": {
             "total": total,
-            "media_diaria": round(total / len(por_dia_util), 1) if por_dia_util else None,
-            "dias_com_atendimento": len(por_dia_util),
-            "dias_sem_atendimento": len(dias) - len(por_dia_util),
+            "media_diaria": round(total / len(atend_dia_util), 1) if atend_dia_util else None,
+            "dias_com_atendimento": len(atend_dia_util),
+            "dias_sem_atendimento": len(dias) - len(atend_dia_util),
             "concluidos": concluidos,
             "altas": altas,
             "taxa_alta": round(altas / total * 100, 1) if total else None,
@@ -671,6 +694,7 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         },
         "dias": [d.strftime("%d/%m/%Y") for d in dias],
         "por_dia": por_dia,
+        "media_diaria": round(sum(por_dia) / len(por_dia_util), 1) if por_dia_util else None,
         "mediana_diaria": round(statistics.median(por_dia_util), 1) if por_dia_util else None,
         "dias_semana": _DIAS_SEMANA,
         "por_dia_semana": totais_semana,
@@ -680,7 +704,7 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         "horas": [f"{h:02d}h" for h in range(24)],
         "por_hora": por_hora,
         "tempo_consulta": tempo_consulta(consultas, especialidade, status),
-        "por_especialidade": _contar(linhas, "especialidade"),
+        "por_especialidade": _contar(realizadas, "especialidade"),
         "por_status": por_status,
         "por_prontuario": prontuario_linhas,
         "por_prontuario_total": prontuario_total,
@@ -703,12 +727,11 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
 CAMPOS_MENSAL = [
     ("atendimentos", "Atendimentos", "qtd"),
     ("media_diaria", "Média Diária de Atendimentos", "por dia com atendimento"),
-    ("prontuarios", "Prontuários Únicos", "qtd"),
-    ("por_prontuario", "Atendimentos por Prontuário", "atend./prontuário"),
-    ("concluidos", "Concluídos (concluído + alta)", "qtd"),
+    ("prontuarios", "Prontuários Únicos (consultas realizadas)", "qtd"),
+    ("por_prontuario", "Consultas Realizadas por Prontuário", "consultas/prontuário"),
     ("taxa_alta", "Taxa de Alta Ambulatorial", "%"),
     ("taxa_absenteismo", "Taxa de Absenteísmo", "%"),
-    ("consultas", "Consultas Realizadas (atendimento médico)", "qtd"),
+    ("consultas", "Consultas Realizadas (concluído + alta)", "qtd"),
     ("tempo_medio", "Tempo Médio por Consulta", "min"),
     ("tempo_mediano", "Tempo Mediano por Consulta", "min"),
     ("especialidades", "Especialidades com Atendimento", "qtd"),
@@ -765,7 +788,7 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         "atendimentos": atend,
         "media_diaria": [round(a / len(d), 1) if d else None for a, d in zip(atend, c["dias_abertos"])],
         "prontuarios": [len(p) for p in c["pacientes"]],
-        "por_prontuario": [round(a / len(p), 2) if p else None for a, p in zip(atend, c["pacientes"])],
+        "por_prontuario": [round(q / len(p), 2) if p else None for q, p in zip(c["consultas"], c["pacientes"])],
         "concluidos": [x + a for x, a in zip(do_status("CONCLUÍDO"), altas)],
         "altas": altas,
         "faltas": faltas,
@@ -780,7 +803,7 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         "macrorregiao": _series(c["macrorregiao"]),
         "tipo_consulta": tipos,
         "tipo_especialidade": por_tipo_especialidade(
-            [v for v in visitas if passa(v[1], v[5], v[4])], nomes_tipo),
+            [v for v in visitas if passa(v[1], v[5], v[4]) and realizada(v[2])], nomes_tipo),
         # opções dos filtros: tudo o que aparece nos meses (sem filtro aplicado)
         "opcoes": {
             "especialidades": sorted({v[1] for v in visitas}),
@@ -794,16 +817,17 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         chave = "atendimentos_status_" + s["nome"]
         dados[chave] = s["valores"]
         campos.insert(campos.index(CAMPOS_MENSAL[0]) + 1 + status.index(s), (chave, s["nome"].capitalize(), "qtd"))
-    campos += _campos_tipo_especialidade(dados, atend, tipos, c["especialidade_tipo"])
+    campos += _campos_tipo_especialidade(dados, c["consultas"], tipos, c["especialidade_tipo"])
     dados["_campos"] = campos
     return dados
 
 
 def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_municipio, por_ano=False):
     """Contagens de get_mensal, um valor por mês (por ano, com por_ano):
-    atendimentos, prontuários e especialidades (conjuntos), por status, sexo,
-    macrorregião, tipo de consulta e especialidade × tipo; consultas e minutos
-    de cada consulta. dias_abertos: dias em que o ambulatório atendeu (sem os
+    atendimentos, especialidades (conjunto) e por status (todos os status);
+    consultas realizadas (pela data do atendimento), prontuários (conjunto),
+    por sexo, macrorregião, tipo de consulta e especialidade × tipo; minutos de cada consulta realizada (pelo
+    início do atendimento médico). dias_abertos: dias em que o ambulatório atendeu (sem os
     filtros de passa)."""
     n = len(meses)
 
@@ -826,20 +850,21 @@ def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_mun
             continue
         c["atendimentos"][i] += 1
         c["especialidades"][i].add(esp)
-        if paciente is not None:
-            c["pacientes"][i].add(paciente)
-        tipo = nome_tipo_consulta(cod_tipo, nomes_tipo)
         c["status"].setdefault(st, serie())[i] += 1
-        c["sexo"].setdefault(sx, serie())[i] += 1
-        c["macrorregiao"].setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
-        c["tipo"].setdefault(tipo, serie())[i] += 1
-        c["especialidade_tipo"].setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
+        if realizada(st):
+            tipo = nome_tipo_consulta(cod_tipo, nomes_tipo)
+            c["consultas"][i] += 1
+            if paciente is not None:
+                c["pacientes"][i].add(paciente)
+            c["sexo"].setdefault(sx, serie())[i] += 1
+            c["macrorregiao"].setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
+            c["tipo"].setdefault(tipo, serie())[i] += 1
+            c["especialidade_tipo"].setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
 
-    for esp, _, _, mins, sx, mun, dia in consultas:
+    for esp, st, _, mins, sx, mun, dia in consultas:
         i = idx.get(chave(dia))
-        if i is None or not passa(esp, sx, mun):
+        if i is None or not passa(esp, sx, mun) or not realizada(st):
             continue
-        c["consultas"][i] += 1
         if mins is not None:
             c["minutos"][i].append(mins)
     return c
@@ -864,21 +889,21 @@ def _campos_tipo_especialidade(dados, atend, tipos, por_esp_tipo):
     dos seus tipos (5º elemento True: detalhe recuado). Grava as séries em
     dados e devolve os campos."""
     g = GRUPO_TIPO_ESPECIALIDADE
-    campos = [("tipoesp_total", "Total do ambulatório", "atendimentos", g, False)]
+    campos = [("tipoesp_total", "Total do ambulatório", "consultas", g, False)]
     dados["tipoesp_total"] = atend
     for t in tipos:
         chave = "tipoesp_total_tipo_" + t["nome"]
         dados[chave] = t["valores"]
-        campos.append((chave, t["nome"], "atendimentos", g, True))
+        campos.append((chave, t["nome"], "consultas", g, True))
     ordem_tipo = [t["nome"] for t in tipos]
     totais = {e: [sum(v) for v in zip(*por_tipo.values())] for e, por_tipo in por_esp_tipo.items()}
     for esp in sorted(totais, key=lambda e: (-sum(totais[e]), e)):
         chave = "tipoesp_esp_" + esp
         dados[chave] = totais[esp]
-        campos.append((chave, esp, "atendimentos", g, False))
+        campos.append((chave, esp, "consultas", g, False))
         for t in ordem_tipo:
             if t in por_esp_tipo[esp]:
                 chave_tipo = f"{chave}_tipo_{t}"
                 dados[chave_tipo] = por_esp_tipo[esp][t]
-                campos.append((chave_tipo, t, "atendimentos", g, True))
+                campos.append((chave_tipo, t, "consultas", g, True))
     return campos

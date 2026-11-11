@@ -9,7 +9,7 @@
 <script>
   // Fallback: se o arquivo local não carregar (404/rede), busca do CDN.
   if (typeof Chart === 'undefined') {
-    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"><\/script>');
+    document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"><\/script>');
   }
 </script>
     {{ recursos() }}
@@ -104,15 +104,17 @@
     <h2 class="section-title">Gráficos</h2>
     <div class="graf-grid">
       <div class="graf-card full">
-        <h3>Atendimentos por dia</h3>
+        <h3>Consultas realizadas por dia</h3>
+        <div class="nota">Consultas realizadas: status concluído ou alta ambulatorial. Os gráficos abaixo contam só essas;
+          os cards acima e o gráfico por status contam todos os atendimentos.</div>
         <div class="chart-box"><canvas id="chart_dia"></canvas></div>
       </div>
       <div class="graf-card full">
-        <h3>Atendimentos por especialidade</h3>
+        <h3>Consultas realizadas por especialidade</h3>
         <div class="rolagem-grafico"><div class="chart-box" id="box_especialidade"><canvas id="chart_especialidade"></canvas></div></div>
       </div>
       <div class="graf-card full">
-        <h3>Atendimentos por sexo e por especialidade</h3>
+        <h3>Consultas realizadas por sexo e por especialidade</h3>
         <div class="nota" id="sexo_resumo"></div>
         <div class="por-sexo">
           <div class="chart-box" style="height:260px;"><canvas id="chart_sexo"></canvas></div>
@@ -120,49 +122,49 @@
         </div>
       </div>
       <div class="graf-card full">
-        <h3>Atendimentos por idade</h3>
+        <h3>Consultas realizadas por idade</h3>
         <div class="nota" id="idade_resumo"></div>
         <div class="chart-box" style="height:340px;"><canvas id="chart_idade"></canvas></div>
       </div>
       <div class="graf-card full">
-        <h3>Atendimentos por prontuário único, por especialidade</h3>
+        <h3>Consultas realizadas por prontuário único, por especialidade</h3>
         <div class="tabela-info tabela-prontuario">
           <table class="tabela">
             <thead><tr>
               <th>Especialidade</th>
-              <th class="num">Atendimentos</th>
+              <th class="num">Consultas</th>
               <th class="num">Prontuários únicos</th>
-              <th class="num" title="Atendimentos ÷ prontuários únicos">Atend. por prontuário</th>
-              <th class="num" title="Prontuários com mais de um atendimento na especialidade no período">Prontuários com retorno</th>
-              <th class="num" title="Média, em meses, entre atendimentos seguidos do mesmo paciente na especialidade">Intervalo médio (meses)</th>
+              <th class="num" title="Consultas ÷ prontuários únicos">Consultas por prontuário</th>
+              <th class="num" title="Prontuários com mais de uma consulta realizada na especialidade no período">Prontuários com retorno</th>
+              <th class="num" title="Média, em meses, entre consultas seguidas do mesmo paciente na especialidade">Intervalo médio (meses)</th>
             </tr></thead>
             <tbody id="tb_prontuario"></tbody>
           </table>
         </div>
-        <div class="nota">Intervalo médio: tempo entre atendimentos seguidos do mesmo paciente na mesma especialidade, só dentro
+        <div class="nota">Intervalo médio: tempo entre consultas seguidas do mesmo paciente na mesma especialidade, só dentro
           do período escolhido (períodos curtos mostram poucos retornos). No total, o prontuário que passou em mais de uma
           especialidade conta uma vez.</div>
       </div>
       <div class="graf-card full">
-        <h3>Consultas por tipo de consulta e por especialidade</h3>
+        <h3>Consultas realizadas (concluído + alta) por tipo de consulta e por especialidade</h3>
         <div class="tabela-info tabela-prontuario">
           <table class="tabela">
             <thead id="th_tipo"></thead>
             <tbody id="tb_tipo"></tbody>
           </table>
         </div>
-        <div class="nota">Atendimentos agendados no período pelo tipo de consulta da marcação. Os nomes vêm do cadastro
+        <div class="nota">Consultas realizadas no período pelo tipo de consulta da marcação. Os nomes vêm do cadastro
           Tipos de Consulta, na área restrita; código sem nome no cadastro aparece como "Código N".</div>
       </div>
       <div class="graf-card full">
-        <h3>Atendimentos por macrorregião de saúde</h3>
+        <h3>Consultas realizadas por macrorregião de saúde</h3>
         <div class="nota">Municípios agrupados pelo cadastro Regiões de Saúde (Ceará), na área restrita.</div>
         <div class="municipios">
           <div class="chart-box" id="box_macro" style="height:240px;"><canvas id="chart_macro"></canvas></div>
           <div class="tabela-info tabela-municipio">
             <table class="tabela">
               <thead><tr>
-                <th>Macrorregião</th><th class="num">Atendimentos</th><th class="num">%</th>
+                <th>Macrorregião</th><th class="num">Consultas</th><th class="num">%</th>
                 <th class="num" title="Prontuários únicos">Prontuários</th>
               </tr></thead>
               <tbody id="tb_macro"></tbody>
@@ -171,14 +173,14 @@
         </div>
       </div>
       <div class="graf-card full">
-        <h3>Atendimentos por município</h3>
+        <h3>Consultas realizadas por município</h3>
         <div class="nota" id="municipio_resumo"></div>
         <div class="municipios">
           <div class="chart-box" id="box_municipio"><canvas id="chart_municipio"></canvas></div>
           <div class="tabela-info tabela-municipio">
             <table class="tabela">
               <thead><tr>
-                <th>Município</th><th class="num">Atendimentos</th><th class="num">%</th>
+                <th>Município</th><th class="num">Consultas</th><th class="num">%</th>
                 <th class="num" title="Prontuários únicos">Prontuários</th>
               </tr></thead>
               <tbody id="tb_municipio"></tbody>
@@ -191,7 +193,7 @@
         <div class="chart-box"><canvas id="chart_status"></canvas></div>
       </div>
       <div class="graf-card">
-        <h3>Atendimentos por dia da semana</h3>
+        <h3>Consultas realizadas por dia da semana</h3>
         <div class="chart-box"><canvas id="chart_semana"></canvas></div>
       </div>
       {# carregado à parte (consulta mais pesada), depois dos demais gráficos #}
@@ -201,7 +203,7 @@
         <div class="rolagem-grafico"><div class="chart-box" id="box_salas"><canvas id="chart_salas"></canvas></div></div>
       </div>
       <div class="graf-card full">
-        <h3>Consultas por horário de início</h3>
+        <h3>Consultas realizadas por horário de início</h3>
         <div class="nota">Hora de início registrada no atendimento médico. Só a consulta realizada tem esse registro
           (falta e cancelamento não entram).</div>
         <div class="chart-box"><canvas id="chart_hora"></canvas></div>
@@ -307,13 +309,13 @@ Chart.register({
   }
 });
 
-function barrasHorizontais(id, itens, cor) {
+function barrasHorizontais(id, itens, cor, rotulo = 'Consultas realizadas') {
   novoGrafico(id, {
     type: 'bar',
     data: {
       labels: itens.map(x => x.nome),
       datasets: [{
-        label: 'Atendimentos', data: itens.map(x => x.qtd),
+        label: rotulo, data: itens.map(x => x.qtd),
         backgroundColor: itens.map(x => (CORES_STATUS[x.nome] || cor) + 'cc'),
         borderColor: itens.map(x => CORES_STATUS[x.nome] || cor), borderWidth: 1, borderRadius: 3
       }]
@@ -358,8 +360,8 @@ const pluginPercentual = {
 function renderSexo(s) {
   const total = s.total.reduce((t, x) => t + x.qtd, 0);
   document.getElementById('sexo_resumo').textContent = total
-    ? s.total.map(x => `${x.nome}: ${fmt(x.qtd)} atendimentos (${pct(x.qtd / total)}), ${fmt(x.prontuarios)} prontuários`).join(' · ')
-    : 'Nenhum atendimento no período.';
+    ? s.total.map(x => `${x.nome}: ${fmt(x.qtd)} consultas (${pct(x.qtd / total)}), ${fmt(x.prontuarios)} prontuários`).join(' · ')
+    : 'Nenhuma consulta realizada no período.';
   novoGrafico('chart_sexo', {
     type: 'doughnut',
     data: {
@@ -417,14 +419,14 @@ function renderIdade(r) {
   document.getElementById('idade_resumo').textContent = total
     ? (r.media !== null ? `Idade média: ${dec1(r.media)} anos · mediana: ${dec1(r.mediana)} anos. ` : '')
       + 'Idade em anos completos na data do atendimento.'
-    : 'Nenhum atendimento no período.';
+    : 'Nenhuma consulta realizada no período.';
   const cor = x => x.nome === 'Não informada' ? '#9aa7ab' : '#0F9688';
   novoGrafico('chart_idade', {
     type: 'bar',
     data: {
       labels: r.idades.map(x => x.nome),
       datasets: [{
-        label: 'Atendimentos', data: r.idades.map(x => x.qtd),
+        label: 'Consultas', data: r.idades.map(x => x.qtd),
         backgroundColor: r.idades.map(x => cor(x) + 'cc'), borderColor: r.idades.map(cor),
         borderWidth: 1, borderRadius: 2, categoryPercentage: 0.9, barPercentage: 0.9
       }]
@@ -438,7 +440,7 @@ function renderIdade(r) {
         tooltip: { callbacks: {
           title: items => items[0].label === 'Não informada' ? items[0].label
             : items[0].label + (items[0].label === '1' ? ' ano' : ' anos'),
-          label: ctx => ` Atendimentos: ${fmt(ctx.parsed.y)} (${pct(total ? ctx.parsed.y / total : 0)})`,
+          label: ctx => ` Consultas: ${fmt(ctx.parsed.y)} (${pct(total ? ctx.parsed.y / total : 0)})`,
           afterLabel: ctx => ` Prontuários únicos: ${fmt(r.idades[ctx.dataIndex].prontuarios)}`
         } }
       },
@@ -510,13 +512,13 @@ function render(d) {
     k.taxa_absenteismo !== null ? `absenteísmo: ${fmt(k.taxa_absenteismo)}%` : '—';
   document.getElementById('k_especialidades').textContent = fmt(k.especialidades);
 
-  const media = k.media_diaria;
+  const media = d.media_diaria;  // das consultas realizadas (o card é de todos os atendimentos)
   novoGrafico('chart_dia', {
     type: 'line',
     data: {
       labels: d.dias,
       datasets: [{
-        label: 'Atendimentos', data: d.por_dia,
+        label: 'Consultas realizadas', data: d.por_dia,
         borderColor: '#00B2C9', backgroundColor: 'rgba(0,178,201,.12)',
         borderWidth: 2, pointRadius: d.dias.length > 62 ? 0 : 3, pointHoverRadius: 5,
         tension: 0.25, fill: true, order: 2
@@ -552,7 +554,7 @@ function render(d) {
   document.getElementById('box_especialidade').style.height =
     Math.max(300, d.por_especialidade.length * 22 + 40) + 'px';
   barrasHorizontais('chart_especialidade', d.por_especialidade, '#2E758C');
-  barrasHorizontais('chart_status', d.por_status, '#6b7f86');
+  barrasHorizontais('chart_status', d.por_status, '#6b7f86', 'Atendimentos');
   renderSexo(d.por_sexo);
   renderIdade(d.por_idade);
   renderTempo(d.tempo_consulta);
@@ -573,15 +575,15 @@ function render(d) {
       <td>${esc(m.nome)}</td><td class="num">${fmt(m.qtd)}</td>
       <td class="num">${dec(totalMacro ? m.qtd / totalMacro * 100 : null, 1)}</td><td class="num">${fmt(m.prontuarios)}</td></tr>`).join('')
     + (macros.length ? `<tr class="total"><td>Total</td><td class="num">${fmt(totalMacro)}</td><td class="num">100,0</td>
-      <td class="num">${fmt(d.por_prontuario_total.prontuarios)}</td></tr>` : '<tr><td colspan="4">Nenhum atendimento no período.</td></tr>');
+      <td class="num">${fmt(d.por_prontuario_total.prontuarios)}</td></tr>` : '<tr><td colspan="4">Nenhuma consulta realizada no período.</td></tr>');
 
   // por município: gráfico com os 15 maiores e tabela com todos
   const municipios = d.por_municipio;
   const totalMun = municipios.reduce((s, m) => s + m.qtd, 0);
   const top = municipios.slice(0, 15);
   document.getElementById('municipio_resumo').textContent = municipios.length
-    ? `${fmt(municipios.length)} municípios no período` + (municipios.length > 15 ? '; o gráfico mostra os 15 com mais atendimentos.' : '.')
-    : 'Nenhum atendimento no período.';
+    ? `${fmt(municipios.length)} municípios no período` + (municipios.length > 15 ? '; o gráfico mostra os 15 com mais consultas.' : '.')
+    : 'Nenhuma consulta realizada no período.';
   document.getElementById('box_municipio').style.height = Math.max(200, top.length * 24 + 40) + 'px';
   barrasHorizontais('chart_municipio', top, '#00A1A2');
   document.getElementById('tb_municipio').innerHTML = municipios.map(m => `<tr>
@@ -592,7 +594,7 @@ function render(d) {
 
   document.getElementById('tb_prontuario').innerHTML = d.por_prontuario.length
     ? d.por_prontuario.map(l => linhaProntuario(l)).join('') + linhaProntuario(d.por_prontuario_total, 'total')
-    : '<tr><td colspan="6">Nenhum atendimento no período.</td></tr>';
+    : '<tr><td colspan="6">Nenhuma consulta realizada no período.</td></tr>';
 
   // especialidade × tipo de consulta (nomes do banco e do cadastro: escapados)
   const pt = d.por_tipo_consulta;
@@ -610,7 +612,7 @@ function render(d) {
     data: {
       labels: d.dias_semana,
       datasets: [{
-        label: 'Atendimentos', data: d.por_dia_semana,
+        label: 'Consultas realizadas', data: d.por_dia_semana,
         backgroundColor: '#3BB5A3cc', borderColor: '#3BB5A3', borderWidth: 1, borderRadius: 4
       }]
     },
