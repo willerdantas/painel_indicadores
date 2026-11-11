@@ -1,5 +1,5 @@
 from psycopg2.extras import RealDictCursor
-from flask import Flask, render_template, jsonify, request, send_file, copy_current_request_context
+from flask import Flask, render_template, jsonify, request, send_file, copy_current_request_context, url_for
 import secrets
 import pandas as pd
 import os
@@ -174,6 +174,82 @@ def calcular_kpis(df):
 def index():
     # Página inicial do painel (menu de dashboards; páginas ocultas em /admin/banco ficam de fora)
     return render_template('index.html', cartoes=paginas_visiveis.visiveis())
+
+
+# Gráficos da apresentação, por página (chaves de paginas_visiveis), na ordem
+# em que aparecem: (id, título, seletor CSS do cartão na página). O seletor
+# acha o cartão pelo elemento que só ele tem; uma tupla de seletores junta
+# as partes numa tela só, uma abaixo da outra. Ao mudar o layout de uma
+# página, ajuste aqui.
+GRAFICOS_APRESENTACAO = {
+    'lean': [
+        ('hospitalares', 'Indicadores Hospitalares', '#kpis .kpis:not(.kpis-emergencia)'),
+        ('emergencia', 'Indicadores da Emergência', '#kpis .kpis-emergencia'),
+    ],
+    'hospitalares': [
+        ('indicadores', 'Indicadores Hospitalares', '#kpis'),
+        ('internacoes_dia', 'Internações por dia', '.graf-card:has(#chart_internacoes_dia)'),
+        ('saidas_dia', 'Saídas por dia e destino', '.graf-card:has(#chart_saidas_dia)'),
+        ('saidas_hora', 'Saídas por horário e por dia da semana',
+         ('.graf-card:has(#chart_saidas_hora)', '.graf-card:has(#chart_saidas_semana)')),
+        ('procedencia', 'Internações por dia e procedência', '.graf-card:has(#chart_procedencia_dia)'),
+        ('cid', 'Internações e saídas por CID', '.graf-card:has(#caixa_cid_destino)'),
+    ],
+    'emergencia': [
+        ('indicadores', 'Indicadores da Emergência e atendimentos por dia',
+         ('#kpis', '.card:has(#chart_atend_dia)')),
+        ('atend_hora', 'Atendimentos por horário e por dia da semana',
+         ('.card:has(#chart_atend_hora)', '.card:has(#chart_atend_semana)')),
+        ('risco', 'Atendimentos por classificação de risco', '.card:has(#resumo_classificados)'),
+        ('macro', 'Atendimentos por macrorregião de saúde e por município',
+         ('#atendimentos .card:has(#box_macro)', '#atendimentos .card:has(#municipio_resumo)')),
+        ('procedencia', 'Atendimentos por dia e procedência', '.card:has(#chart_atend_procedencia)'),
+        ('cid_risco', 'Atendimentos por CID e classificação de risco', '.card:has(#cid_risco_resumo)'),
+        ('clinica_risco', 'Internados pela emergência: primeira clínica x classificação de risco',
+         '.card:has(#box_clinica_risco)'),
+        ('saidas_dia', 'Saídas por dia e destino', '#saidas .card:has(#chart_saidas_dia)'),
+        ('conversao', 'Taxa de conversão', '.card:has(#chart_taxa_conversao)'),
+        ('acima_24h', 'Pacientes acima de 24 h na emergência', '.card:has(#chart_acima_24h)'),
+        ('perc_24h', '% de pacientes acima de 24 h na emergência', '.card:has(#resumo_perc_24h)'),
+    ],
+    'exames': [
+        ('totais', 'Totais do período e médias por dia', ('.kpi-container:not(.medias)', '.kpi-container.medias')),
+        ('total_exame', 'Total por exame (por classificação)', '.chart-container:has(#tabela-exames-classificacao)'),
+        ('tempo', 'Tempo do exame até a realização ou baixa', '.chart-container:has(.tempo-exames)'),
+        ('sem_agendamento', 'Exames sem data de agendamento',
+         '.chart-container:has(#barras-sem-agend-classificacao)'),
+        ('resumo', 'Resumo por clínica e exame', '.chart-container:has(#tabela-detalhe)'),
+    ],
+    'ambulatorio': [
+        ('indicadores', 'Atendimentos do Ambulatório e consultas realizadas por dia',
+         ('#kpis', '.graf-card:has(#chart_dia)')),
+        ('especialidade', 'Consultas realizadas por especialidade', '.graf-card:has(#box_especialidade)'),
+        ('sexo', 'Consultas realizadas por sexo e por especialidade', '.graf-card:has(#sexo_resumo)'),
+        ('idade', 'Consultas realizadas por idade', '.graf-card:has(#idade_resumo)'),
+        ('prontuario', 'Consultas realizadas por prontuário único', '.graf-card:has(#tb_prontuario)'),
+        ('tipo', 'Consultas realizadas por tipo de consulta e especialidade', '.graf-card:has(#th_tipo)'),
+        ('macro', 'Consultas realizadas por macrorregião de saúde e por município',
+         ('.graf-card:has(#box_macro)', '.graf-card:has(#municipio_resumo)')),
+        ('status', 'Atendimentos por status', '.graf-card:has(#chart_status)'),
+        ('semana', 'Consultas realizadas por dia da semana e por horário de início',
+         ('.graf-card:has(#chart_semana)', '.graf-card:has(#chart_hora)')),
+        ('salas', 'Consultas por status por sala', '.graf-card:has(#salas_aviso)'),
+        ('tempo', 'Tempo médio por consulta, por especialidade', '.graf-card:has(#tempo_resumo)'),
+    ],
+}
+
+
+@app.route('/apresentacao')
+def apresentacao():
+    # Painel de Indicadores Atuais: mostra os gráficos escolhidos um a um
+    # (cada página aberta num quadro da mesma origem); só as páginas visíveis
+    ocultas = paginas_visiveis.ocultas()
+    endpoints = {c: (n, e) for c, n, e, _p in paginas_visiveis.PAGINAS}
+    paginas = [{'chave': c, 'nome': endpoints[c][0], 'url': url_for(endpoints[c][1]),
+                'graficos': [{'id': i, 'titulo': t, 'seletores': [s] if isinstance(s, str) else list(s)}
+                             for i, t, s in graficos]}
+               for c, graficos in GRAFICOS_APRESENTACAO.items() if c not in ocultas]
+    return render_template('apresentacao.html', paginas=paginas)
 
 
 # Login e área restrita (/admin): area_restrita.py

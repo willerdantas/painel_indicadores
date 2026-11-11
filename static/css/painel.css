@@ -1731,3 +1731,40 @@ html { scroll-padding-top: 110px; }
 @media(max-width:600px) {
   .pg-interconsultas-tendencia .chart-container { height: 250px; }
 }
+
+/* Painel de Indicadores Atuais (apresentacao.html) ---------------------------- */
+.pg-apresentacao #apresentacao { display: flex; flex-direction: column; flex: 1 0 auto; background: var(--bg); }
+.pg-apresentacao .wrapper { display: flex; flex-direction: column; flex: 1 0 auto; }
+.pg-apresentacao .apres-paginas { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 1rem 1.5rem; flex: 1 1 100%; min-width: 0; }
+.pg-apresentacao .apres-grupo { display: flex; flex-direction: column; gap: .3rem; margin: 0; padding: 0; border: 0; min-width: 0; }
+.pg-apresentacao .apres-grupo legend { width: 100%; margin-bottom: .35rem; padding: 0 0 .3rem; border-bottom: 1px solid var(--border); }
+.pg-apresentacao .apres-grupo legend .apres-opcao { font-weight: 700; color: var(--green); }
+.pg-apresentacao .apres-opcao { display: flex; align-items: flex-start; gap: .4rem; margin: 0; line-height: 1.3; font-size: .875rem; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--dark); cursor: pointer; }
+.pg-apresentacao .apres-opcao input { flex: 0 0 auto; width: 1rem; height: 1rem; margin: .05rem 0 0; accent-color: var(--primaria); }
+.pg-apresentacao .filter-actions { flex-direction: row; flex-wrap: wrap; align-items: flex-end; gap: .6rem; }
+.pg-apresentacao .apres-legenda { display: flex; flex-wrap: wrap; align-items: baseline; gap: .25rem 1rem; margin-bottom: .6rem; }
+.pg-apresentacao .apres-pagina { font-weight: 700; color: var(--green); text-transform: uppercase; letter-spacing: .05em; font-size: .8rem; }
+.pg-apresentacao .apres-titulo { flex: 1 1 auto; font-size: 1rem; font-weight: 600; color: var(--dark); min-width: 0; }
+.pg-apresentacao .apres-posicao { font-size: .8rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.pg-apresentacao .apres-progresso { flex: 1 0 100%; height: 4px; border-radius: 2px; background: var(--border); overflow: hidden; }
+.pg-apresentacao .apres-progresso div { width: 0; height: 100%; background: var(--primaria); }
+.pg-apresentacao .apres-palco { position: relative; flex: 1 0 auto; min-height: 72vh; border: 1px solid var(--border); border-radius: var(--raio); background: var(--bg); overflow: hidden; }
+.pg-apresentacao .apres-quadro { position: absolute; top: 0; bottom: 0; left: 52px; right: 52px; width: calc(100% - 104px); height: 100%; border: 0; opacity: 0; visibility: hidden; pointer-events: none; transition: opacity .6s ease, visibility 0s linear .6s; }
+.pg-apresentacao .apres-quadro.visivel { opacity: 1; visibility: visible; pointer-events: auto; transition: opacity .6s ease; }
+.pg-apresentacao .apres-aviso { position: absolute; inset: 0; z-index: 1; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 1rem; }
+.pg-apresentacao .apres-aviso[hidden] { display: none; }
+/* setas nas laterais do palco: gráfico anterior e próximo */
+.pg-apresentacao .apres-seta { position: absolute; top: 50%; z-index: 2; transform: translateY(-50%); width: 44px; height: 72px; padding: 0; border: 0; border-radius: 8px; background: rgba(56, 70, 77, .35); color: #fff; font-size: 2.6rem; line-height: 1; cursor: pointer; transition: background .15s, opacity .3s; }
+.pg-apresentacao .apres-seta:hover, .pg-apresentacao .apres-seta:focus-visible { background: var(--primaria); }
+.pg-apresentacao .apres-seta.anterior { left: 4px; }
+.pg-apresentacao .apres-seta.seguinte { right: 4px; }
+/* tela cheia: cabeçalho, legenda e gráficos; sem filtros nem botões (as setas
+   aparecem só com o mouse sobre os gráficos) */
+.pg-apresentacao #apresentacao:fullscreen .apres-seta { opacity: 0; }
+.pg-apresentacao #apresentacao:fullscreen .apres-palco:hover .apres-seta,
+.pg-apresentacao #apresentacao:fullscreen .apres-seta:focus-visible { opacity: 1; }
+.pg-apresentacao #apresentacao:fullscreen { height: 100vh; overflow: hidden; }
+.pg-apresentacao #apresentacao:fullscreen .apres-controles,
+.pg-apresentacao #apresentacao:fullscreen .cabecalho-acoes { display: none; }
+.pg-apresentacao #apresentacao:fullscreen .wrapper { max-width: none; flex: 1 1 auto; min-height: 0; padding: .75rem 1.25rem 1rem; }
+.pg-apresentacao #apresentacao:fullscreen .apres-palco { flex: 1 1 auto; min-height: 0; }

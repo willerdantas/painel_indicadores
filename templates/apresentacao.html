@@ -1,0 +1,479 @@
+{%- from '_layout.html' import recursos, cabecalho, rodape -%}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Painel de Indicadores Atuais</title>
+    {{ recursos() }}
+</head>
+<body class="pg-apresentacao">
+
+{# tela cheia: o cabeçalho, a legenda e os gráficos (filtros e botões ficam de fora) #}
+<div id="apresentacao">
+  {{ cabecalho('Painel de Indicadores Atuais', 'Gráficos dos painéis em apresentação') }}
+
+  <div class="wrapper">
+    <div class="filters apres-controles">
+      {# um grupo por página: a caixa do título marca/desmarca todos os gráficos dela #}
+      <div class="apres-paginas">
+        {% for p in paginas %}
+        <fieldset class="apres-grupo" data-pagina="{{ p.chave }}">
+          <legend><label class="apres-opcao"><input type="checkbox" class="cb-pagina"> {{ p.nome }}</label></legend>
+          {% for g in p.graficos %}
+          <label class="apres-opcao"><input type="checkbox" class="cb-grafico" value="{{ p.chave }}:{{ g.id }}"
+            data-seletores='{{ g.seletores | tojson }}' data-titulo="{{ g.titulo }}" checked> {{ g.titulo }}</label>
+          {% endfor %}
+        </fieldset>
+        {% else %}
+        <span class="nota">Nenhuma das páginas da apresentação está visível no momento.</span>
+        {% endfor %}
+      </div>
+      <div class="filter-actions">
+        <button type="button" class="btn-apply" id="btn-filtrar">Filtrar</button>
+        <button type="button" class="btn-reset" id="btn-resetar">Resetar filtros</button>
+        <button type="button" class="btn-apply" id="btn-iniciar">Iniciar apresentação</button>
+        <button type="button" class="btn-apply" id="btn-tela-cheia">Tela cheia</button>
+      </div>
+    </div>
+
+    <div class="apres-legenda">
+      <span class="apres-pagina" id="legenda-pagina">—</span>
+      <span class="apres-titulo" id="legenda-titulo"></span>
+      <span class="apres-posicao" id="legenda-posicao"></span>
+      <div class="apres-progresso"><div id="progresso"></div></div>
+    </div>
+
+    <div class="apres-palco" id="palco">
+      <div class="apres-aviso" id="aviso">Carregando…</div>
+      <button type="button" class="apres-seta anterior" id="btn-anterior" title="Gráfico anterior" aria-label="Gráfico anterior">&#8249;</button>
+      <button type="button" class="apres-seta seguinte" id="btn-seguinte" title="Próximo gráfico" aria-label="Próximo gráfico">&#8250;</button>
+    </div>
+  </div>
+</div>
+
+<script>
+// Cada página escolhida abre num quadro (iframe da mesma origem) escondido; o
+// slide da vez (um gráfico, tabela ou bloco de indicadores) cobre o quadro
+// inteiro. A cada volta completa, cada página é recarregada num quadro novo,
+// em segundo plano, e entra no lugar do antigo quando estiver pronta.
+const PAGINAS = {{ paginas | tojson }};
+const DURACAO = 20000;         // tempo de cada slide (ms)
+const ESPERA_ROLAGEM = 2000;   // listas: parado no topo antes de rolar e no fim
+const LIMITE_CARREGAMENTO = 90000;
+
+// gráficos de cada página no filtro (GRAFICOS_APRESENTACAO, em painel.py);
+// o que ficou desmarcado é lembrado neste navegador
+const CHAVE_DESMARCADOS = 'apresentacao_graficos_desmarcados';
+
+// ajustes de gráficos específicos ("página:id" de GRAFICOS_APRESENTACAO):
+// dobrarAltura: caixa com rolagem que mostra o dobro das linhas;
+// velocidade: rolagem em pixels por segundo, sem pressa de chegar ao fim;
+// listasAbertas: listas dos cards (as que só abrem com o mouse e as com
+// barra de rolagem) ficam à mostra, inteiras;
+// listasLargas: card com lista longa (mais de 8 itens) ocupa duas colunas,
+// com a lista em duas colunas;
+// colunas: cards numa grade com esse número de colunas;
+// recolhido: grupos recolhidos continuam recolhidos (só os totais);
+// esconder: partes do cartão que ficam fora da tela
+const AJUSTES = {
+  // CID: dá tempo de ler, mesmo sem mostrar a lista até o fim
+  'hospitalares:cid': { dobrarAltura: '#caixa_cid_destino', velocidade: 25 },
+  // macrorregião e município numa tela: rolagem no ritmo de leitura
+  'emergencia:macro': { velocidade: 25 },
+  'ambulatorio:macro': { velocidade: 25 },
+  'emergencia:cid_risco': { dobrarAltura: '.tabela-municipio', velocidade: 25 },
+  // gráficos de barras longos: o dobro da área visível, rolagem no ritmo de leitura
+  'ambulatorio:especialidade': { dobrarAltura: '.rolagem-grafico' },
+  'ambulatorio:sexo': { dobrarAltura: '.rolagem-grafico' },
+  'ambulatorio:salas': { dobrarAltura: '.rolagem-grafico', velocidade: 25 },
+  'ambulatorio:tempo': { dobrarAltura: '.rolagem-grafico', velocidade: 25 },
+  // internações e leitos disponíveis por clínica
+  'lean:hospitalares': { listasAbertas: true, colunas: 6 },
+  'lean:emergencia': { listasAbertas: true },
+  // cards com listas longas ocupam duas colunas, com a lista em duas colunas;
+  // o título da página já está na legenda
+  'hospitalares:indicadores': { listasAbertas: true, listasLargas: true, colunas: 6, esconder: '.section-title' },
+  // só os totais por classificação (exames recolhidos)
+  'exames:total_exame': { recolhido: true },
+  // só os totais por classificação, sem as tabelas por origem
+  'exames:tempo': { recolhido: true, esconder: '.botoes-origem-tempo, .secao-tempo' },
+};
+
+// estilo posto em cada quadro: só o slide da vez aparece, ocupando a tela
+const ESTILO_QUADRO = `
+  html.apres-ativa, html.apres-ativa body { overflow: hidden !important; }
+  html.apres-ativa body * { visibility: hidden !important; }
+  html.apres-ativa .apres-slide, html.apres-ativa .apres-slide * { visibility: visible !important; }
+  .apres-slide {
+    position: fixed !important; inset: 12px !important; top: var(--apres-topo, 12px) !important;
+    z-index: 2147483000 !important;
+    margin: 0 !important; width: auto !important; height: auto !important;
+    max-width: none !important; max-height: none !important;
+    overflow: auto !important; box-sizing: border-box !important;
+    animation: apres-entra .6s ease both;
+  }
+  .apres-slide .chart-box:not([style*="height"]) { height: 62vh !important; }
+  /* tela com mais de uma parte: cada uma na altura dela, uma abaixo da outra */
+  /* (--apres-cota: altura de cada parte, o espaço que sobra dividido entre as partes que faltam) */
+  .apres-slide.apres-parte { bottom: auto !important; max-height: var(--apres-cota) !important; }
+  .apres-slide.apres-parte .chart-box:not([style*="height"]) {
+    height: max(160px, calc(var(--apres-cota) - 100px)) !important; }
+  /* cards com as listas abertas: altura do conteúdo (a grade não espreme os cards) */
+  .apres-slide.apres-listas { bottom: auto !important; max-height: calc(100vh - 24px) !important; }
+  .apres-listas .kpi-hover-detail, .apres-listas .kpi .detail { max-height: none !important; overflow: visible !important; }
+  .apres-slide.apres-colunas, .apres-slide.apres-colunas > .kpis {
+    grid-template-columns: repeat(var(--apres-colunas), minmax(0, 1fr)) !important; }
+  .apres-largas .apres-largo { grid-column: span 2 !important; }
+  .apres-largas .apres-largo .kpi-hover-detail { columns: 2; column-gap: 1.5rem; }
+  @keyframes apres-entra { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }`;
+
+const palco = document.getElementById('palco');
+const aviso = document.getElementById('aviso');
+const quadros = {};   // chave -> { atual, novo, velho }
+let ordem = [];       // chaves das páginas com algum gráfico escolhido
+let escolha = {};     // chave -> [{ id, titulo, seletores }] dos gráficos escolhidos
+let iPagina = 0, slides = [], iSlide = 0;
+let rodando = false, temporizador = null, rolagem = null, espera = null;
+
+function nomeDa(chave) { return (PAGINAS.find(p => p.chave === chave) || {}).nome || chave; }
+
+// ---------------------------------------------------------------- quadros
+
+function carregar(chave) {
+  const q = quadros[chave] || (quadros[chave] = {});
+  if (q.novo) q.novo.remove();
+  const f = document.createElement('iframe');
+  f.className = 'apres-quadro';
+  f.title = nomeDa(chave);
+  f.tabIndex = -1;
+  f.setAttribute('aria-hidden', 'true');
+  f.dataset.inicio = Date.now();
+  f.addEventListener('load', () => {
+    try {
+      const d = f.contentDocument;
+      const s = d.createElement('style');
+      s.textContent = ESTILO_QUADRO;
+      d.head.appendChild(s);
+      f.dataset.carregado = Date.now();
+    } catch (e) { f.dataset.erro = '1'; }
+  });
+  f.src = PAGINAS.find(p => p.chave === chave).url;
+  palco.appendChild(f);
+  q.novo = f;
+  q.velho = false;
+}
+
+// pronto: página carregada e sem carregamento na tela (os painéis buscam os
+// dados depois de abrir e mostram o carregamento enquanto isso)
+function pronto(f) {
+  if (!f || f.dataset.erro || !f.dataset.carregado) return false;
+  if (Date.now() - Number(f.dataset.carregado) < 800) return false;
+  try {
+    const d = f.contentDocument;
+    return d.readyState === 'complete'
+      && !d.querySelector('#loader-overlay.active, #loading-screen.active, #fadeout-animation.active');
+  } catch (e) { return false; }
+}
+
+// quadro da página para mostrar agora: o novo, se já ficou pronto
+function quadroDa(chave) {
+  const q = quadros[chave];
+  if (!q) return null;
+  if (q.novo && pronto(q.novo)) {
+    if (q.atual) q.atual.remove();
+    q.atual = q.novo;
+    q.novo = null;
+  }
+  return q.atual || null;
+}
+
+// slides da página: os gráficos escolhidos que estão na tela dela; cada
+// slide tem uma ou mais partes (elementos da página)
+function coletarSlides(f, chave) {
+  const d = f.contentDocument;
+  const lista = [];
+  for (const g of escolha[chave] || []) {
+    const partes = g.seletores.map(sel => {
+      try { return d.querySelector(sel); } catch (e) { return null; }  // seletor inválido: fica de fora
+    }).filter(el => el && el.getClientRects().length                    // ausente ou escondido
+      && (el.textContent.trim() || el.querySelector('canvas')));         // vazio
+    if (partes.length) lista.push({ partes, titulo: g.titulo, ajuste: AJUSTES[g.id] || {} });
+  }
+  return lista;
+}
+
+// ---------------------------------------------------------------- slides
+
+function pararTempo() {
+  clearTimeout(temporizador);
+  clearTimeout(espera);
+  cancelAnimationFrame(rolagem);
+  temporizador = espera = rolagem = null;
+  const p = document.getElementById('progresso');
+  p.style.transition = 'none';
+  p.style.width = '0';
+}
+
+function avisar(texto) {
+  aviso.textContent = texto;
+  aviso.hidden = !texto;
+}
+
+// ultimo: entra pelo último slide (seta de voltar)
+function entrarPagina(i, tentativa = 0, ultimo = false) {
+  pararTempo();
+  if (!ordem.length) {
+    palco.querySelectorAll('.apres-quadro').forEach(f => f.classList.remove('visivel'));
+    avisar('Marque ao menos um gráfico e clique em Filtrar.');
+    legenda('—', '', '');
+    return;
+  }
+  iPagina = (i + ordem.length) % ordem.length;
+  const passo = ultimo ? -1 : 1;
+  const chave = ordem[iPagina];
+  const q = quadros[chave] || {};
+  if ((!q.atual && !q.novo) || q.velho) carregar(chave);
+  const f = quadroDa(chave);
+  // a próxima página já vai carregando enquanto esta aparece
+  const prox = ordem[(iPagina + 1) % ordem.length];
+  const qp = quadros[prox];
+  if (prox !== chave && (!qp || (!qp.atual && !qp.novo) || qp.velho)) carregar(prox);
+
+  if (!f) {
+    const novo = quadros[chave].novo;
+    const demorou = novo && Date.now() - Number(novo.dataset.inicio) > LIMITE_CARREGAMENTO;
+    if (!novo || novo.dataset.erro || demorou) {
+      if (novo) novo.remove();
+      quadros[chave].novo = null;
+      quadros[chave].velho = true;
+      if (tentativa < ordem.length) return entrarPagina(iPagina + passo, tentativa + 1, ultimo);
+      avisar('Não foi possível carregar as páginas escolhidas.');
+      return;
+    }
+    avisar(`Carregando ${nomeDa(chave)}…`);
+    legenda(nomeDa(chave), '', '');
+    espera = setTimeout(() => entrarPagina(iPagina, tentativa, ultimo), 500);
+    return;
+  }
+  slides = coletarSlides(f, chave);
+  if (!slides.length) {
+    quadros[chave].velho = true;
+    if (tentativa < ordem.length) return entrarPagina(iPagina + passo, tentativa + 1, ultimo);
+    avisar('Os gráficos escolhidos estão sem dados no momento.');
+    return;
+  }
+  avisar('');
+  palco.querySelectorAll('.apres-quadro').forEach(x => {
+    x.classList.toggle('visivel', x === f);
+    x.setAttribute('aria-hidden', x === f ? 'false' : 'true');
+  });
+  mostrarSlide(ultimo ? slides.length - 1 : 0);
+}
+
+function mostrarSlide(k) {
+  pararTempo();
+  const chave = ordem[iPagina];
+  const f = quadros[chave] && quadros[chave].atual;
+  if (!f || !f.isConnected) return entrarPagina(iPagina);
+  iSlide = k;
+  const d = f.contentDocument;
+  d.querySelectorAll('.apres-slide').forEach(el => {
+    el.classList.remove('apres-slide', 'apres-parte', 'apres-listas', 'apres-largas', 'apres-colunas');
+    el.style.removeProperty('--apres-topo');
+    el.style.removeProperty('--apres-cota');
+    el.style.removeProperty('--apres-colunas');
+  });
+  const { partes, titulo, ajuste } = slides[k];
+  if (!partes.every(el => el.isConnected)) return entrarPagina(iPagina);  // a página redesenhou: coleta de novo
+  d.documentElement.classList.add('apres-ativa');
+  let topo = 12;
+  const altura = f.contentWindow.innerHeight - 12;
+  partes.forEach((el, i) => {
+    el.classList.add('apres-slide');
+    el.classList.toggle('apres-parte', partes.length > 1);
+    el.classList.toggle('apres-listas', !!ajuste.listasAbertas);
+    el.classList.toggle('apres-largas', !!ajuste.listasLargas);
+    if (ajuste.listasLargas) el.querySelectorAll('.kpi-hover-detail').forEach(x =>
+      x.closest('.kpi').classList.toggle('apres-largo', x.querySelectorAll('br').length > 8));
+    el.classList.toggle('apres-colunas', !!ajuste.colunas);
+    if (ajuste.colunas) el.style.setProperty('--apres-colunas', ajuste.colunas);
+    if (!ajuste.recolhido) abrirRecolhidos(el);
+    if (ajuste.esconder) el.querySelectorAll(ajuste.esconder).forEach(x => { x.style.display = 'none'; });
+    if (ajuste.dobrarAltura) dobrarAltura(el.querySelector(ajuste.dobrarAltura));
+    el.scrollTop = 0;
+    if (partes.length > 1) {
+      // o espaço que sobra é dividido entre esta e as partes seguintes; a
+      // seguinte começa logo abaixo desta (offsetHeight ignora a animação)
+      const faltam = partes.length - i;
+      el.style.setProperty('--apres-topo', topo + 'px');
+      el.style.setProperty('--apres-cota', Math.floor((altura - topo - 12 * (faltam - 1)) / faltam) + 'px');
+      topo += el.offsetHeight + 12;
+    }
+  });
+  // gráficos (Chart.js) acompanham o novo tamanho
+  f.contentWindow.dispatchEvent(new Event('resize'));
+  legenda(nomeDa(chave), titulo, `${k + 1} / ${slides.length}`);
+  if (rodando) {
+    rolarListas(partes, f.contentWindow, ajuste.velocidade);
+    const p = document.getElementById('progresso');
+    void p.offsetWidth;
+    p.style.transition = `width ${DURACAO}ms linear`;
+    p.style.width = '100%';
+    temporizador = setTimeout(avancar, DURACAO);
+  }
+}
+
+function voltar() {
+  if (iSlide > 0) return mostrarSlide(iSlide - 1);
+  entrarPagina(iPagina - 1, 0, true);
+}
+
+function avancar() {
+  if (iSlide + 1 < slides.length) return mostrarSlide(iSlide + 1);
+  // fim da página: na próxima volta ela é recarregada (dados atualizados)
+  quadros[ordem[iPagina]].velho = true;
+  entrarPagina(iPagina + 1);
+}
+
+// grupos recolhidos (classificações e clínicas das tabelas de exames, seções
+// por origem do tempo dos exames, <details>) ficam abertos na apresentação
+function abrirRecolhidos(el) {
+  el.querySelectorAll('.botao-origem-tempo').forEach(b => {
+    if (!b.getClientRects().length) return;  // origem fora do filtro da página
+    const secao = el.querySelector(`.secao-tempo[data-origem="${b.dataset.origem}"]`);
+    if (secao) secao.hidden = false;
+    b.setAttribute('aria-expanded', 'true');
+    b.classList.add('ativo');
+  });
+  el.querySelectorAll('details:not([open])').forEach(x => { x.open = true; });
+  // o clique usa o próprio código da página (ícone e linhas do grupo)
+  el.querySelectorAll('tr.clinica-toggle-row:not(.expanded)').forEach(tr => tr.click());
+}
+
+// caixa com rolagem (altura máxima no estilo, como a de tabela_rolagem.js, ou
+// no CSS da página): passa a mostrar o dobro; uma vez por quadro (a página
+// recarregada volta ao tamanho dela)
+function dobrarAltura(caixa) {
+  if (!caixa || caixa.dataset.apresDobro) return;
+  const h = parseFloat(caixa.style.maxHeight)
+    || parseFloat(caixa.ownerDocument.defaultView.getComputedStyle(caixa).maxHeight);
+  if (h) caixa.style.maxHeight = (h * 2) + 'px';
+  caixa.dataset.apresDobro = '1';
+}
+
+// listas com barra de rolagem (o slide e o que houver dentro dele) descem
+// juntas até o fim durante o slide; com velocidade (px/s), descem nesse ritmo
+// e param onde estiverem quando o slide acabar
+function rolarListas(partes, win, velocidade) {
+  const alvos = partes.flatMap(el => [el, ...el.querySelectorAll('div, table, tbody, ul, section')]).filter(x =>
+    x.scrollHeight > x.clientHeight + 4 && /(auto|scroll)/.test(win.getComputedStyle(x).overflowY));
+  if (!alvos.length) return;
+  alvos.forEach(x => { x.scrollTop = 0; });
+  const inicio = performance.now();
+  const fim = DURACAO - ESPERA_ROLAGEM;
+  const passo = agora => {
+    const t = agora - inicio;
+    if (t > ESPERA_ROLAGEM) {
+      const f = Math.min(1, (t - ESPERA_ROLAGEM) / (fim - ESPERA_ROLAGEM));
+      alvos.forEach(x => {
+        const max = x.scrollHeight - x.clientHeight;
+        x.scrollTop = velocidade ? Math.min(max, (t - ESPERA_ROLAGEM) / 1000 * velocidade) : f * max;
+      });
+    }
+    if (t < (velocidade ? DURACAO : fim)) rolagem = requestAnimationFrame(passo);
+  };
+  rolagem = requestAnimationFrame(passo);
+}
+
+function legenda(pagina, titulo, posicao) {
+  document.getElementById('legenda-pagina').textContent = pagina;
+  document.getElementById('legenda-titulo').textContent = titulo;
+  document.getElementById('legenda-posicao').textContent = posicao;
+}
+
+// ---------------------------------------------------------------- filtros e botões
+
+// caixa da página: marcada com todos os gráficos, "meio" com só alguns
+function sincronizarPagina(grupo) {
+  const cbs = Array.from(grupo.querySelectorAll('.cb-grafico'));
+  const marcados = cbs.filter(cb => cb.checked).length;
+  const cb = grupo.querySelector('.cb-pagina');
+  cb.checked = marcados === cbs.length;
+  cb.indeterminate = marcados > 0 && marcados < cbs.length;
+}
+
+function lerDesmarcados() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_DESMARCADOS)) || []; } catch (e) { return []; }
+}
+
+function guardarDesmarcados() {
+  const lista = Array.from(document.querySelectorAll('.cb-grafico:not(:checked)')).map(cb => cb.value);
+  try { localStorage.setItem(CHAVE_DESMARCADOS, JSON.stringify(lista)); } catch (e) { /* vale só agora */ }
+}
+
+function filtrar() {
+  escolha = {};
+  document.querySelectorAll('.apres-grupo').forEach(grupo => {
+    const lista = Array.from(grupo.querySelectorAll('.cb-grafico:checked'))
+      .map(cb => ({ id: cb.value, titulo: cb.dataset.titulo, seletores: JSON.parse(cb.dataset.seletores) }));
+    if (lista.length) escolha[grupo.dataset.pagina] = lista;
+  });
+  ordem = PAGINAS.map(p => p.chave).filter(c => escolha[c]);
+  guardarDesmarcados();
+  // páginas desmarcadas: os quadros saem
+  Object.keys(quadros).forEach(chave => {
+    if (ordem.includes(chave)) return;
+    const q = quadros[chave];
+    if (q.atual) q.atual.remove();
+    if (q.novo) q.novo.remove();
+    delete quadros[chave];
+  });
+  entrarPagina(0);
+}
+
+function iniciar(sim) {
+  rodando = sim;
+  document.getElementById('btn-iniciar').textContent = sim ? 'Pausar apresentação' : 'Iniciar apresentação';
+  if (!ordem.length) return entrarPagina(0);
+  if (slides.length && quadros[ordem[iPagina]] && quadros[ordem[iPagina]].atual) mostrarSlide(iSlide);
+  else entrarPagina(iPagina);
+}
+
+document.getElementById('btn-filtrar').addEventListener('click', filtrar);
+document.getElementById('btn-resetar').addEventListener('click', () => {
+  document.querySelectorAll('.cb-grafico').forEach(cb => { cb.checked = true; });
+  document.querySelectorAll('.apres-grupo').forEach(sincronizarPagina);
+  filtrar();
+});
+document.querySelectorAll('.apres-grupo').forEach(grupo => {
+  grupo.querySelector('.cb-pagina').addEventListener('change', e => {
+    grupo.querySelectorAll('.cb-grafico').forEach(cb => { cb.checked = e.target.checked; });
+  });
+  grupo.querySelectorAll('.cb-grafico').forEach(cb => cb.addEventListener('change', () => sincronizarPagina(grupo)));
+});
+document.getElementById('btn-iniciar').addEventListener('click', () => iniciar(!rodando));
+// setas: o tempo do slide recomeça (a apresentação segue rodando, se estava)
+document.getElementById('btn-anterior').addEventListener('click', () => { if (ordem.length) voltar(); });
+document.getElementById('btn-seguinte').addEventListener('click', () => { if (ordem.length) avancar(); });
+document.addEventListener('keydown', e => {
+  if (!ordem.length || e.target.closest('input, button')) return;
+  if (e.key === 'ArrowLeft') voltar();
+  else if (e.key === 'ArrowRight') avancar();
+});
+document.getElementById('btn-tela-cheia').addEventListener('click', () => {
+  const alvo = document.getElementById('apresentacao');
+  if (!alvo.requestFullscreen) return;
+  alvo.requestFullscreen().then(() => { if (!rodando) iniciar(true); }).catch(() => {});
+});
+document.getElementById('btn-voltar-inicio').addEventListener('click', () => { window.location.href = '/'; });
+
+// última escolha deste navegador (gráfico novo entra marcado)
+const desmarcados = new Set(lerDesmarcados());
+document.querySelectorAll('.cb-grafico').forEach(cb => { cb.checked = !desmarcados.has(cb.value); });
+document.querySelectorAll('.apres-grupo').forEach(sincronizarPagina);
+filtrar();
+</script>
+{{ rodape() }}
+</body>
+</html>

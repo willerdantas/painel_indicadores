@@ -1,6 +1,7 @@
 """Login, CSRF, troca obrigatória de senha e ganho de privilégio na área restrita."""
 import logos
 import paginas_visiveis
+import painel
 import usuarios
 
 
@@ -227,6 +228,23 @@ def test_pagina_oculta_sai_do_menu_e_nao_abre(cliente, logar, admin_id):
     assert cliente.get('/lean/tendencias').status_code == 404
     logar(admin_id)  # o administrador ainda abre pelo endereço
     assert cliente.get('/custos').status_code != 404
+
+
+def test_apresentacao_publica_so_com_as_paginas_visiveis(cliente):
+    assert 'href="/apresentacao"' in cliente.get('/').get_data(as_text=True)  # link ao lado do Login
+    html = cliente.get('/apresentacao').get_data(as_text=True)
+    # filtro por gráfico: uma caixa por gráfico de cada página
+    for chave, graficos in painel.GRAFICOS_APRESENTACAO.items():
+        assert f'data-pagina="{chave}"' in html
+        for gid, _titulo, _seletor in graficos:
+            assert f'value="{chave}:{gid}"' in html
+    assert 'data-pagina="custos"' not in html  # fora da apresentação
+    assert 'value="hospitalares:cid"' in html and """data-seletores='[".graf-card:has(#caixa_cid_destino)"]'""" in html
+    # partes juntas numa tela só: cards do ambulatório e o gráfico por dia
+    assert """data-seletores='["#kpis", ".graf-card:has(#chart_dia)"]'""" in html
+    paginas_visiveis.salvar(['lean'])
+    html = cliente.get('/apresentacao').get_data(as_text=True)
+    assert 'data-pagina="lean"' not in html and '/lean/' not in html and 'data-pagina="ambulatorio"' in html
 
 
 def test_admin_escolhe_paginas_visiveis(cliente, logar, admin_id):
