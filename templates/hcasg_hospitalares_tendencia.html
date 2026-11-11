@@ -257,6 +257,7 @@ function carregarGraficos() {
         if (!temDados) return;
         const card = document.createElement('div');
         card.className = 'chart-card' + (['saidas', 'internacoes'].includes(ind.key) ? ' largura-total' : '');
+        card.dataset.ind = ind.key;
         const total = ind.total
           ? `<div class="resumo-total">Total no período: <b>${valores.reduce((a, v) => a + (Number(v) || 0), 0).toLocaleString('pt-BR')}</b></div>`
           : '';
@@ -275,6 +276,7 @@ function carregarGraficos() {
       if (proc && proc.series.length) {
         const card = document.createElement('div');
         card.className = 'chart-card largura-total';
+        card.dataset.ind = 'procedencia';
         card.innerHTML = `<h3>Internações por Procedência</h3>
           <div class="chart-container"><canvas></canvas></div>
           <div class="tabela-info">
@@ -290,6 +292,7 @@ function carregarGraficos() {
       if (d.por_cid_destino && d.por_cid_destino.linhas.length) {
         const card = document.createElement('div');
         card.className = 'chart-card largura-total';
+        card.dataset.ind = 'cid';
         card.innerHTML = `<h3>Internações e Saídas por CID</h3>
           <div class="resumo-total"></div>
           <div class="tabela-info">

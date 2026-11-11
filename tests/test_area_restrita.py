@@ -247,6 +247,30 @@ def test_apresentacao_publica_so_com_as_paginas_visiveis(cliente):
     assert 'data-pagina="lean"' not in html and '/lean/' not in html and 'data-pagina="ambulatorio"' in html
 
 
+def test_apresentacao_mensal_com_as_paginas_de_tendencia(cliente):
+    assert 'href="/apresentacao/mensal"' in cliente.get('/').get_data(as_text=True)
+    html = cliente.get('/apresentacao/mensal').get_data(as_text=True)
+    assert 'Painel de Indicadores Mensais' in html and 'const MODO = "mensal"' in html
+    for chave, graficos in painel.GRAFICOS_APRESENTACAO_MENSAL.items():
+        assert f'data-pagina="{chave}"' in html
+        for gid, _titulo, _seletor in graficos:
+            assert f'value="{chave}:{gid}"' in html
+    # cada página abre a versão mensal (padrão: últimos 12 meses fechados)
+    for url in ('/lean/tendencias', '/hcasg/hospitalares/tendencia', '/hcasg/emergencia/tendencia',
+                '/graficos_mensais', '/ambulatorio/tendencia'):
+        assert f'"{url}"' in html
+    assert """data-seletores='[".chart-card[data-ind=\\"cid\\"]"]'""" in html
+    # os cartões das páginas de tendência têm o indicador que o seletor procura
+    env = painel.app.jinja_env
+    for chave, endpoint in painel.ENDPOINTS_MENSAIS.items():
+        if chave != 'exames':
+            assert 'card.dataset.ind' in env.loader.get_source(env, f'{endpoint}.html')[0]
+    paginas_visiveis.salvar(['exames'])
+    html = cliente.get('/apresentacao/mensal').get_data(as_text=True)
+    assert 'data-pagina="exames"' not in html and 'data-pagina="lean"' in html
+    assert 'const MODO = "atual"' in cliente.get('/apresentacao').get_data(as_text=True)
+
+
 def test_admin_escolhe_paginas_visiveis(cliente, logar, admin_id):
     logar(admin_id)
     assert 'Páginas visíveis' in cliente.get('/admin/banco').get_data(as_text=True)

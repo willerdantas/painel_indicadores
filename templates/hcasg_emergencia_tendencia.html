@@ -238,9 +238,10 @@ function carregarGraficos() {
       container.innerHTML = '';
 
       // gráficos da página, nesta ordem
-      const linhaCard = (titulo, larga) => {
+      const linhaCard = (titulo, larga, ind) => {
         const card = document.createElement('div');
         card.className = 'chart-card' + (larga ? ' largura-total' : '');
+        card.dataset.ind = ind;
         card.innerHTML = `<h3>${titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
         container.appendChild(card);
         return card;
@@ -253,7 +254,7 @@ function carregarGraficos() {
         { key: 'porta_medico', titulo: 'Tempo Porta-Médico (minutos)', cor: '#F3A133' },
         { key: 'taxa_conversao', titulo: 'Taxa de Conversão (% das saídas que foram para internação)', cor: '#EB600A', sufixo: '%' }
       ].forEach(ind => {
-        if (temDados(d[ind.key])) criarGrafico(linhaCard(ind.titulo), ind.titulo, d.meses, d[ind.key], ind.cor, true, ind.sufixo);
+        if (temDados(d[ind.key])) criarGrafico(linhaCard(ind.titulo, false, ind.key), ind.titulo, d.meses, d[ind.key], ind.cor, true, ind.sufixo);
       });
 
       // atendimentos por classificação de risco: empilhado, total, média e mediana do total
@@ -262,7 +263,7 @@ function carregarGraficos() {
       if (temDados(d.risco_mensal && d.risco_mensal.total)) {
         const series = riscos.map(r => ({ nome: r.dsc_risco, valores: r.valores, cor: corRisco(r.dsc_risco) }));
         const titulo = 'Atendimentos por Classificação de Risco';
-        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses,
+        criarGraficoEmpilhado(linhaCard(titulo, true, 'risco'), titulo, d.meses,
           series.filter(s => temDados(s.valores)), d.risco_mensal.total,
           { mediaMediana: true, tabela: 'Classificação', linhasTabela: series, dias: d.risco_mensal.dias });
       }
@@ -276,7 +277,7 @@ function carregarGraficos() {
       const macros = d.macrorregiao_mensal || [];
       if (macros.length) {
         const titulo = 'Atendimentos por Macrorregião de Saúde';
-        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, comCor(macros), somaSeries(macros),
+        criarGraficoEmpilhado(linhaCard(titulo, true, 'macro'), titulo, d.meses, comCor(macros), somaSeries(macros),
           { mediaMediana: true, tabela: 'Macrorregião', dias: d.risco_mensal && d.risco_mensal.dias });
       }
       const municipios = d.municipio_mensal || [];
@@ -285,7 +286,7 @@ function carregarGraficos() {
         const demais = municipios.slice(10);
         if (demais.length) top.push({ nome: `Demais municípios (${demais.length})`, valores: somaSeries(demais) });
         const titulo = 'Atendimentos por Município';
-        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, comCor(top), somaSeries(municipios),
+        criarGraficoEmpilhado(linhaCard(titulo, true, 'municipio'), titulo, d.meses, comCor(top), somaSeries(municipios),
           { mediaMediana: true, tabela: 'Município', dias: d.risco_mensal && d.risco_mensal.dias });
       }
 
@@ -294,6 +295,7 @@ function carregarGraficos() {
       if (proc && proc.series.length) {
         const card = document.createElement('div');
         card.className = 'chart-card largura-total';
+        card.dataset.ind = 'procedencia';
         card.innerHTML = `<h3>Atendimentos por Procedência</h3>
           <div class="chart-container"><canvas></canvas></div>
           <div class="tabela-info">
@@ -309,6 +311,7 @@ function carregarGraficos() {
       if (d.por_cid_risco && d.por_cid_risco.linhas.length) {
         const card = document.createElement('div');
         card.className = 'chart-card largura-total';
+        card.dataset.ind = 'cid_risco';
         card.innerHTML = `<h3>Atendimentos por CID e Classificação de Risco</h3>
           <div class="cid-resumo"></div>
           <div class="tabela-info tabela-cid"><table class="tabela"><thead></thead><tbody></tbody></table></div>`;
@@ -323,7 +326,7 @@ function carregarGraficos() {
           .map((x, idx) => ({ nome: x.dsc_destino, valores: x.valores, cor: coresDestino[idx % coresDestino.length] }));
         const titulo = 'Saídas da Emergência por Destino';
         // tabela com todos os destinos (mesmo os sem saídas no período)
-        criarGraficoEmpilhado(linhaCard(titulo, true), titulo, d.meses, todos.filter(s => temDados(s.valores)),
+        criarGraficoEmpilhado(linhaCard(titulo, true, 'saidas'), titulo, d.meses, todos.filter(s => temDados(s.valores)),
           d.saidas_emergencia_total,
           { mediaMediana: true, tabela: 'Destino', linhasTabela: todos, dias: d.risco_mensal && d.risco_mensal.dias });
       }
@@ -331,7 +334,7 @@ function carregarGraficos() {
       // pacientes acima de 24 h na emergência (pela data da saída): quantidade e % das saídas
       if (temDados(d.acima_24h)) {
         const titulo = 'Pacientes acima de 24 h na Emergência';
-        const card = linhaCard(titulo);
+        const card = linhaCard(titulo, false, 'acima_24h');
         chartInstances[titulo] = new Chart(card.querySelector('canvas'), {
           type: 'bar',
           data: { labels: d.meses, datasets: [

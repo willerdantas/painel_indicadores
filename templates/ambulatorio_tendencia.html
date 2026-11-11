@@ -255,6 +255,7 @@ function carregarGraficos() {
       }).map(ind => {
         const card = document.createElement('div');
         card.className = 'chart-card' + (ind.empilhado ? ' largura-total' : '');
+        card.dataset.ind = ind.key;
         card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
         container.appendChild(card);
         return [ind, card];

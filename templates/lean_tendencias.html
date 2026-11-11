@@ -13,6 +13,7 @@
     document.write('<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js" integrity="sha384-NrKB+u6Ts6AtkIhwPixiKTzgSKNblyhlk0Sohlgar9UHUBzai/sgnNNWWd291xqt" crossorigin="anonymous"><\/script>');
   }
 </script>
+<script src="/static/js/tendencia.js"></script>
     {{ recursos() }}
 </head>
 <body class="pg-lean-tendencias">
@@ -97,17 +98,7 @@ function v(id){ return document.getElementById(id).value; }
 function mes(nome) { return document.querySelector(`input[name="${nome}"]`).value; }
 function definirMes(nome, valor) { document.querySelector(`input[name="${nome}"]`).closest('.seletor-mes').definirMes(valor); }
 
-function calcularMedia(valores) {
-  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v));
-  return nums.length > 0 ? parseFloat((nums.reduce((a, b) => a + b, 0) / nums.length).toFixed(2)) : null;
-}
-
-function calcularMediana(valores) {
-  const nums = valores.map(v => parseFloat(v)).filter(v => !isNaN(v)).sort((a, b) => a - b);
-  if (nums.length === 0) return null;
-  const mid = Math.floor(nums.length / 2);
-  return parseFloat((nums.length % 2 ? nums[mid] : (nums[mid - 1] + nums[mid]) / 2).toFixed(2));
-}
+// calcularMedia, calcularMediana, fmtNum e os valores escritos nas barras: /static/js/tendencia.js
 
 function ajustarLayoutGraficos(qtdMeses) {
   const hospitalares = document.getElementById('charts_hospitalares');
@@ -153,34 +144,8 @@ function criarGrafico(container, titulo, meses, valores, cor) {
           borderRadius: 4,
           order: 2
         },
-        {
-          label: `Média: ${media}`,
-          data: media !== null ? Array(meses.length).fill(media) : [],
-          type: 'line',
-          borderColor: '#EB600A',
-          backgroundColor: 'transparent',
-          borderWidth: 2.5,
-          borderDash: [6, 4],
-          pointRadius: 0,
-          pointHoverRadius: 0,
-          tension: 0,
-          fill: false,
-          order: 1
-        },
-        {
-          label: `Mediana: ${mediana}`,
-          data: mediana !== null ? Array(meses.length).fill(mediana) : [],
-          type: 'line',
-          borderColor: '#2E758C',
-          backgroundColor: 'transparent',
-          borderWidth: 2.5,
-          borderDash: [2, 3],
-          pointRadius: 0,
-          pointHoverRadius: 0,
-          tension: 0,
-          fill: false,
-          order: 1
-        }
+        // média e mediana: o valor fica na legenda, não em cada mês
+        ...linhasMediaMediana(meses.length, media, mediana)
       ]
     },
     options: {
@@ -349,6 +314,7 @@ function carregarGraficos() {
           if (temDados) {
             const card = document.createElement('div');
             card.className = 'chart-card';
+            card.dataset.ind = ind.key;
             card.innerHTML = `
               <h3>${ind.titulo}</h3>
               <div class="chart-container">

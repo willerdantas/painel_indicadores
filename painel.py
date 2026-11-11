@@ -239,17 +239,111 @@ GRAFICOS_APRESENTACAO = {
 }
 
 
+def _cartao_mensal(chave):
+    """Cartão de uma página de tendência mensal pelo indicador (data-ind)."""
+    return f'.chart-card[data-ind="{chave}"]'
+
+
+# Painel de Indicadores Mensais: os gráficos das páginas de tendência mensal
+# (que abrem nos últimos 12 meses fechados), no mesmo formato de
+# GRAFICOS_APRESENTACAO; ENDPOINTS_MENSAIS diz qual página abre para cada chave
+ENDPOINTS_MENSAIS = {
+    'lean': 'lean_tendencias',
+    'hospitalares': 'hcasg_hospitalares_tendencia',
+    'emergencia': 'hcasg_emergencia_tendencia',
+    'exames': 'graficos_mensais',
+    'ambulatorio': 'ambulatorio_tendencia',
+}
+GRAFICOS_APRESENTACAO_MENSAL = {
+    'lean': [(k, t, _cartao_mensal(k)) for k, t in [
+        ('paciente_dia', 'Paciente-dia'),
+        ('saidas', 'Saídas'),
+        ('tmph', 'Tempo médio de permanência'),
+        ('giro', 'Giro de leito'),
+        ('los_sem', 'LOS sem internação'),
+        ('los_com', 'LOS com internação'),
+        ('tmp_ps', 'TMP leitos PS'),
+        ('giro_ps', 'Giro de leito PS'),
+        ('porta_medico', 'Tempo porta-médico'),
+        ('internacoes_ps', 'Internações PS'),
+    ]],
+    'hospitalares': [(k, t, _cartao_mensal(k)) for k, t in [
+        ('paciente_dia', 'Paciente-dia'),
+        ('leito_dia', 'Leito-dia'),
+        ('tmph', 'Tempo médio de permanência'),
+        ('giro', 'Giro de leito'),
+        ('internacoes', 'Número de internações'),
+        ('saidas', 'Saídas por destino'),
+        ('taxa_mortalidade_hospitalar', 'Taxa de mortalidade hospitalar'),
+        ('taxa_mortalidade_institucional', 'Taxa de mortalidade institucional'),
+        ('procedencia', 'Internações por procedência'),
+        ('cid', 'Internações e saídas por CID'),
+    ]],
+    'emergencia': [(k, t, _cartao_mensal(k)) for k, t in [
+        ('los_sem', 'LOS sem internação'),
+        ('los_com', 'LOS com internação'),
+        ('porta_medico', 'Tempo porta-médico'),
+        ('taxa_conversao', 'Taxa de conversão'),
+        ('risco', 'Atendimentos por classificação de risco'),
+        ('macro', 'Atendimentos por macrorregião de saúde'),
+        ('municipio', 'Atendimentos por município'),
+        ('procedencia', 'Atendimentos por procedência'),
+        ('cid_risco', 'Atendimentos por CID e classificação de risco'),
+        ('saidas', 'Saídas da emergência por destino'),
+        ('acima_24h', 'Pacientes acima de 24 h na emergência'),
+    ]],
+    'exames': [
+        ('totais', 'Totais do período e médias por mês', ('.kpi-container:not(.medias)', '.kpi-container.medias')),
+        ('solicitados', 'Exames solicitados por mês', '.chart-container:has(#grafico-solicitados)'),
+        ('realizados', 'Exames realizados por mês', '.chart-container:has(#grafico-realizados)'),
+        ('cancelados', 'Exames cancelados por mês', '.chart-container:has(#grafico-cancelados)'),
+        ('sem_agendamento', 'Exames solicitados sem agendamento por mês',
+         '.chart-container:has(#grafico-sem_agendamento)'),
+        ('tempo_mes', 'Exames realizados no mês: tempo desde a solicitação', '.chart-container:has(#grafico-tempo)'),
+        ('tempo', 'Tempo do exame até a realização ou baixa', '.chart-container:has(.tempo-exames)'),
+    ],
+    'ambulatorio': [(k, t, _cartao_mensal(k)) for k, t in [
+        ('atendimentos', 'Atendimentos'),
+        ('media_diaria', 'Média diária de atendimentos'),
+        ('status', 'Atendimentos por status'),
+        ('tipo_consulta', 'Consultas realizadas por tipo de consulta'),
+        ('prontuarios', 'Prontuários únicos'),
+        ('por_prontuario', 'Consultas realizadas por prontuário'),
+        ('taxa_alta', 'Taxa de alta ambulatorial'),
+        ('taxa_absenteismo', 'Taxa de absenteísmo'),
+        ('sexo', 'Consultas realizadas por sexo'),
+        ('consultas', 'Consultas realizadas'),
+        ('tempo_medio', 'Tempo médio por consulta'),
+        ('macrorregiao', 'Consultas realizadas por macrorregião de saúde'),
+        ('especialidades', 'Especialidades com atendimento'),
+    ]] + [('tipo', 'Consultas realizadas por tipo de consulta e especialidade', '.chart-card:has(#tb_tipo)')],
+}
+
+
+def _paginas_apresentacao(catalogo, endpoint_da):
+    """Páginas visíveis do catálogo, com o endereço e os gráficos de cada uma."""
+    ocultas = paginas_visiveis.ocultas()
+    nomes = {c: n for c, n, _e, _p in paginas_visiveis.PAGINAS}
+    return [{'chave': c, 'nome': nomes[c], 'url': url_for(endpoint_da(c)),
+             'graficos': [{'id': i, 'titulo': t, 'seletores': [s] if isinstance(s, str) else list(s)}
+                          for i, t, s in graficos]}
+            for c, graficos in catalogo.items() if c not in ocultas]
+
+
 @app.route('/apresentacao')
 def apresentacao():
     # Painel de Indicadores Atuais: mostra os gráficos escolhidos um a um
     # (cada página aberta num quadro da mesma origem); só as páginas visíveis
-    ocultas = paginas_visiveis.ocultas()
-    endpoints = {c: (n, e) for c, n, e, _p in paginas_visiveis.PAGINAS}
-    paginas = [{'chave': c, 'nome': endpoints[c][0], 'url': url_for(endpoints[c][1]),
-                'graficos': [{'id': i, 'titulo': t, 'seletores': [s] if isinstance(s, str) else list(s)}
-                             for i, t, s in graficos]}
-               for c, graficos in GRAFICOS_APRESENTACAO.items() if c not in ocultas]
-    return render_template('apresentacao.html', paginas=paginas)
+    endpoints = {c: e for c, _n, e, _p in paginas_visiveis.PAGINAS}
+    return render_template('apresentacao.html', modo='atual', titulo='Painel de Indicadores Atuais',
+                           paginas=_paginas_apresentacao(GRAFICOS_APRESENTACAO, endpoints.get))
+
+
+@app.route('/apresentacao/mensal')
+def apresentacao_mensal():
+    # Painel de Indicadores Mensais: o mesmo, com as páginas de tendência mensal
+    return render_template('apresentacao.html', modo='mensal', titulo='Painel de Indicadores Mensais',
+                           paginas=_paginas_apresentacao(GRAFICOS_APRESENTACAO_MENSAL, ENDPOINTS_MENSAIS.get))
 
 
 # Login e área restrita (/admin): area_restrita.py

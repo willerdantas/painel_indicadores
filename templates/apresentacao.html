@@ -4,14 +4,15 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Painel de Indicadores Atuais</title>
+<title>{{ titulo }}</title>
     {{ recursos() }}
 </head>
 <body class="pg-apresentacao">
 
 {# tela cheia: o cabeçalho, a legenda e os gráficos (filtros e botões ficam de fora) #}
 <div id="apresentacao">
-  {{ cabecalho('Painel de Indicadores Atuais', 'Gráficos dos painéis em apresentação') }}
+  {{ cabecalho(titulo, 'Gráficos dos painéis em apresentação, mês a mês nos últimos 12 meses fechados'
+                       if modo == 'mensal' else 'Gráficos dos painéis em apresentação') }}
 
   <div class="wrapper">
     <div class="filters apres-controles">
@@ -62,9 +63,13 @@ const DURACAO = 20000;         // tempo de cada slide (ms)
 const ESPERA_ROLAGEM = 2000;   // listas: parado no topo antes de rolar e no fim
 const LIMITE_CARREGAMENTO = 90000;
 
-// gráficos de cada página no filtro (GRAFICOS_APRESENTACAO, em painel.py);
-// o que ficou desmarcado é lembrado neste navegador
-const CHAVE_DESMARCADOS = 'apresentacao_graficos_desmarcados';
+// painel atual (GRAFICOS_APRESENTACAO) ou mensal (GRAFICOS_APRESENTACAO_MENSAL)
+const MODO = {{ modo | tojson }};
+
+// gráficos de cada página no filtro (o catálogo do painel, em painel.py);
+// o que ficou desmarcado é lembrado neste navegador, para cada painel
+const CHAVE_DESMARCADOS = MODO === 'mensal'
+  ? 'apresentacao_mensal_graficos_desmarcados' : 'apresentacao_graficos_desmarcados';
 
 // ajustes de gráficos específicos ("página:id" de GRAFICOS_APRESENTACAO):
 // dobrarAltura: caixa com rolagem que mostra o dobro das linhas;
@@ -76,7 +81,14 @@ const CHAVE_DESMARCADOS = 'apresentacao_graficos_desmarcados';
 // colunas: cards numa grade com esse número de colunas;
 // recolhido: grupos recolhidos continuam recolhidos (só os totais);
 // esconder: partes do cartão que ficam fora da tela
-const AJUSTES = {
+const AJUSTES_MENSAIS = {
+  // tabelas por CID: dá tempo de ler, mesmo sem mostrar a lista até o fim
+  'hospitalares:cid': { velocidade: 25 },
+  'emergencia:cid_risco': { velocidade: 25 },
+  // só os totais por classificação, sem as tabelas por origem
+  'exames:tempo': { recolhido: true, esconder: '.botoes-origem-tempo, .secao-tempo' },
+};
+const AJUSTES = MODO === 'mensal' ? AJUSTES_MENSAIS : {
   // CID: dá tempo de ler, mesmo sem mostrar a lista até o fim
   'hospitalares:cid': { dobrarAltura: '#caixa_cid_destino', velocidade: 25 },
   // macrorregião e município numa tela: rolagem no ritmo de leitura
@@ -114,6 +126,8 @@ const ESTILO_QUADRO = `
     animation: apres-entra .6s ease both;
   }
   .apres-slide .chart-box:not([style*="height"]) { height: 62vh !important; }
+  /* páginas de tendência mensal: o gráfico do cartão ocupa a tela */
+  .apres-slide.chart-card > .chart-container { height: 62vh !important; }
   /* tela com mais de uma parte: cada uma na altura dela, uma abaixo da outra */
   /* (--apres-cota: altura de cada parte, o espaço que sobra dividido entre as partes que faltam) */
   .apres-slide.apres-parte { bottom: auto !important; max-height: var(--apres-cota) !important; }
