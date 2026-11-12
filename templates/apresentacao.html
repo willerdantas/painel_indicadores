@@ -34,7 +34,23 @@
         <button type="button" class="btn-apply" id="btn-filtrar">Filtrar</button>
         <button type="button" class="btn-reset" id="btn-resetar">Resetar filtros</button>
         <button type="button" class="btn-apply" id="btn-iniciar">Iniciar apresentação</button>
+        <label class="apres-campo">Tempo de cada gráfico (s)
+          <input type="number" id="cfg-duracao" min="5" max="600" step="1" inputmode="numeric"></label>
+        <label class="apres-campo">Velocidade da rolagem (px/s)
+          <input type="number" id="cfg-velocidade" min="1" max="500" step="1" inputmode="numeric"></label>
         <button type="button" class="btn-apply" id="btn-tela-cheia">Tela cheia</button>
+        {# largura da tela simulada: menor = letras e gráficos maiores #}
+        <label class="apres-campo">Resolução
+          <select id="cfg-resolucao">
+            <option value="0">Automática (desta tela)</option>
+            <option value="1024">1024 × 768</option>
+            <option value="1280">HD (1280 × 720)</option>
+            <option value="1366">1366 × 768</option>
+            <option value="1600">HD+ (1600 × 900)</option>
+            <option value="1920">Full HD (1920 × 1080)</option>
+            <option value="2560">QHD (2560 × 1440)</option>
+            <option value="3840">4K (3840 × 2160)</option>
+          </select></label>
       </div>
     </div>
 
@@ -59,8 +75,13 @@
 // inteiro. A cada volta completa, cada página é recarregada num quadro novo,
 // em segundo plano, e entra no lugar do antigo quando estiver pronta.
 const PAGINAS = {{ paginas | tojson }};
-const DURACAO = 20000;         // tempo de cada slide (ms)
-const ESPERA_ROLAGEM = 2000;   // listas: parado no topo antes de rolar e no fim
+// valores padrão dos campos ao lado de "Iniciar apresentação" (o que for
+// mudado nos campos fica lembrado neste navegador)
+const DURACAO_PADRAO = 20;      // tempo de cada slide (segundos)
+const VELOCIDADE_PADRAO = 25;   // rolagem de todas as listas (pixels por segundo)
+const CHAVE_TEMPOS = 'apresentacao_tempos';
+const CHAVE_RESOLUCAO = 'apresentacao_resolucao';
+const ESPERA_ROLAGEM = 2000;   // listas: parado no topo antes de rolar (ms)
 const LIMITE_CARREGAMENTO = 90000;
 
 // painel atual (GRAFICOS_APRESENTACAO) ou mensal (GRAFICOS_APRESENTACAO_MENSAL)
@@ -73,7 +94,6 @@ const CHAVE_DESMARCADOS = MODO === 'mensal'
 
 // ajustes de gráficos específicos ("página:id" de GRAFICOS_APRESENTACAO):
 // dobrarAltura: caixa com rolagem que mostra o dobro das linhas;
-// velocidade: rolagem em pixels por segundo, sem pressa de chegar ao fim;
 // listasAbertas: listas dos cards (as que só abrem com o mouse e as com
 // barra de rolagem) ficam à mostra, inteiras;
 // listasLargas: card com lista longa (mais de 8 itens) ocupa duas colunas,
@@ -82,24 +102,17 @@ const CHAVE_DESMARCADOS = MODO === 'mensal'
 // recolhido: grupos recolhidos continuam recolhidos (só os totais);
 // esconder: partes do cartão que ficam fora da tela
 const AJUSTES_MENSAIS = {
-  // tabelas por CID: dá tempo de ler, mesmo sem mostrar a lista até o fim
-  'hospitalares:cid': { velocidade: 25 },
-  'emergencia:cid_risco': { velocidade: 25 },
   // só os totais por classificação, sem as tabelas por origem
   'exames:tempo': { recolhido: true, esconder: '.botoes-origem-tempo, .secao-tempo' },
 };
 const AJUSTES = MODO === 'mensal' ? AJUSTES_MENSAIS : {
-  // CID: dá tempo de ler, mesmo sem mostrar a lista até o fim
-  'hospitalares:cid': { dobrarAltura: '#caixa_cid_destino', velocidade: 25 },
-  // macrorregião e município numa tela: rolagem no ritmo de leitura
-  'emergencia:macro': { velocidade: 25 },
-  'ambulatorio:macro': { velocidade: 25 },
-  'emergencia:cid_risco': { dobrarAltura: '.tabela-municipio', velocidade: 25 },
-  // gráficos de barras longos: o dobro da área visível, rolagem no ritmo de leitura
+  // listas longas: o dobro da área visível
+  'hospitalares:cid': { dobrarAltura: '#caixa_cid_destino' },
+  'emergencia:cid_risco': { dobrarAltura: '.tabela-municipio' },
   'ambulatorio:especialidade': { dobrarAltura: '.rolagem-grafico' },
   'ambulatorio:sexo': { dobrarAltura: '.rolagem-grafico' },
-  'ambulatorio:salas': { dobrarAltura: '.rolagem-grafico', velocidade: 25 },
-  'ambulatorio:tempo': { dobrarAltura: '.rolagem-grafico', velocidade: 25 },
+  'ambulatorio:salas': { dobrarAltura: '.rolagem-grafico' },
+  'ambulatorio:tempo': { dobrarAltura: '.rolagem-grafico' },
   // internações e leitos disponíveis por clínica
   'lean:hospitalares': { listasAbertas: true, colunas: 6 },
   'lean:emergencia': { listasAbertas: true },
@@ -118,14 +131,17 @@ const ESTILO_QUADRO = `
   html.apres-ativa body * { visibility: hidden !important; }
   html.apres-ativa .apres-slide, html.apres-ativa .apres-slide * { visibility: visible !important; }
   .apres-slide {
-    position: fixed !important; inset: 12px !important; top: var(--apres-topo, 12px) !important;
+    /* altura do conteúdo, até a da tela (preencher() estica o slide até lá) */
+    position: fixed !important; left: 12px !important; right: 12px !important; bottom: auto !important;
+    top: var(--apres-topo, 12px) !important;
     z-index: 2147483000 !important;
     margin: 0 !important; width: auto !important; height: auto !important;
-    max-width: none !important; max-height: none !important;
+    max-width: none !important; max-height: calc(100vh - var(--apres-topo, 12px) - 12px) !important;
     overflow: auto !important; box-sizing: border-box !important;
     animation: apres-entra .6s ease both;
   }
   .apres-slide .chart-box:not([style*="height"]) { height: 62vh !important; }
+  .apres-slide.apres-sem-barra { overflow: hidden !important; }
   /* páginas de tendência mensal: o gráfico do cartão ocupa a tela */
   .apres-slide.chart-card > .chart-container { height: 62vh !important; }
   /* tela com mais de uma parte: cada uma na altura dela, uma abaixo da outra */
@@ -149,6 +165,8 @@ let ordem = [];       // chaves das páginas com algum gráfico escolhido
 let escolha = {};     // chave -> [{ id, titulo, seletores }] dos gráficos escolhidos
 let iPagina = 0, slides = [], iSlide = 0;
 let rodando = false, temporizador = null, rolagem = null, espera = null;
+let duracao = DURACAO_PADRAO * 1000, velocidade = VELOCIDADE_PADRAO;  // valores dos campos
+let resolucao = 0;    // largura da tela simulada nos quadros (0: a do palco)
 
 function nomeDa(chave) { return (PAGINAS.find(p => p.chave === chave) || {}).nome || chave; }
 
@@ -173,9 +191,34 @@ function carregar(chave) {
     } catch (e) { f.dataset.erro = '1'; }
   });
   f.src = PAGINAS.find(p => p.chave === chave).url;
+  ajustarQuadro(f);
   palco.appendChild(f);
   q.novo = f;
   q.velho = false;
+}
+
+// resolução escolhida: o quadro é desenhado com essa largura (e a altura que
+// mantém a proporção do palco) e reduzido/ampliado para caber no palco;
+// automática: o quadro tem o tamanho do palco (regras de .apres-quadro)
+function ajustarQuadro(f) {
+  const props = ['left', 'top', 'width', 'height', 'transform', 'transformOrigin'];
+  if (!resolucao) { props.forEach(p => { f.style[p] = ''; }); return; }
+  const livreL = Math.max(1, palco.clientWidth - 104);   // menos as margens das setas
+  const escala = livreL / resolucao;
+  Object.assign(f.style, {
+    left: '52px', top: '0px', width: resolucao + 'px',
+    height: Math.round(palco.clientHeight / escala) + 'px',
+    transform: `scale(${escala})`, transformOrigin: '0 0',
+  });
+}
+
+// os quadros acompanham o palco; o slide da vez é montado de novo no novo tamanho
+function reajustarQuadros() {
+  palco.querySelectorAll('.apres-quadro').forEach(ajustarQuadro);
+  requestAnimationFrame(() => {
+    const q = ordem.length && quadros[ordem[iPagina]];
+    if (slides.length && q && q.atual) mostrarSlide(iSlide);
+  });
 }
 
 // pronto: página carregada e sem carregamento na tela (os painéis buscam os
@@ -293,16 +336,20 @@ function mostrarSlide(k) {
   iSlide = k;
   const d = f.contentDocument;
   d.querySelectorAll('.apres-slide').forEach(el => {
-    el.classList.remove('apres-slide', 'apres-parte', 'apres-listas', 'apres-largas', 'apres-colunas');
+    el.classList.remove('apres-slide', 'apres-parte', 'apres-listas', 'apres-largas', 'apres-colunas', 'apres-sem-barra');
     el.style.removeProperty('--apres-topo');
     el.style.removeProperty('--apres-cota');
     el.style.removeProperty('--apres-colunas');
   });
+  d.querySelectorAll('[data-apres-orig]').forEach(restaurarTamanho);
   const { partes, titulo, ajuste } = slides[k];
   if (!partes.every(el => el.isConnected)) return entrarPagina(iPagina);  // a página redesenhou: coleta de novo
   d.documentElement.classList.add('apres-ativa');
   let topo = 12;
   const altura = f.contentWindow.innerHeight - 12;
+  // partes sem gráfico nem lista esticam só quando nenhuma parte cresce
+  // (cards acima de um gráfico ficam na altura deles; o gráfico ocupa o resto)
+  const algumaCresce = partes.some(el => crescentes(el).length);
   partes.forEach((el, i) => {
     el.classList.add('apres-slide');
     el.classList.toggle('apres-parte', partes.length > 1);
@@ -320,21 +367,26 @@ function mostrarSlide(k) {
       // o espaço que sobra é dividido entre esta e as partes seguintes; a
       // seguinte começa logo abaixo desta (offsetHeight ignora a animação)
       const faltam = partes.length - i;
+      const cota = Math.floor((altura - topo - 12 * (faltam - 1)) / faltam);
       el.style.setProperty('--apres-topo', topo + 'px');
-      el.style.setProperty('--apres-cota', Math.floor((altura - topo - 12 * (faltam - 1)) / faltam) + 'px');
+      el.style.setProperty('--apres-cota', cota + 'px');
+      preencher(el, cota, !algumaCresce);
       topo += el.offsetHeight + 12;
+    } else {
+      preencher(el, altura - topo, true);
     }
   });
   // gráficos (Chart.js) acompanham o novo tamanho
   f.contentWindow.dispatchEvent(new Event('resize'));
+  setTimeout(() => partes.forEach(semBarraAToa), 400);
   legenda(nomeDa(chave), titulo, `${k + 1} / ${slides.length}`);
   if (rodando) {
-    rolarListas(partes, f.contentWindow, ajuste.velocidade);
+    rolarListas(partes, f.contentWindow);
     const p = document.getElementById('progresso');
     void p.offsetWidth;
-    p.style.transition = `width ${DURACAO}ms linear`;
+    p.style.transition = `width ${duracao}ms linear`;
     p.style.width = '100%';
-    temporizador = setTimeout(avancar, DURACAO);
+    temporizador = setTimeout(avancar, duracao);
   }
 }
 
@@ -365,6 +417,139 @@ function abrirRecolhidos(el) {
   el.querySelectorAll('tr.clinica-toggle-row:not(.expanded)').forEach(tr => tr.click());
 }
 
+// ---------------------------------------------------------------- ocupar a tela
+// O slide ocupa a altura disponível (a tela do quadro, na resolução escolhida,
+// ou a cota da parte): os gráficos crescem e as listas com barra de rolagem
+// mostram mais linhas; sem nada para crescer, o slide estica (cards e grades
+// acompanham). O tamanho original volta quando o slide sai da tela.
+
+function rolavel(x) {
+  return /(auto|scroll)/.test(x.ownerDocument.defaultView.getComputedStyle(x).overflowY);
+}
+
+// dentro de uma lista com rolagem do slide: cresce com ela, não sozinho
+function dentroDeRolagem(x, el) {
+  for (let p = x.parentElement; p && p !== el; p = p.parentElement) if (rolavel(p)) return true;
+  return false;
+}
+
+// o que pode crescer no slide: a caixa de cada gráfico (Chart.js ou Plotly)
+// e as listas com barra de rolagem
+function crescentes(el) {
+  const graficos = [...el.querySelectorAll('canvas')].map(c => c.parentElement)
+    .concat([...el.querySelectorAll('.js-plotly-plot')])
+    .filter((x, i, todos) => todos.indexOf(x) === i && x !== el && x.offsetHeight > 40 && !dentroDeRolagem(x, el));
+  const listas = [...el.querySelectorAll('div, table, tbody, ul, section')].filter(x =>
+    x.offsetHeight > 0 && rolavel(x) && x.scrollHeight > x.clientHeight + 4 && !dentroDeRolagem(x, el));
+  return graficos.map(x => ({ x, lista: false })).concat(listas.map(x => ({ x, lista: true })));
+}
+
+// altura do conteúdo do slide pelas caixas dos filhos (não pelo scrollHeight:
+// o canvas do Chart.js só se ajusta à caixa depois, e até lá transborda)
+function alturaConteudo(el) {
+  const win = el.ownerDocument.defaultView;
+  const s = win.getComputedStyle(el);
+  let fundo = 0;
+  for (const c of el.children) {
+    if (!c.offsetHeight) continue;
+    fundo = Math.max(fundo, c.offsetTop + c.offsetHeight + (parseFloat(win.getComputedStyle(c).marginBottom) || 0));
+  }
+  return Math.ceil(fundo + parseFloat(s.paddingBottom) + parseFloat(s.borderTopWidth) + parseFloat(s.borderBottomWidth));
+}
+
+function guardarTamanho(x) {
+  if (x.dataset.apresOrig) return;
+  x.dataset.apresOrig = JSON.stringify({
+    h: x.style.height, mh: x.style.maxHeight, mn: x.style.minHeight,
+    ph: x.classList.contains('js-plotly-plot') && x.layout ? x.layout.height : null,
+  });
+}
+
+function restaurarTamanho(x) {
+  const o = JSON.parse(x.dataset.apresOrig);
+  delete x.dataset.apresOrig;
+  ['height', 'max-height', 'min-height'].forEach(p => x.style.removeProperty(p));
+  x.style.height = o.h;
+  x.style.maxHeight = o.mh;
+  x.style.minHeight = o.mn;
+  const win = x.ownerDocument.defaultView;
+  if (o.ph && win.Plotly) win.Plotly.relayout(x, { height: o.ph });
+}
+
+// o que ainda passa por poucos px (enfeites do cartão, fora das caixas): sem
+// barra de rolagem (de novo depois que os gráficos se ajustam às caixas)
+function semBarraAToa(el) {
+  if (!el.classList.contains('apres-slide')) return;
+  el.classList.remove('apres-sem-barra');
+  const passa = el.scrollHeight - el.clientHeight;
+  el.classList.toggle('apres-sem-barra', passa > 0 && passa <= 16);
+}
+
+// disponivel: altura (px) que o slide deve ocupar; esticar: sem nada para
+// crescer, o slide estica mesmo assim
+function preencher(el, disponivel, esticar) {
+  const win = el.ownerDocument.defaultView;
+  const itens = crescentes(el);
+  // o espaço livre é repartido; itens lado a lado ocupam o mesmo espaço, por
+  // isso mede de novo e reparte o que sobrou
+  for (let volta = 0; volta < 4 && itens.length; volta++) {
+    const livre = disponivel - alturaConteudo(el);
+    if (livre < 4) break;
+    const parte = livre / itens.length;
+    itens.forEach(({ x, lista }) => {
+      guardarTamanho(x);
+      if (lista) {
+        x.style.setProperty('max-height', Math.min(x.scrollHeight, x.clientHeight + parte) + 'px', 'important');
+      } else {
+        const novo = Math.round(x.offsetHeight + parte);
+        x.style.setProperty('height', novo + 'px', 'important');
+        if (x.classList.contains('js-plotly-plot') && win.Plotly) win.Plotly.relayout(x, { height: novo });
+      }
+    });
+  }
+  // arredondamentos passam do espaço por 1 ou 2 px (barra de rolagem à toa):
+  // o primeiro gráfico (ou lista) que cresceu devolve a diferença
+  // (pelas caixas ou, quando a diferença é pequena, pela rolagem de fato)
+  const pelaRolagem = el.scrollHeight - el.clientHeight;
+  const excesso = Math.max(alturaConteudo(el) - el.offsetHeight, pelaRolagem <= 16 ? pelaRolagem : 0);
+  const cresceu = itens.filter(({ x }) => x.dataset.apresOrig);
+  const item = cresceu.find(({ lista }) => !lista) || cresceu[0];
+  if (excesso > 0 && excesso <= 16 && item) {
+    if (item.lista) {
+      item.x.style.setProperty('max-height', (item.x.clientHeight - excesso) + 'px', 'important');
+    } else {
+      const novo = item.x.offsetHeight - excesso;
+      item.x.style.setProperty('height', novo + 'px', 'important');
+      if (item.x.classList.contains('js-plotly-plot') && win.Plotly) win.Plotly.relayout(item.x, { height: novo });
+    }
+  }
+  semBarraAToa(el);
+  const sobra = disponivel - el.offsetHeight;
+  if (sobra < 4 || !(itens.length || esticar)) return;
+  // o fundo do cartão vai até o fim; e o maior bloco de dentro, descendo até
+  // uma grade/linha de cards (as linhas esticam) ou uma tabela (as linhas
+  // ficam mais altas), estica junto (min-height vence o max-height da caixa)
+  guardarTamanho(el);
+  const display = x => win.getComputedStyle(x).display;
+  // grade, tabela ou linha (flex em linha) esticam o conteúdo sozinhas;
+  // bloco e flex em coluna, não
+  const estica = x => /(grid|table)/.test(display(x))
+    || (/flex/.test(display(x)) && !win.getComputedStyle(x).flexDirection.startsWith('column'));
+  let alvo = el;
+  // o slide já é a grade/linha de cards: ela estica sozinha
+  for (let nivel = estica(el) ? 5 : 0; nivel < 5; nivel++) {
+    const filhos = [...alvo.children].filter(c => c.offsetHeight && !['inline', 'none'].includes(display(c)));
+    const maior = filhos.sort((a, b) => b.offsetHeight - a.offsetHeight)[0];
+    if (!maior || maior.offsetHeight < 40) break;
+    guardarTamanho(maior);
+    const ehTabela = display(maior) === 'table';
+    maior.style.setProperty(ehTabela ? 'height' : 'min-height', (maior.offsetHeight + sobra) + 'px', 'important');
+    if (estica(maior)) break;
+    alvo = maior;
+  }
+  el.style.setProperty('min-height', disponivel + 'px', 'important');
+}
+
 // caixa com rolagem (altura máxima no estilo, como a de tabela_rolagem.js, ou
 // no CSS da página): passa a mostrar o dobro; uma vez por quadro (a página
 // recarregada volta ao tamanho dela)
@@ -377,25 +562,22 @@ function dobrarAltura(caixa) {
 }
 
 // listas com barra de rolagem (o slide e o que houver dentro dele) descem
-// juntas até o fim durante o slide; com velocidade (px/s), descem nesse ritmo
-// e param onde estiverem quando o slide acabar
-function rolarListas(partes, win, velocidade) {
+// juntas na velocidade do campo (px/s), depois de um tempo paradas no topo, e
+// param no fim da lista ou onde estiverem quando o slide acabar
+function rolarListas(partes, win) {
   const alvos = partes.flatMap(el => [el, ...el.querySelectorAll('div, table, tbody, ul, section')]).filter(x =>
     x.scrollHeight > x.clientHeight + 4 && /(auto|scroll)/.test(win.getComputedStyle(x).overflowY));
   if (!alvos.length) return;
   alvos.forEach(x => { x.scrollTop = 0; });
   const inicio = performance.now();
-  const fim = DURACAO - ESPERA_ROLAGEM;
   const passo = agora => {
     const t = agora - inicio;
     if (t > ESPERA_ROLAGEM) {
-      const f = Math.min(1, (t - ESPERA_ROLAGEM) / (fim - ESPERA_ROLAGEM));
       alvos.forEach(x => {
-        const max = x.scrollHeight - x.clientHeight;
-        x.scrollTop = velocidade ? Math.min(max, (t - ESPERA_ROLAGEM) / 1000 * velocidade) : f * max;
+        x.scrollTop = Math.min(x.scrollHeight - x.clientHeight, (t - ESPERA_ROLAGEM) / 1000 * velocidade);
       });
     }
-    if (t < (velocidade ? DURACAO : fim)) rolagem = requestAnimationFrame(passo);
+    if (t < duracao) rolagem = requestAnimationFrame(passo);
   };
   rolagem = requestAnimationFrame(passo);
 }
@@ -481,6 +663,57 @@ document.getElementById('btn-tela-cheia').addEventListener('click', () => {
   alvo.requestFullscreen().then(() => { if (!rodando) iniciar(true); }).catch(() => {});
 });
 document.getElementById('btn-voltar-inicio').addEventListener('click', () => { window.location.href = '/'; });
+
+// tempo de cada gráfico e velocidade da rolagem: valem a partir do slide
+// atual (que recomeça) e ficam lembrados neste navegador
+function lerTempos() {
+  try { return JSON.parse(localStorage.getItem(CHAVE_TEMPOS)) || {}; } catch (e) { return {}; }
+}
+function aplicarTempos(salvar) {
+  const campoD = document.getElementById('cfg-duracao');
+  const campoV = document.getElementById('cfg-velocidade');
+  const limitar = (campo, padrao) => {
+    const n = Math.round(Number(campo.value));
+    const v = Number.isFinite(n) && n > 0 ? Math.min(Number(campo.max), Math.max(Number(campo.min), n)) : padrao;
+    campo.value = v;
+    return v;
+  };
+  duracao = limitar(campoD, DURACAO_PADRAO) * 1000;
+  velocidade = limitar(campoV, VELOCIDADE_PADRAO);
+  if (salvar) {
+    try { localStorage.setItem(CHAVE_TEMPOS, JSON.stringify({ duracao: duracao / 1000, velocidade })); }
+    catch (e) { /* vale só agora */ }
+    if (rodando && slides.length) mostrarSlide(iSlide);
+  }
+}
+const tempos = lerTempos();
+document.getElementById('cfg-duracao').value = tempos.duracao || DURACAO_PADRAO;
+document.getElementById('cfg-velocidade').value = tempos.velocidade || VELOCIDADE_PADRAO;
+aplicarTempos(false);
+['cfg-duracao', 'cfg-velocidade'].forEach(id =>
+  document.getElementById(id).addEventListener('change', () => aplicarTempos(true)));
+
+// resolução: lembrada neste navegador
+const campoResolucao = document.getElementById('cfg-resolucao');
+try {
+  const r = localStorage.getItem(CHAVE_RESOLUCAO);
+  if (r && campoResolucao.querySelector(`option[value="${Number(r)}"]`)) campoResolucao.value = String(Number(r));
+} catch (e) { /* fica a automática */ }
+resolucao = Number(campoResolucao.value) || 0;
+campoResolucao.addEventListener('change', () => {
+  resolucao = Number(campoResolucao.value) || 0;
+  try { localStorage.setItem(CHAVE_RESOLUCAO, String(resolucao)); } catch (e) { /* vale só agora */ }
+  reajustarQuadros();
+});
+// tela cheia e janela redimensionada mudam o tamanho do palco
+let aoRedimensionar = null;
+const redimensionou = () => {
+  if (!resolucao) return;
+  clearTimeout(aoRedimensionar);
+  aoRedimensionar = setTimeout(reajustarQuadros, 150);
+};
+window.addEventListener('resize', redimensionou);
+document.addEventListener('fullscreenchange', redimensionou);
 
 // última escolha deste navegador (gráfico novo entra marcado)
 const desmarcados = new Set(lerDesmarcados());

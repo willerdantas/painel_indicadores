@@ -74,7 +74,7 @@
       </table>
     </div>
     <p class="nota-tipo">Atendimentos agendados em todos os meses escolhidos, pelo tipo de consulta da marcação
-      (nomes do cadastro Tipos de Consulta).</p>
+      (nomes da tabela t_tipo_consulta do sistema hospitalar).</p>
   </div>
 
 </div>
@@ -237,6 +237,10 @@ function carregarGraficos() {
         { key: 'tipo_consulta', titulo: 'Consultas Realizadas por Tipo de Consulta', empilhado: {}, rotulo: 'Tipo de consulta' },
         { key: 'prontuarios', titulo: 'Prontuários Únicos (consultas realizadas)', cor: '#0F9688' },
         { key: 'por_prontuario', titulo: 'Consultas Realizadas por Prontuário', cor: '#53B7D9' },
+        { key: 'intervalo_meses', titulo: 'Intervalo Médio entre Consultas do Mesmo Paciente na Especialidade (meses)',
+          cor: '#7A6FB0',
+          nota: 'No mês do retorno, o tempo desde a consulta realizada anterior do mesmo paciente na mesma especialidade '
+            + '(procurada até 12 meses antes; retornos depois de mais de 12 meses não entram).' },
         { key: 'taxa_alta', titulo: 'Taxa de Alta Ambulatorial (%)', cor: '#007C6B', sufixo: '%' },
         { key: 'taxa_absenteismo', titulo: 'Taxa de Absenteísmo (%)', cor: '#EB600A', sufixo: '%' },
         { key: 'sexo', titulo: 'Consultas Realizadas por Sexo', empilhado: CORES_SEXO, rotulo: 'Sexo' },
@@ -256,7 +260,8 @@ function carregarGraficos() {
         const card = document.createElement('div');
         card.className = 'chart-card' + (ind.empilhado ? ' largura-total' : '');
         card.dataset.ind = ind.key;
-        card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`;
+        card.innerHTML = `<h3>${ind.titulo}</h3><div class="chart-container"><canvas></canvas></div>`
+          + (ind.nota ? `<p class="nota-tipo">${ind.nota}</p>` : '');
         container.appendChild(card);
         return [ind, card];
       });

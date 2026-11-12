@@ -488,7 +488,8 @@ def _salvar_alteracoes_cadastros(monkeypatch, dados):
 def test_cadastros_salva_varias_linhas_de_uma_vez(monkeypatch):
     chamadas, msgs = _salvar_alteracoes_cadastros(monkeypatch, {
         'csrf': 'x',
-        'r__tipo_consulta__7__nome': 'DEMANDA ADMINISTRATIVA', 'r__tipo_consulta__7__isn_tipo_consulta': '14',
+        'r__indicador__7__nome': 'Taxa de ocupação', 'r__indicador__7__tipo_indicador_id': '3',
+        'r__indicador__7__fator': '100',
         'r__tipo_custo__2__nome': 'Pessoal',                       # cadastro "pai": salvo antes
         'r__item_custo__5__nome': 'CEMERG', 'r__item_custo__5__tipo_custo_id': '2',
         'r__item_custo__5__subcategoria_custo_id': '',
@@ -496,18 +497,19 @@ def test_cadastros_salva_varias_linhas_de_uma_vez(monkeypatch):
         'r__nao_existe__1__nome': 'x', 'outro_campo': 'y',          # ignorados
     })
     assert [(t, rid, nome) for t, rid, nome, *_ in chamadas] == [
-        ('tipo_custo', 2, 'Pessoal'), ('item_custo', 5, 'CEMERG'), ('tipo_consulta', 7, 'DEMANDA ADMINISTRATIVA'),
+        ('tipo_custo', 2, 'Pessoal'), ('item_custo', 5, 'CEMERG'), ('indicador', 7, 'Taxa de ocupação'),
         ('classificacao_exame', 4, 'IMAGEM')]
     item = chamadas[1]
     assert item[3] == {'tipo_custo': 2} and item[5] == {'subcategoria_custo': None}
-    assert chamadas[2][4] == {'isn_tipo_consulta': 14.0}
+    assert chamadas[2][3] == {'tipo_indicador': 3} and chamadas[2][4] == {'fator': 100.0}
     assert msgs == [('ok', '4 registro(s) salvo(s).')]
 
 
 def test_cadastros_com_valor_invalido_nada_e_salvo(monkeypatch):
     chamadas, msgs = _salvar_alteracoes_cadastros(monkeypatch, {
         'r__tipo_custo__2__nome': 'Pessoal',
-        'r__tipo_consulta__7__nome': 'X', 'r__tipo_consulta__7__isn_tipo_consulta': 'abc',   # inválido
+        'r__indicador__7__nome': 'X', 'r__indicador__7__tipo_indicador_id': '3',
+        'r__indicador__7__fator': 'abc',                                                     # inválido
         'r__item_custo__5__nome': '', 'r__item_custo__5__tipo_custo_id': '2'})                  # sem nome
     assert chamadas == [] and msgs[0][0] == 'erro' and msgs[0][1].startswith('Nada foi salvo')
     # erro do banco numa linha (nome repetido): as outras são salvas e a mensagem diz qual falhou
@@ -517,31 +519,10 @@ def test_cadastros_com_valor_invalido_nada_e_salvo(monkeypatch):
     assert any(c == 'erro' and 'REPETIDO' in m for c, m in msgs)
 
 
-def test_cadastro_tipo_consulta_com_codigo_do_sistema():
-    cad = banco_painel.CADASTROS_POR_TABELA['tipo_consulta']
-    assert cad.titulo == 'Tipos de Consulta' and cad.grupo == 'Ambulatório'
-    assert [(c.nome, c.formato) for c in cad.extras] == [('isn_tipo_consulta', 'inteiro')]
-    # carga inicial: arquivo do sistema em sql/ (um nome por código, sem repetir)
-    tipos = banco_painel.tipos_consulta_padrao()
-    assert tipos[34] == 'RETORNO' and tipos[31] == '1ª consulta' and tipos[29] == 'EXTRA'
-    assert tipos[36] == 'TELEATENDIMENTO' and tipos[38] == 'REGULAÇÃO'
-    assert len(set(tipos.values())) == len(tipos) == 12
-
-
-def test_tipos_consulta_sem_arquivo_tenta_de_novo(monkeypatch):
-    class Cursor:
-        def __init__(self):
-            self.sqls = []
-
-        def execute(self, sql, params=None):
-            self.sqls.append(sql)
-
-        def fetchone(self):
-            return None
-    cur = Cursor()
-    monkeypatch.setattr(banco_painel, 'tipos_consulta_padrao', lambda: {})
-    banco_painel._criar_tipos_consulta(cur)
-    assert not any('INSERT' in s for s in cur.sqls)  # nem a carga nem o registro em migracao
+def test_tipo_consulta_fora_dos_cadastros():
+    """O nome do tipo de consulta vem de t_tipo_consulta (sistema hospitalar)."""
+    assert 'tipo_consulta' not in banco_painel.CADASTROS_POR_TABELA
+    assert not hasattr(banco_painel, 'nomes_tipos_consulta')
 
 
 def test_lancamento_custos_agrupa_por_categoria_e_subcategoria():
@@ -601,7 +582,7 @@ def test_ambulatorio_mensal(monkeypatch):
     monkeypatch.setattr(ambulatorio, '_consultas_periodo', lambda ini, fim: consultas)
     monkeypatch.setattr(ambulatorio.banco_painel, 'macrorregiao_dos_municipios',
                         lambda: {'FORTALEZA': 'Fortaleza', 'SOBRAL': 'Norte'})
-    monkeypatch.setattr(ambulatorio.banco_painel, 'nomes_tipos_consulta', lambda: {34: 'RETORNO'})
+    monkeypatch.setattr(ambulatorio, 'nomes_tipos_consulta', lambda: {34: 'RETORNO'})
     d = ambulatorio.get_mensal('2026-10', '2026-09')  # meses em qualquer ordem
     # por tipo de consulta (só consultas realizadas: a falta de set fica de fora):
     # mês a mês, a tabela do período e as linhas do comparativo
@@ -649,6 +630,45 @@ def test_ambulatorio_mensal(monkeypatch):
     assert sum(p['por_dia_semana']) == 3 and sum(x['qtd'] for x in p['por_municipio']) == 3
 
 
+def test_ambulatorio_mensal_intervalo_medio(monkeypatch):
+    """Intervalo médio, no mês do retorno, desde a consulta realizada anterior
+    do mesmo paciente na mesma especialidade; só na tendência (fora do comparativo)."""
+    from datetime import date
+    import ambulatorio
+    visitas = [  # (paciente, especialidade, status, dia, município, sexo, idade, internação, tipo)
+        (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 7, 1), 'FORTALEZA/CE', 'Feminino', 50, 1, 34),
+        (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 8, 1), 'FORTALEZA/CE', 'Feminino', 50, 2, 34),   # 31 dias
+        (1, 'Cardiologia', 'FALTOU', date(2026, 9, 1), 'FORTALEZA/CE', 'Feminino', 50, 3, 34),      # não realizada
+        (1, 'Cardiologia', 'ALTA AMBULATORIAL', date(2026, 9, 30), 'FORTALEZA/CE', 'Feminino', 50, 4, 34),  # 60
+        (2, 'Cardiologia', 'CONCLUÍDO', date(2026, 7, 10), 'SOBRAL/CE', 'Masculino', 30, 5, 34),
+        (2, 'Cardiologia', 'CONCLUÍDO', date(2026, 9, 10), 'SOBRAL/CE', 'Masculino', 30, 6, 34),    # 62
+        (1, 'Pneumologia', 'CONCLUÍDO', date(2026, 8, 20), 'FORTALEZA/CE', 'Feminino', 50, 7, 34),  # outra esp.
+    ]
+    antes = [  # consulta anterior, antes da janela: o retorno de julho conta
+        (2, 'Cardiologia', 'CONCLUÍDO', date(2026, 6, 10), 'SOBRAL/CE', 'Masculino', 30, 8, 34),     # 30 dias
+        (1, 'Cardiologia', 'FALTOU', date(2026, 6, 1), 'FORTALEZA/CE', 'Feminino', 50, 9, 34),       # não realizada
+    ]
+    janelas = []
+    monkeypatch.setattr(ambulatorio, '_visitas_periodo',
+                        lambda ini, fim: janelas.append((ini, fim)) or (visitas if ini == date(2026, 7, 1) else antes))
+    monkeypatch.setattr(ambulatorio, '_consultas_periodo', lambda ini, fim: [])
+    monkeypatch.setattr(ambulatorio.banco_painel, 'macrorregiao_dos_municipios', lambda: {})
+    monkeypatch.setattr(ambulatorio, 'nomes_tipos_consulta', lambda: {})
+    d = ambulatorio.get_mensal('2026-07', '2026-09', intervalo=True)
+    assert janelas == [(date(2026, 7, 1), date(2026, 9, 30)), (date(2025, 7, 1), date(2026, 6, 30))]
+    assert d['intervalo_meses'] == [round(30 / 30.44, 1), round(31 / 30.44, 1), round(61 / 30.44, 1)]
+    assert 'intervalo_meses' not in [c[0] for c in d['_campos']]
+    assert ambulatorio.get_mensal('2026-07', '2026-09', sexo='Feminino', intervalo=True)['intervalo_meses'] == \
+        [None, round(31 / 30.44, 1), round(60 / 30.44, 1)]
+    # retorno depois de mais de 365 dias não entra (os primeiros meses não o enxergariam)
+    visitas.append((3, 'Cardiologia', 'CONCLUÍDO', date(2026, 9, 5), 'SOBRAL/CE', 'Masculino', 30, 10, 34))
+    antes.append((3, 'Cardiologia', 'CONCLUÍDO', date(2025, 7, 1), 'SOBRAL/CE', 'Masculino', 30, 11, 34))  # 431 dias
+    assert ambulatorio.get_mensal('2026-07', '2026-09', intervalo=True)['intervalo_meses'][2] == round(61 / 30.44, 1)
+    # sem intervalo (comparativo): nem a série nem a leitura de antes da janela
+    janelas.clear()
+    assert 'intervalo_meses' not in ambulatorio.get_mensal('2026-07', '2026-09') and len(janelas) == 1
+
+
 def test_ambulatorio_por_tipo_especialidade():
     from datetime import date
     import ambulatorio
@@ -668,6 +688,9 @@ def test_ambulatorio_por_tipo_especialidade():
     assert t['total'] == {'nome': 'Total', 'valores': [3, 1, 1], 'total': 5}
     assert ambulatorio.por_tipo_especialidade(visitas, nomes, status='FALTOU')['tipos'] == ['1ª consulta']
     assert ambulatorio.nome_tipo_consulta(99, nomes) == 'Código 99'
+    # o código vem numeric do banco (Decimal) e acha o nome pela chave inteira
+    from decimal import Decimal
+    assert ambulatorio.nome_tipo_consulta(Decimal('34'), nomes) == 'RETORNO'
     # consulta realizada: só concluído e alta ambulatorial
     assert ambulatorio.realizada('CONCLUÍDO') and ambulatorio.realizada(' alta ambulatorial')
     assert not any(map(ambulatorio.realizada, ('FALTOU', 'CANCELADA', 'MARCADO', 'Sem marcação', None)))
@@ -903,12 +926,12 @@ def test_ambulatorio_filtro_sexo_municipio_macrorregiao():
     assert ambulatorio.macrorregiao_do_municipio('XYZ', mapa) == 'UF não informada'
 
 
-def test_ambulatorio_por_prontuario_e_intervalo_medio():
+def test_ambulatorio_por_prontuario():
     from datetime import date
     import ambulatorio
     visitas = [
         (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 1, 10), 'FORTALEZA/CE'),
-        (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 4, 10), 'FORTALEZA/CE'),   # 90 dias depois
+        (1, 'Cardiologia', 'CONCLUÍDO', date(2026, 4, 10), 'FORTALEZA/CE'),
         (1, 'Cardiologia', 'FALTOU', date(2026, 4, 10), 'FORTALEZA/CE'),      # mesmo dia: não é retorno
         (2, 'Cardiologia', 'CONCLUÍDO', date(2026, 2, 1), 'CAUCAIA/CE'),
         (1, 'Pneumologia', 'CONCLUÍDO', date(2026, 3, 1), 'FORTALEZA/CE'),
@@ -916,8 +939,8 @@ def test_ambulatorio_por_prontuario_e_intervalo_medio():
     linhas, total = ambulatorio.por_prontuario(visitas)
     cardio = linhas[0]
     assert (cardio['nome'], cardio['atendimentos'], cardio['prontuarios'], cardio['com_retorno']) == ('Cardiologia', 4, 2, 1)
-    assert cardio['por_prontuario'] == 2.0 and cardio['intervalo_meses'] == round(90 / 30.44, 1)
-    assert linhas[1]['intervalo_meses'] is None  # sem retorno
+    assert cardio['por_prontuario'] == 2.0
+    assert 'intervalo_meses' not in cardio and 'intervalo_meses' not in total  # só na tendência mensal
     assert (total['atendimentos'], total['prontuarios']) == (5, 2)  # paciente 1 conta uma vez no total
     assert ambulatorio.por_municipio(visitas) == [
         {'nome': 'FORTALEZA/CE', 'qtd': 4, 'prontuarios': 1}, {'nome': 'CAUCAIA/CE', 'qtd': 1, 'prontuarios': 1}]

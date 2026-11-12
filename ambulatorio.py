@@ -112,11 +112,12 @@ def _consultar(nome, sql, params):
 
 # O SQL abaixo é montado a cada consulta com as tabelas e colunas que o
 # servidor tem (banco_hospitalar.tem_colunas): onde o sistema hospitalar não
-# tem t_marcacao.isn_especialidade, a especialidade vem só de
-# t_marcacao.dsc_especialidade; sem uma tabela de apoio (t_especialidade,
+# tem uma coluna, ela vem NULL; a especialidade vem só do cadastro
+# (t_especialidade pelo isn_especialidade da marcação: t_marcacao não tem mais
+# dsc_especialidade). Sem uma tabela de apoio (t_especialidade,
 # t_marcacao_situacao, t_municipio, t_uf, t_paciente), o campo fica como
 # "Sem ..." e o resto da página continua.
-_COLUNAS_MARCACAO = (('isn_especialidade', 'numeric'), ('dsc_especialidade', 'text'),
+_COLUNAS_MARCACAO = (('isn_especialidade', 'numeric'),
                      ('isn_marcacao_situacao', 'numeric'), ('isn_tipo_consulta', 'numeric'))
 
 
@@ -150,13 +151,12 @@ def _com_situacao():
 
 
 def _especialidade_status():
-    """Colunas especialidade e status (o nome do cadastro de especialidades,
-    senão o texto gravado na marcação)."""
-    cadastro = "NULLIF(TRIM(te.dsc_especialidade), ''),\n                     " if _com_especialidade_cadastrada() else ''
+    """Colunas especialidade (o nome no cadastro t_especialidade, pelo
+    isn_especialidade da marcação) e status."""
+    nome = "NULLIF(TRIM(te.dsc_especialidade), '')" if _com_especialidade_cadastrada() else 'NULL'
     situacao = 'tms.dsc_marcacao_situacao' if _com_situacao() else 'NULL'
     return f"""
-            COALESCE({cadastro}NULLIF(TRIM(m.dsc_especialidade), ''),
-                     'Sem especialidade')                 AS especialidade,
+            COALESCE({nome}, 'Sem especialidade') AS especialidade,
             COALESCE({situacao}, 'Sem marcação') AS status,"""
 
 
@@ -396,9 +396,27 @@ def por_macrorregiao(visitas, macro_do_municipio, especialidade=None, status=Non
                   key=lambda x: (-x["qtd"], x["nome"]))
 
 
+def nomes_tipos_consulta():
+    """{isn_tipo_consulta: nome} de t_tipo_consulta (sistema hospitalar), com
+    os tipos desativados também (atendimentos antigos usam esses códigos).
+    Sem a tabela ou se a leitura falhar: vazio (os tipos aparecem como "Código N")."""
+    def calcular():
+        if not banco_hospitalar.tem_colunas('t_tipo_consulta', 'isn_tipo_consulta', 'dsc_tipo_consulta'):
+            return {}
+        try:
+            rows = fetch_all("""SELECT isn_tipo_consulta, dsc_tipo_consulta FROM t_tipo_consulta
+                                WHERE isn_tipo_consulta IS NOT NULL""") or []
+        except Exception as erro:  # banco fora do ar: a página continua com os códigos
+            print(f'[ambulatorio] t_tipo_consulta: {erro}')
+            return {}
+        return {int(r['isn_tipo_consulta']): r['dsc_tipo_consulta'].strip()
+                for r in rows if (r['dsc_tipo_consulta'] or '').strip()}
+    return _em_cache(('tipos_consulta',), calcular)
+
+
 def nome_tipo_consulta(codigo, nomes):
-    """Nome do tipo de consulta (t_marcacao.isn_tipo_consulta) pelo cadastro
-    Tipos de Consulta; código fora do cadastro aparece como "Código N"."""
+    """Nome do tipo de consulta (t_marcacao.isn_tipo_consulta) em
+    t_tipo_consulta (nomes_tipos_consulta); código fora dela aparece como "Código N"."""
     if codigo is None:
         return "Sem tipo"
     return nomes.get(codigo) or f"Código {codigo}"
@@ -490,9 +508,9 @@ _DIAS_POR_MES = 30.44
 
 def por_prontuario(visitas, especialidade=None, status=None):
     """Por especialidade: atendimentos, prontuários (pacientes) únicos,
-    atendimentos por prontuário, prontuários com retorno e o intervalo médio
-    em meses entre atendimentos consecutivos do mesmo paciente na
-    especialidade (só dentro do período; dias repetidos contam uma vez).
+    atendimentos por prontuário e prontuários com retorno (mais de um dia
+    de atendimento na especialidade). O intervalo médio entre retornos fica
+    só na tendência mensal (intervalos_por_mes).
     Retorna (linhas da maior para a menor, total)."""
     datas = {}
     for paciente, esp, st, dia, *_ in visitas:
@@ -502,35 +520,26 @@ def por_prontuario(visitas, especialidade=None, status=None):
 
     def linha(nome, pacientes):
         atend = sum(len(d) for d in pacientes.values())
-        intervalos = []
-        for dias in pacientes.values():
-            dias = sorted(set(dias))
-            intervalos += [(b - a).days for a, b in zip(dias, dias[1:])]
         return {
             "nome": nome,
             "atendimentos": atend,
             "prontuarios": len(pacientes),
             "por_prontuario": round(atend / len(pacientes), 2) if pacientes else None,
             "com_retorno": sum(1 for d in pacientes.values() if len(set(d)) > 1),
-            "intervalo_meses": round(statistics.mean(intervalos) / _DIAS_POR_MES, 1) if intervalos else None,
-            "_intervalos": intervalos,
         }
 
     linhas = sorted((linha(esp, pac) for esp, pac in datas.items()),
                     key=lambda x: (-x["atendimentos"], x["nome"]))
-    # total: prontuário único no geral (o mesmo paciente em duas especialidades conta uma vez);
-    # intervalo médio de todos os retornos dentro de cada especialidade
+    # total: prontuário único no geral (o mesmo paciente em duas especialidades conta uma vez)
     todos = {}
     for pac in datas.values():
         for p, d in pac.items():
             todos.setdefault(p, []).extend(d)
-    intervalos = [i for l in linhas for i in l.pop("_intervalos")]
     total = {
         "nome": "Total",
         "atendimentos": sum(l["atendimentos"] for l in linhas),
         "prontuarios": len(todos),
         "com_retorno": sum(l["com_retorno"] for l in linhas),
-        "intervalo_meses": round(statistics.mean(intervalos) / _DIAS_POR_MES, 1) if intervalos else None,
     }
     total["por_prontuario"] = round(total["atendimentos"] / total["prontuarios"], 2) if todos else None
     return linhas, total
@@ -712,7 +721,7 @@ def get_ambulatorio(data_ini, data_fim, especialidade=None, status=None,
         "por_idade": por_idade(visitas, especialidade, status),
         "por_municipio": por_municipio(visitas, especialidade, status),
         "por_macrorregiao": por_macrorregiao(visitas, macro_do_municipio, especialidade, status),
-        "por_tipo_consulta": por_tipo_especialidade(visitas, banco_painel.nomes_tipos_consulta(),
+        "por_tipo_consulta": por_tipo_especialidade(visitas, nomes_tipos_consulta(),
                                                     especialidade, status),
     }
 
@@ -749,14 +758,21 @@ def _janela_meses(mes_ini, mes_fim):
     return meses, meses[0], (meses[-1] + timedelta(days=32)).replace(day=1) - timedelta(days=1)
 
 
+_RETORNO_ANTES = 365  # dias antes da janela em que se busca a consulta anterior (intervalo médio)
+
+
 def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, macrorregiao=None,
-               por_ano=False):
+               por_ano=False, intervalo=False):
     """Indicadores do ambulatório mês a mês (tendência mensal e comparativo),
     com os filtros de especialidade, sexo, município e macrorregião. Os
     atendimentos são datados pelo cadastro e as consultas (horário/tempo) pelo
     início do atendimento médico, como na página do ambulatório; a média
     diária divide pelos dias em que o ambulatório atendeu (sem filtro).
-    por_ano: um valor por ano (comparativo anual) em vez de um por mês."""
+    por_ano: um valor por ano (comparativo anual) em vez de um por mês.
+    intervalo (só a tendência): também "intervalo_meses", o intervalo médio
+    entre consultas do mesmo paciente na especialidade, no mês do retorno, dos
+    retornos em até _RETORNO_ANTES dias; a consulta anterior é procurada até
+    esse tanto antes da janela (senão os primeiros meses só veriam retornos curtos)."""
     meses, dt_ini, dt_fim = _janela_meses(mes_ini, mes_fim)
     if por_ano:
         meses = sorted({m.replace(month=1) for m in meses})
@@ -767,9 +783,11 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         return (not especialidade or esp == especialidade) and (filtro is None or filtro(sx, mun))
 
     visitas = _visitas_periodo(dt_ini, dt_fim)
-    nomes_tipo = banco_painel.nomes_tipos_consulta()
+    nomes_tipo = nomes_tipos_consulta()
+    anteriores = (_visitas_periodo(dt_ini - timedelta(days=_RETORNO_ANTES), dt_ini - timedelta(days=1))
+                  if intervalo else ())
     c = _contar_mes_a_mes(meses, visitas, _consultas_periodo(dt_ini, dt_fim), passa,
-                          nomes_tipo, macro_do_municipio, por_ano)
+                          nomes_tipo, macro_do_municipio, por_ano, anteriores)
     atend = c["atendimentos"]
 
     def do_status(nome):
@@ -819,16 +837,22 @@ def get_mensal(mes_ini, mes_fim, especialidade=None, sexo=None, municipio=None, 
         campos.insert(campos.index(CAMPOS_MENSAL[0]) + 1 + status.index(s), (chave, s["nome"].capitalize(), "qtd"))
     campos += _campos_tipo_especialidade(dados, c["consultas"], tipos, c["especialidade_tipo"])
     dados["_campos"] = campos
+    if intervalo:  # fora de _campos: o comparativo não tem
+        dados["intervalo_meses"] = [round(statistics.mean(x) / _DIAS_POR_MES, 1) if x else None
+                                    for x in c["intervalos"]]
     return dados
 
 
-def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_municipio, por_ano=False):
+def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_municipio, por_ano=False,
+                      anteriores=()):
     """Contagens de get_mensal, um valor por mês (por ano, com por_ano):
     atendimentos, especialidades (conjunto) e por status (todos os status);
     consultas realizadas (pela data do atendimento), prontuários (conjunto),
     por sexo, macrorregião, tipo de consulta e especialidade × tipo; minutos de cada consulta realizada (pelo
     início do atendimento médico). dias_abertos: dias em que o ambulatório atendeu (sem os
-    filtros de passa)."""
+    filtros de passa). intervalos: dias desde a consulta realizada anterior do
+    mesmo paciente na mesma especialidade, no mês do retorno; a anterior pode
+    estar em anteriores (visitas de antes da janela)."""
     n = len(meses)
 
     def chave(d):
@@ -842,7 +866,11 @@ def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_mun
     c = {"atendimentos": serie(), "consultas": serie(), "status": {}, "sexo": {}, "macrorregiao": {},
          "tipo": {}, "especialidade_tipo": {}, "dias_abertos": [set() for _ in meses],
          "pacientes": [set() for _ in meses], "especialidades": [set() for _ in meses],
-         "minutos": [[] for _ in meses]}
+         "minutos": [[] for _ in meses], "intervalos": [[] for _ in meses]}
+    dias_paciente = {}  # (especialidade, paciente): dias com consulta realizada
+    for paciente, esp, st, dia, mun, sx, *_ in anteriores:
+        if paciente is not None and realizada(st) and passa(esp, sx, mun):
+            dias_paciente.setdefault((esp, paciente), set()).add(dia)
     for paciente, esp, st, dia, mun, sx, _, _, cod_tipo in visitas:
         i = idx[chave(dia)]
         c["dias_abertos"][i].add(dia)
@@ -856,10 +884,19 @@ def _contar_mes_a_mes(meses, visitas, consultas, passa, nomes_tipo, macro_do_mun
             c["consultas"][i] += 1
             if paciente is not None:
                 c["pacientes"][i].add(paciente)
+                dias_paciente.setdefault((esp, paciente), set()).add(dia)
             c["sexo"].setdefault(sx, serie())[i] += 1
             c["macrorregiao"].setdefault(macrorregiao_do_municipio(mun, macro_do_municipio), serie())[i] += 1
             c["tipo"].setdefault(tipo, serie())[i] += 1
             c["especialidade_tipo"].setdefault(esp, {}).setdefault(tipo, serie())[i] += 1
+    for dias in dias_paciente.values():
+        dias = sorted(dias)
+        for anterior, retorno in zip(dias, dias[1:]):
+            i, dias_entre = idx.get(chave(retorno)), (retorno - anterior).days
+            # retorno de antes da janela não entra; nem o de mais de _RETORNO_ANTES
+            # dias (o primeiro mês da janela só enxerga até aí: todos os meses na mesma base)
+            if i is not None and dias_entre <= _RETORNO_ANTES:
+                c["intervalos"][i].append(dias_entre)
 
     for esp, st, _, mins, sx, mun, dia in consultas:
         i = idx.get(chave(dia))

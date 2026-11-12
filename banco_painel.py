@@ -858,9 +858,6 @@ CADASTROS = [
     Cadastro('macrorregiao', 'Macrorregiões de Saúde', 'Regiões de Saúde (Ceará)',
              uso=('municipio_regiao', 'macrorregiao_id', 'municípios')),
     Cadastro('municipio_regiao', 'Municípios', 'Regiões de Saúde (Ceará)', pais=[('macrorregiao', 'Macrorregião')]),
-    # nome de cada t_marcacao.isn_tipo_consulta (o sistema hospitalar só guarda o código)
-    Cadastro('tipo_consulta', 'Tipos de Consulta', 'Ambulatório',
-             extras=[Coluna('isn_tipo_consulta', 'Código no sistema (isn_tipo_consulta)', 'inteiro')]),
 ]
 CADASTROS_POR_TABELA = {c.tabela: c for c in CADASTROS}
 
@@ -1208,44 +1205,6 @@ def _criar_regioes_saude(cur):
     print(f'[painel] macrorregiões de saúde: {linhas} municípios do Ceará')
 
 
-# Tipos de consulta do sistema hospitalar (t_marcacao.isn_tipo_consulta) que
-# vêm com o sistema (versionados no projeto, junto do SQL de apoio; gerados do
-# cadastro Tipos de Consulta em 30/10/2026): isn_tipo_consulta;nome
-ARQUIVO_TIPOS_CONSULTA = os.path.join(BASE_DIR, 'sql', 'tipos_consulta_padrao.csv')
-
-
-def tipos_consulta_padrao():
-    """{isn_tipo_consulta: nome} do arquivo do sistema; vazio sem ele."""
-    if not os.path.exists(ARQUIVO_TIPOS_CONSULTA):
-        return {}
-    with open(ARQUIVO_TIPOS_CONSULTA, encoding='utf-8', newline='') as f:
-        return {int(r['isn_tipo_consulta']): r['nome'].strip() for r in csv.DictReader(f, delimiter=';')}
-
-
-def _criar_tipos_consulta(cur):
-    """tipo_consulta (nome de cada isn_tipo_consulta), mantida na tela
-    Cadastros. Na primeira vez carrega o arquivo do sistema (registrado em
-    migracao; sem o arquivo, tenta de novo no próximo início). Depende de
-    migracao."""
-    s = schema()
-    cur.execute(f"""CREATE TABLE IF NOT EXISTS {s}.tipo_consulta (
-                       id                SERIAL PRIMARY KEY,
-                       nome              TEXT NOT NULL UNIQUE,
-                       ativo             BOOLEAN NOT NULL DEFAULT true,
-                       isn_tipo_consulta INTEGER UNIQUE)""")
-    cur.execute(f"SELECT 1 FROM {s}.migracao WHERE tabela = 'tipo_consulta'")
-    if cur.fetchone():
-        return
-    padrao = tipos_consulta_padrao()
-    if not padrao:
-        print(f'[painel] AVISO: {ARQUIVO_TIPOS_CONSULTA} não encontrado; tipos de consulta sem carga inicial')
-        return
-    execute_batch(cur, f'INSERT INTO {s}.tipo_consulta (isn_tipo_consulta, nome) VALUES (%s, %s) '
-                       'ON CONFLICT DO NOTHING', list(padrao.items()))
-    cur.execute(f"INSERT INTO {s}.migracao (tabela, linhas) VALUES ('tipo_consulta', %s)", [len(padrao)])
-    print(f'[painel] tipos de consulta: {len(padrao)} cadastrados')
-
-
 def _criar_tabelas_financeiro(cur):
     """Relatórios do SIAFE importados na tela Lançar Dados do Financeiro
     (financeiro.py): cada importação substitui a anterior do mesmo tipo
@@ -1292,21 +1251,6 @@ def _criar_tabelas_financeiro(cur):
     # cruzamento dos dois relatórios pelo número do empenho
     cur.execute(f'CREATE INDEX IF NOT EXISTS empenho_aberto_empenho_idx ON {s}.empenho_aberto (empenho)')
     cur.execute(f'CREATE INDEX IF NOT EXISTS resto_pagar_empenho_idx ON {s}.resto_pagar (empenho)')
-
-
-def nomes_tipos_consulta():
-    """{isn_tipo_consulta: nome} dos tipos de consulta ativos no cadastro.
-    Enquanto o banco do painel não está pronto ou se a leitura falhar, usa
-    o arquivo do sistema (tipos_consulta_padrao)."""
-    if pronto():
-        try:
-            with _cursor() as cur:
-                cur.execute(f"""SELECT isn_tipo_consulta, nome FROM {schema()}.tipo_consulta
-                                WHERE ativo AND isn_tipo_consulta IS NOT NULL""")
-                return {row['isn_tipo_consulta']: row['nome'] for row in cur.fetchall()}
-        except Exception as e:
-            print(f'[painel] AVISO: cadastro de tipos de consulta indisponível, usando a lista padrão: {e}')
-    return tipos_consulta_padrao()
 
 
 def macrorregiao_dos_municipios():
@@ -1386,7 +1330,6 @@ def iniciar(forcar=False):
                 _carregar_classificacoes_padrao(cur)
                 _criar_subcategorias_custo(cur)
                 _criar_regioes_saude(cur)
-                _criar_tipos_consulta(cur)
                 _criar_tabelas_financeiro(cur)
             for t in TABELAS:
                 if _migracao_feita(t):

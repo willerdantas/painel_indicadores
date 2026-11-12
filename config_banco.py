@@ -87,7 +87,7 @@ TABELAS_POR_PAGINA = {
     'exames': ('t_clinica', 't_exame', 't_exame_solic'),  # painel.py (classificação: schema do painel)
     'ambulatorio': ('t_especialidade', 't_internacao', 't_internacao_atendimento', 't_internacao_leito',
                     't_leito', 't_marcacao', 't_marcacao_situacao', 't_municipio', 't_paciente',
-                    't_uf'),  # ambulatorio.py
+                    't_tipo_consulta', 't_uf'),  # ambulatorio.py
     'interconsultas': ('t_clinica', 't_enfermaria', 't_especialidade', 't_interconsulta', 't_internacao',
                        't_internacao_leito', 't_leito'),  # interconsultas.py
 }

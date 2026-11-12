@@ -136,14 +136,12 @@
               <th class="num">Prontuários únicos</th>
               <th class="num" title="Consultas ÷ prontuários únicos">Consultas por prontuário</th>
               <th class="num" title="Prontuários com mais de uma consulta realizada na especialidade no período">Prontuários com retorno</th>
-              <th class="num" title="Média, em meses, entre consultas seguidas do mesmo paciente na especialidade">Intervalo médio (meses)</th>
             </tr></thead>
             <tbody id="tb_prontuario"></tbody>
           </table>
         </div>
-        <div class="nota">Intervalo médio: tempo entre consultas seguidas do mesmo paciente na mesma especialidade, só dentro
-          do período escolhido (períodos curtos mostram poucos retornos). No total, o prontuário que passou em mais de uma
-          especialidade conta uma vez.</div>
+        <div class="nota">No total, o prontuário que passou em mais de uma especialidade conta uma vez. O intervalo médio
+          entre consultas do mesmo paciente está na Tendência Mensal do Ambulatório.</div>
       </div>
       <div class="graf-card full">
         <h3>Consultas realizadas (concluído + alta) por tipo de consulta e por especialidade</h3>
@@ -153,8 +151,8 @@
             <tbody id="tb_tipo"></tbody>
           </table>
         </div>
-        <div class="nota">Consultas realizadas no período pelo tipo de consulta da marcação. Os nomes vêm do cadastro
-          Tipos de Consulta, na área restrita; código sem nome no cadastro aparece como "Código N".</div>
+        <div class="nota">Consultas realizadas no período pelo tipo de consulta da marcação. Os nomes vêm da tabela
+          t_tipo_consulta do sistema hospitalar; código sem nome nela aparece como "Código N".</div>
       </div>
       <div class="graf-card full">
         <h3>Consultas realizadas por macrorregião de saúde</h3>
@@ -565,8 +563,7 @@ function render(d) {
     : Number(n).toLocaleString('pt-BR', { minimumFractionDigits: casas, maximumFractionDigits: casas });
   const linhaProntuario = (l, classe = '') => `<tr class="${classe}">
       <td>${esc(l.nome)}</td><td class="num">${fmt(l.atendimentos)}</td><td class="num">${fmt(l.prontuarios)}</td>
-      <td class="num">${dec(l.por_prontuario, 2)}</td><td class="num">${fmt(l.com_retorno)}</td>
-      <td class="num">${dec(l.intervalo_meses, 1)}</td></tr>`;
+      <td class="num">${dec(l.por_prontuario, 2)}</td><td class="num">${fmt(l.com_retorno)}</td></tr>`;
   // por macrorregião de saúde: gráfico e tabela
   const macros = d.por_macrorregiao;
   const totalMacro = macros.reduce((s, m) => s + m.qtd, 0);
@@ -594,9 +591,9 @@ function render(d) {
 
   document.getElementById('tb_prontuario').innerHTML = d.por_prontuario.length
     ? d.por_prontuario.map(l => linhaProntuario(l)).join('') + linhaProntuario(d.por_prontuario_total, 'total')
-    : '<tr><td colspan="6">Nenhuma consulta realizada no período.</td></tr>';
+    : '<tr><td colspan="5">Nenhuma consulta realizada no período.</td></tr>';
 
-  // especialidade × tipo de consulta (nomes do banco e do cadastro: escapados)
+  // especialidade × tipo de consulta (nomes do banco: escapados)
   const pt = d.por_tipo_consulta;
   document.getElementById('th_tipo').innerHTML = `<tr><th>Especialidade</th>` +
     pt.tipos.map(t => `<th class="num">${esc(t)}</th>`).join('') + `<th class="num">Total</th></tr>`;

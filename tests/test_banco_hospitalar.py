@@ -9,7 +9,7 @@ def _estrutura_sem(monkeypatch, *ausentes, colunas_ausentes=()):
     colunas que o Ambulatório confere."""
     import banco_hospitalar
     colunas = {'isn_internacao', 'isn_marcacao', 'isn_especialidade', 'dsc_especialidade',
-               'isn_marcacao_situacao', 'dsc_marcacao_situacao', 'isn_tipo_consulta', 'isn_municipio',
+               'isn_marcacao_situacao', 'dsc_marcacao_situacao', 'isn_tipo_consulta', 'dsc_tipo_consulta', 'isn_municipio',
                'dsc_municipio', 'isn_uf', 'sgl_uf', 'isn_paciente', 'dsc_sexo', 'dat_nascimento', 'isn_cid10'}
     estrutura = {t: set(colunas) for t in config_banco.TABELAS_USADAS if t not in ausentes}
     for tabela, coluna in colunas_ausentes:
@@ -60,16 +60,46 @@ def test_aviso_de_tabelas_faltando_no_cabecalho(monkeypatch):
         assert 'aviso-tabelas' not in render_template_string(modelo)
 
 
-def test_ambulatorio_sem_isn_especialidade_usa_dsc_especialidade(monkeypatch):
-    """Erro em outro servidor: t_marcacao sem isn_especialidade (o PostgreSQL
-    sugeria dsc_especialidade)."""
+def test_ambulatorio_nao_le_dsc_especialidade_da_marcacao(monkeypatch):
+    """t_marcacao não tem mais dsc_especialidade: o nome vem só de
+    t_especialidade pelo isn_especialidade."""
+    import ambulatorio
+    _estrutura_sem(monkeypatch, colunas_ausentes=[('t_marcacao', 'dsc_especialidade')])
+    cte = ambulatorio._cte_marcacao()
+    assert 'dsc_especialidade' not in cte and 'tm.isn_especialidade' in cte
+    status = ambulatorio._especialidade_status()
+    assert 'm.dsc_especialidade' not in status and 'te.dsc_especialidade' in status
+    assert 'JOIN t_especialidade te ON te.isn_especialidade = m.isn_especialidade' in \
+        ambulatorio._joins_especialidade_status()
+
+
+def test_ambulatorio_tipo_de_consulta_vem_de_t_tipo_consulta(monkeypatch):
+    from decimal import Decimal
+    import ambulatorio
+    _estrutura_sem(monkeypatch)
+    ambulatorio._cache.pop(('tipos_consulta',), None)
+    lidas = []
+    monkeypatch.setattr(ambulatorio, 'fetch_all', lambda sql, *a: lidas.append(sql) or [
+        {'isn_tipo_consulta': Decimal('34'), 'dsc_tipo_consulta': 'RETORNO '},
+        {'isn_tipo_consulta': Decimal('4'), 'dsc_tipo_consulta': 'ENFERMAGEM'},  # desativado: entra
+        {'isn_tipo_consulta': Decimal('9'), 'dsc_tipo_consulta': '  '}])
+    assert ambulatorio.nomes_tipos_consulta() == {34: 'RETORNO', 4: 'ENFERMAGEM'}
+    assert 'FROM t_tipo_consulta' in lidas[0]
+    # sem a tabela: vazio, sem consultar
+    ambulatorio._cache.pop(('tipos_consulta',), None)
+    _estrutura_sem(monkeypatch, 't_tipo_consulta')
+    assert ambulatorio.nomes_tipos_consulta() == {} and len(lidas) == 1
+    ambulatorio._cache.pop(('tipos_consulta',), None)
+
+
+def test_ambulatorio_sem_isn_especialidade_fica_sem_especialidade(monkeypatch):
+    """Servidor sem t_marcacao.isn_especialidade: não há como achar o cadastro."""
     import ambulatorio
     _estrutura_sem(monkeypatch, colunas_ausentes=[('t_marcacao', 'isn_especialidade')])
     cte = ambulatorio._cte_marcacao()
     assert 'tm.isn_especialidade' not in cte and 'NULL::numeric AS isn_especialidade' in cte
-    assert 'tm.dsc_especialidade' in cte
     assert 'te.' not in ambulatorio._especialidade_status()
-    assert 'NULLIF(TRIM(m.dsc_especialidade)' in ambulatorio._especialidade_status()
+    assert "COALESCE(NULL, 'Sem especialidade')" in ambulatorio._especialidade_status()
     assert 't_especialidade' not in ambulatorio._joins_especialidade_status()
 
 

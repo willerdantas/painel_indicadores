@@ -1385,15 +1385,15 @@ def ambulatorio_comparativo():
                            mes_a=mes_a.strftime('%Y-%m'), mes_b=mes_b.strftime('%Y-%m'), **_anos_comparativo())
 
 
-def _ambulatorio_mensal(mes_ini, mes_fim, por_ano=False):
-    """get_mensal do ambulatório com os filtros da requisição."""
+def _ambulatorio_mensal(mes_ini, mes_fim, por_ano=False, intervalo=False):
+    """get_mensal do ambulatório com os filtros da requisição (intervalo: só a tendência)."""
     return ambulatorio.get_mensal(
         mes_ini, mes_fim,
         especialidade=request.args.get('especialidade') or None,
         sexo=request.args.get('sexo') or None,
         municipio=request.args.get('municipio') or None,
         macrorregiao=request.args.get('macrorregiao') or None,
-        por_ano=por_ano,
+        por_ano=por_ano, intervalo=intervalo,
     )
 
 
@@ -1406,7 +1406,7 @@ def api_ambulatorio_mensal():
     except ValueError:
         return jsonify({'ok': False, 'erro': 'Informe mes_ini e mes_fim no formato AAAA-MM.'}), 400
     try:
-        return jsonify({'ok': True, 'dados': _ambulatorio_mensal(mes_ini, mes_fim)})
+        return jsonify({'ok': True, 'dados': _ambulatorio_mensal(mes_ini, mes_fim, intervalo=True)})
     except Exception:
         return seguranca.erro_interno()
 
